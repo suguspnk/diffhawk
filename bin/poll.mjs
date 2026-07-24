@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, appendFile } from 'node:fs/promises';
+import { readFile, appendFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -22,14 +22,18 @@ import {
   recordReview,
 } from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
+import { userPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '..');
+const packageRootDir = path.resolve(__dirname, '..');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
+// Relative paths in config.json (checklistPath, learningsPath, stateFile) are
+// resolved against the user's openrevuwer home, not the package install dir —
+// see lib/paths.mjs for why.
 function resolvePath(p) {
-  return path.isAbsolute(p) ? p : path.resolve(rootDir, p);
+  return path.isAbsolute(p) ? p : userPath(p);
 }
 
 async function readOptional(filePath) {
@@ -63,8 +67,19 @@ async function timedStep(message, fn) {
 }
 
 async function main() {
+  await mkdir(userPath(), { recursive: true });
+
   const configPath = resolvePath('config.json');
-  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  let configRaw;
+  try {
+    configRaw = await readFile(configPath, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      throw new Error(`no config found at ${configPath} — run \`openrevuwer init\` first`);
+    }
+    throw err;
+  }
+  const config = JSON.parse(configRaw);
 
   const stateFile = resolvePath(config.stateFile || './state.json');
   const logPath = resolvePath('poll.log');
@@ -96,7 +111,7 @@ async function main() {
   if (!Array.isArray(targets) || targets.length === 0) {
     await logFailure(
       logPath,
-      'config.json has no pollTargets configured (or searchScope is invalid) — nothing to poll. Run `node bin/init.mjs` or edit config.json.',
+      `config.json has no pollTargets configured (or searchScope is invalid) — nothing to poll. Run \`openrevuwer init\` or edit ${configPath}.`,
     );
     return;
   }
@@ -154,7 +169,10 @@ async function main() {
         continue;
       }
 
-      const checklistPath = resolvePath(target.checklistPath || config.checklistPath || './docs/checklist.md');
+      const defaultChecklistPath = path.join(packageRootDir, 'docs', 'checklist.md');
+      const checklistPath = target.checklistPath || config.checklistPath
+        ? resolvePath(target.checklistPath || config.checklistPath)
+        : defaultChecklistPath;
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
       const checklist = await readOptional(checklistPath);
       const learnings = await readOptional(learningsPath);
@@ -209,9 +227,10 @@ async function main() {
 
 main().catch(async (err) => {
   // Best-effort: config.json may not have parsed, so logPath might not even
-  // be resolvable — fall back to a fixed path next to this script if so.
-  const fallbackLogPath = path.resolve(rootDir, 'poll.log');
+  // be resolvable — fall back to a fixed path in the user's openrevuwer home.
+  const fallbackLogPath = userPath('poll.log');
   try {
+    await mkdir(userPath(), { recursive: true });
     await logFailure(fallbackLogPath, `fatal: ${err.stack || err.message}`);
   } catch {
     console.error(err.stack || err.message);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as p from '@clack/prompts';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
@@ -22,14 +22,15 @@ import {
   schtasksPreview, installSchtasks,
   manualInstructions,
 } from '../lib/scheduler.mjs';
+import { userHome, userPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, '..');
-const pollScriptPath = path.join(rootDir, 'bin', 'poll.mjs');
-const configPath = path.join(rootDir, 'config.json');
+const packageRootDir = path.resolve(__dirname, '..');
+const pollScriptPath = path.join(packageRootDir, 'bin', 'poll.mjs');
+const configPath = userPath('config.json');
 
 function resolveProjectPath(filePath) {
-  return path.isAbsolute(filePath) ? filePath : path.resolve(rootDir, filePath);
+  return path.isAbsolute(filePath) ? filePath : userPath(filePath);
 }
 
 function exitCancelled() {
@@ -39,7 +40,20 @@ function exitCancelled() {
 
 async function main() {
   console.clear();
-  p.intro('diffhawk — auto-review PRs where you\'re the requested reviewer');
+  p.intro('openrevuwer — auto-review PRs where you\'re the requested reviewer');
+
+  await mkdir(userHome(), { recursive: true });
+  await mkdir(userPath('docs'), { recursive: true });
+
+  const userChecklistPath = userPath('docs', 'checklist.md');
+  try {
+    await readFile(userChecklistPath, 'utf8');
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    // First run: seed the editable copy from the bundled default so
+    // "edit docs/checklist.md" in the README/prompts is immediately true.
+    await copyFile(path.join(packageRootDir, 'docs', 'checklist.md'), userChecklistPath);
+  }
 
   let existingConfig = null;
   try {
@@ -58,13 +72,13 @@ async function main() {
     accounts = await listAuthenticatedAccounts();
   } catch (err) {
     p.log.error('GitHub CLI is not authenticated.');
-    p.outro(`${err.message}, then re-run \`diffhawk init\`.`);
+    p.outro(`${err.message}, then re-run \`openrevuwer init\`.`);
     process.exit(1);
   }
 
   if (accounts.length === 0) {
     p.log.error('GitHub CLI has no authenticated accounts.');
-    p.outro('Run `gh auth login`, then re-run `diffhawk init`.');
+    p.outro('Run `gh auth login`, then re-run `openrevuwer init`.');
     process.exit(1);
   }
 
@@ -107,14 +121,14 @@ async function main() {
   // a static scrollable checklist is unusable at that scale, this adds
   // type-to-filter.
   const selectedRepos = await p.autocompleteMultiselect({
-    message: `Which repos should diffhawk auto-review PRs for? (${repos.length} available — type to filter)`,
+    message: `Which repos should openrevuwer auto-review PRs for? (${repos.length} available — type to filter)`,
     options: repos.map((r) => ({ value: r.nameWithOwner, label: r.nameWithOwner })),
     required: true,
   });
   if (p.isCancel(selectedRepos)) exitCancelled();
 
-  p.log.info('Review checklist: docs/checklist.md — edit this file anytime to change what diffhawk looks for, no need to rerun setup.');
-  p.log.info('Learnings file: docs/learnings.md — append notes here when diffhawk repeats a bad suggestion.');
+  p.log.info(`Review checklist: ${userChecklistPath} — edit this file anytime to change what openrevuwer looks for, no need to rerun setup.`);
+  p.log.info(`Learnings file: ${userPath('docs', 'learnings.md')} — append notes here when openrevuwer repeats a bad suggestion.`);
 
   const s2 = p.spinner();
   s2.start('Checking for known reviewer CLIs (Claude Code, Codex)');
@@ -137,7 +151,7 @@ async function main() {
   let reviewerInputMode = 'stdin';
 
   const backendChoice = await p.select({
-    message: 'Which reviewer backend should diffhawk use?',
+    message: 'Which reviewer backend should openrevuwer use?',
     options: agentOptions,
   });
   if (p.isCancel(backendChoice)) exitCancelled();
@@ -162,7 +176,7 @@ async function main() {
   }
 
   const scheduleChoice = await p.select({
-    message: 'How should diffhawk be scheduled to run?',
+    message: 'How should openrevuwer be scheduled to run?',
     options: [
       { value: 'cron', label: 'cron (macOS/Linux)' },
       { value: 'launchd', label: 'launchd (macOS, survives reboots)' },
@@ -236,7 +250,7 @@ async function main() {
     stateFile,
   };
 
-  p.note(JSON.stringify(config, null, 2), 'Config to write (config.json)');
+  p.note(JSON.stringify(config, null, 2), `Config to write (${configPath})`);
   const confirmWrite = await p.confirm({ message: 'Write config.json?', initialValue: true });
   if (p.isCancel(confirmWrite) || !confirmWrite) exitCancelled();
 
@@ -262,7 +276,7 @@ async function main() {
 
   await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
 
-  p.outro(`Setup complete. Try a real dry run:\n\n  node ${path.relative(process.cwd(), pollScriptPath)} --dry-run`);
+  p.outro('Setup complete. Try a real dry run:\n\n  openrevuwer --dry-run');
 }
 
 main().catch((err) => {

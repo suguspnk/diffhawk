@@ -2,7 +2,7 @@
 
 ## Maintainers
 
-diffhawk currently has a single maintainer, who has final say on scope,
+openrevuwer currently has a single maintainer, who has final say on scope,
 design, and what gets merged. There is no formal contributor tier with merge
 rights at this time.
 
@@ -46,5 +46,5 @@ disclosure.
 
 ## License
 
-diffhawk is released under the [MIT License](LICENSE). Contributions are
+openrevuwer is released under the [MIT License](LICENSE). Contributions are
 accepted under the same license.

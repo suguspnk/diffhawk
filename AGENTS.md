@@ -1,4 +1,4 @@
-# diffhawk
+# openrevuwer
 
 Local, agent-agnostic poller that auto-reviews GitHub PRs whenever you're the
 requested reviewer. Runs on your own machine on a schedule (cron / launchd /
