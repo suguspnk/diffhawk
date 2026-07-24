@@ -1,0 +1,14 @@
+{
+  "githubUsername": "your-github-username",
+  "searchScope": "per-repo",
+  "pollTargets": [
+    {
+      "repo": "OWNER/REPO",
+      "checklistPath": "./docs/checklist.md",
+      "learningsPath": "./docs/learnings.md"
+    }
+  ],
+  "reviewerCommand": "claude -p --output-format text",
+  "reviewerInputMode": "stdin",
+  "stateFile": "./state.json"
+}
