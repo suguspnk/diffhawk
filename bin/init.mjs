@@ -16,7 +16,7 @@ import {
   saveState,
 } from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
-import { ensureChecklist } from '../lib/checklists.mjs';
+import { ensureReviewPrompt } from '../lib/review-prompts.mjs';
 import {
   cronPreview, installCron,
   launchdPreview, installLaunchd,
@@ -28,7 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const pollScriptPath = path.join(rootDir, 'bin', 'poll.mjs');
 const configPath = path.join(rootDir, 'config.json');
-const checklistTemplatePath = path.join(rootDir, 'docs', 'checklist.default.md');
+const reviewPromptTemplatePath = path.join(rootDir, 'docs', 'review-prompt.default.md');
 
 function resolveProjectPath(filePath) {
   return path.isAbsolute(filePath) ? filePath : path.resolve(rootDir, filePath);
@@ -115,18 +115,18 @@ async function main() {
   });
   if (p.isCancel(selectedRepos)) exitCancelled();
 
-  const checklistPaths = {};
+  const reviewPromptPaths = {};
   for (const repo of selectedRepos) {
-    checklistPaths[repo] = await ensureChecklist(repo, {
+    reviewPromptPaths[repo] = await ensureReviewPrompt(repo, {
       resolveProjectPath,
-      templatePath: checklistTemplatePath,
+      templatePath: reviewPromptTemplatePath,
     });
   }
   p.log.info(
-    `Review checklist: one copy per repo under docs/checklists/ (seeded from ` +
-    `docs/checklist.default.md) — edit a repo's copy anytime to change what ` +
-    `diffhawk looks for there, no need to rerun setup. Existing copies were ` +
-    `left untouched.`,
+    `Review prompt: one copy per repo under docs/review-prompts/ (seeded from ` +
+    `docs/review-prompt.default.md) — edit a repo's copy anytime to change what ` +
+    `diffhawk looks for and how it frames the review there, no need to rerun ` +
+    `setup. Existing copies were left untouched.`,
   );
   p.log.info('Learnings file: docs/learnings.md — append notes here when diffhawk repeats a bad suggestion.');
 
@@ -242,7 +242,7 @@ async function main() {
     searchScope: 'per-repo',
     pollTargets: selectedRepos.map((repo) => ({
       repo,
-      checklistPath: `./${checklistPaths[repo]}`,
+      reviewPromptPath: `./${reviewPromptPaths[repo]}`,
       learningsPath: './docs/learnings.md',
     })),
     reviewerCommand,

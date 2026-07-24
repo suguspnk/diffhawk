@@ -54,10 +54,11 @@ This will:
    collaborator repos — as a type-to-filter, multi-select list (handy if
    that's hundreds or thousands of repos). Select the ones you want
    diffhawk to watch.
-3. Seed a checklist for each selected repo under `docs/checklists/` (from
-   the `docs/checklist.default.md` template, only if that repo doesn't
-   already have one) and print where it and the shared learnings file
-   (`docs/learnings.md`) live — edit either anytime, no need to rerun setup.
+3. Seed a review prompt for each selected repo under `docs/review-prompts/`
+   (from the `docs/review-prompt.default.md` template, only if that repo
+   doesn't already have one) and print where it and the shared learnings
+   file (`docs/learnings.md`) live — edit either anytime, no need to rerun
+   setup.
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead.
@@ -83,7 +84,7 @@ cp config.example.json config.json
 |---|---|
 | `githubAccount` | `{ hostname, username }` for the authenticated `gh` account that searches for review requests and posts reviews. |
 | `searchScope` | `"per-repo"` (default) to only watch `pollTargets`, or `"global"` to search every repo you have access to. |
-| `pollTargets` | Array of `{ repo, checklistPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
+| `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, gitignored). |
 
@@ -144,16 +145,23 @@ it up manually:
 
 ## Customizing reviews
 
-- **`docs/checklists/<owner>/<repo>.md`** — what diffhawk looks for in that
-  specific repo. `init` seeds one copy per watched repo from
-  `docs/checklist.default.md` the first time you add that repo; edit a
-  repo's copy directly any time, no code change or wizard rerun needed, and
-  it never affects any other repo's checklist. Re-running `init` never
-  overwrites an existing copy.
-- **`docs/checklist.default.md`** — the template new per-repo checklists are
-  seeded from. Edit this if you want future newly-added repos to start from
-  different defaults; it has no effect on repos that already have their own
-  copy under `docs/checklists/`.
+- **`docs/review-prompts/<owner>/<repo>.md`** — the actual prompt sent to
+  the reviewer CLI for that specific repo: framing, review criteria, and
+  where the PR title/body/diff and past learnings get inserted (via
+  `{{pr_title}}`, `{{pr_number}}`, `{{pr_body}}`, `{{diff}}`, and
+  `{{learnings_section}}` placeholders). `init` seeds one copy per watched
+  repo from `docs/review-prompt.default.md` the first time you add that
+  repo; edit a repo's copy directly any time — reorder sections, change the
+  criteria, adjust the framing, no code change or wizard rerun needed — and
+  it never affects any other repo's prompt. Re-running `init` never
+  overwrites an existing copy. The strict JSON output-format instruction
+  that `postReview` depends on to anchor inline comments is always appended
+  automatically and isn't part of this file, so an edit here can't break
+  that regardless of what you change.
+- **`docs/review-prompt.default.md`** — the template new per-repo prompts
+  are seeded from. Edit this if you want future newly-added repos to start
+  from different defaults; it has no effect on repos that already have
+  their own copy under `docs/review-prompts/`.
 - **`docs/learnings.md`** — durable notes to stop diffhawk repeating a bad
   suggestion (e.g. "don't flag X, it's intentional because Y"). Doesn't exist
   by default — create it whenever you have a correction to record. It's

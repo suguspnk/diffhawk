@@ -90,7 +90,7 @@ async function main() {
   }
 
   const targets = config.searchScope === 'global'
-    ? [{ repo: null, global: true, checklistPath: config.checklistPath, learningsPath: config.learningsPath }]
+    ? [{ repo: null, global: true, reviewPromptPath: config.reviewPromptPath, learningsPath: config.learningsPath }]
     : config.pollTargets;
 
   if (!Array.isArray(targets) || targets.length === 0) {
@@ -155,36 +155,44 @@ async function main() {
       }
 
       // The template (not a per-repo copy) is the fallback here — this only
-      // fires when config.json has no checklistPath at all (e.g. a
-      // hand-edited or pre-per-repo-checklist config), and the template is
-      // the one checklist file guaranteed to exist without having run init.
+      // fires when config.json has no reviewPromptPath at all (e.g. a
+      // hand-edited config), and the template is the one review-prompt
+      // file guaranteed to exist without having run init.
       //
-      // A config.json written before per-repo checklists existed has the
-      // old shared path baked in literally (e.g. "./docs/checklist.md"),
-      // which this repo's docs/checklist.md was renamed away from — so
-      // that path no longer resolves to anything, and without this check
-      // readOptional would silently return '' (an empty checklist, not an
-      // error) for every poll from then on. Redirect that one specific
-      // legacy value to the template instead of leaving it broken.
-      const configuredChecklistPath = target.checklistPath || config.checklistPath;
-      const usesLegacyChecklistPath = configuredChecklistPath === './docs/checklist.md';
-      if (usesLegacyChecklistPath) {
+      // A config.json written before per-repo prompts existed has one of
+      // two old shared paths baked in literally: "./docs/checklist.md"
+      // (the original shared checklist) or "./docs/checklist.default.md"
+      // (the shared template from the first per-repo-checklist revision,
+      // under the old "checklistPath" config key — still read via that key
+      // below for one more release). Neither resolves to a per-repo prompt
+      // that exists for this specific repo, and "./docs/checklist.md"
+      // itself no longer exists at all — so without this check,
+      // readOptional would silently return '' (an empty prompt, not an
+      // error) for every poll from then on. Redirect both legacy values to
+      // the current template instead of leaving them broken.
+      const configuredReviewPromptPath =
+        target.reviewPromptPath || config.reviewPromptPath ||
+        target.checklistPath || config.checklistPath;
+      const usesLegacyReviewPromptPath =
+        configuredReviewPromptPath === './docs/checklist.md' ||
+        configuredReviewPromptPath === './docs/checklist.default.md';
+      if (usesLegacyReviewPromptPath) {
         console.warn(
-          `[${key}] config.json's checklistPath ("./docs/checklist.md") no longer exists ` +
-          `— using docs/checklist.default.md instead. Run \`node bin/init.mjs\` to get a ` +
-          `dedicated, per-repo checklist for ${repo} at docs/checklists/${repo}.md.`,
+          `[${key}] config.json's checklistPath/reviewPromptPath ("${configuredReviewPromptPath}") ` +
+          `is outdated — using docs/review-prompt.default.md instead. Run \`node bin/init.mjs\` to get ` +
+          `a dedicated, per-repo review prompt for ${repo} at docs/review-prompts/${repo}.md.`,
         );
       }
-      const checklistPath = resolvePath(
-        usesLegacyChecklistPath
-          ? './docs/checklist.default.md'
-          : configuredChecklistPath || './docs/checklist.default.md',
+      const reviewPromptPath = resolvePath(
+        usesLegacyReviewPromptPath
+          ? './docs/review-prompt.default.md'
+          : configuredReviewPromptPath || './docs/review-prompt.default.md',
       );
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
-      const checklist = await readOptional(checklistPath);
+      const template = await readOptional(reviewPromptPath);
       const learnings = await readOptional(learningsPath);
 
-      const prompt = buildPrompt({ checklist, learnings, pr, diff });
+      const prompt = buildPrompt({ template, learnings, pr, diff });
 
       let rawOutput;
       try {

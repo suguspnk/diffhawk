@@ -20,15 +20,21 @@ lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
 lib/reviewer-adapter.mjs  abstraction over the configured reviewer command
 lib/agent-detect.mjs      detects Claude Code / Codex on PATH + auth status
 lib/scheduler.mjs         cron/launchd/Task Scheduler installers
-docs/checklist.default.md template new per-repo checklists are seeded from (committed)
-docs/checklists/*.md      one checklist per watched repo, injected into that repo's prompts (gitignored)
-docs/learnings.md         optional, gitignored — durable corrections fed into prompts
+docs/review-prompt.default.md template new per-repo review prompts are seeded from (committed)
+docs/review-prompts/*.md      one review prompt per watched repo, sent to the reviewer CLI as-is + placeholders filled in (gitignored)
+docs/learnings.md             optional, gitignored — durable corrections fed into prompts
 ```
 
-`config.json`, `state.json`, and `docs/checklists/*.md` are gitignored
+`config.json`, `state.json`, and `docs/review-prompts/*.md` are gitignored
 (local, machine-specific — the latter is seeded per repo by `init` from
-`docs/checklist.default.md`, and re-running `init` never overwrites an
+`docs/review-prompt.default.md`, and re-running `init` never overwrites an
 existing one). `config.example.json` is the config template.
+
+`lib/reviewer-adapter.mjs`'s `buildPrompt` fills a repo's review-prompt
+template's `{{pr_title}}`/`{{pr_number}}`/`{{pr_body}}`/`{{diff}}`/
+`{{learnings_section}}` placeholders and always appends a fixed JSON
+output-format instruction afterward — that instruction is never part of
+the editable template, since `parseFindings` depends on it structurally.
 
 ## Key constraints (from the design spec — see PRD.md for the "why")
 
