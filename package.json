@@ -2,6 +2,7 @@
   "name": "diffhawk",
   "version": "0.1.0",
   "description": "Local, agent-agnostic poller that auto-reviews GitHub PRs when you're the requested reviewer.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "diffhawk": "./bin/poll.mjs",
