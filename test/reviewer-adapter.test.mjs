@@ -52,6 +52,26 @@ test('buildPrompt includes past learnings, framed, when present', () => {
   assert.match(prompt, /Do not flag console\.log in bin\/ scripts\./);
 });
 
+test('buildPrompt does not reinterpret $-sequences in PR content as String.replace patterns', () => {
+  // Classic bug class: String.prototype.replace(pattern, replacementString)
+  // treats "$&", "$1", "$`", "$'" specially in the replacement STRING. If
+  // fillTemplate ever changed from a function replacer to a plain string
+  // one, a PR title/body containing these sequences would be silently
+  // corrupted (e.g. "$&" doubling the matched placeholder text, or "$`"
+  // inserting everything before the match). The current implementation
+  // uses a function replacer, whose return value is inserted literally
+  // with no special-casing, so this must never happen — this test pins
+  // that behavior against future refactors.
+  const prompt = buildPrompt({
+    template: '{{pr_title}}\n{{pr_body}}',
+    learnings: '',
+    pr: { title: 'Fix $& and $1 and $` and $\' handling', number: 1, body: 'See $&amp; in the diff' },
+    diff: '',
+  });
+  assert.match(prompt, /Fix \$& and \$1 and \$` and \$' handling/);
+  assert.match(prompt, /See \$&amp; in the diff/);
+});
+
 test('buildPrompt leaves an unrecognized placeholder untouched rather than dropping it silently', () => {
   const prompt = buildPrompt({
     template: 'see {{typo_placeholder}} here',

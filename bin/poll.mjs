@@ -159,23 +159,27 @@ async function main() {
       // hand-edited config), and the template is the one review-prompt
       // file guaranteed to exist without having run init.
       //
-      // A config.json written before per-repo prompts existed has one of
-      // two old shared paths baked in literally: "./docs/checklist.md"
-      // (the original shared checklist) or "./docs/checklist.default.md"
-      // (the shared template from the first per-repo-checklist revision,
-      // under the old "checklistPath" config key — still read via that key
-      // below for one more release). Neither resolves to a per-repo prompt
-      // that exists for this specific repo, and "./docs/checklist.md"
-      // itself no longer exists at all — so without this check,
-      // readOptional would silently return '' (an empty prompt, not an
-      // error) for every poll from then on. Redirect both legacy values to
-      // the current template instead of leaving them broken.
+      // A config.json written before this file's current shape has one of
+      // three legacy values baked in literally, under the old "checklistPath"
+      // config key (still read via that key below for backward compat):
+      //   - "./docs/checklist.md" — the very first shared, single checklist.
+      //   - "./docs/checklist.default.md" — the shared template from the
+      //     first per-repo-checklist revision (still shared at that point).
+      //   - "./docs/checklists/<owner>/<repo>.md" — a real per-repo path
+      //     from the revision immediately before this one, seeded by that
+      //     revision's `init` under the old "checklists" (plural) directory,
+      //     which no longer exists now that it's "review-prompts".
+      // None of these resolve to anything that exists after this change, so
+      // without this check readOptional would silently return '' (an empty
+      // prompt, not an error) for every poll from then on. Redirect all
+      // three to the current template instead of leaving them broken.
       const configuredReviewPromptPath =
         target.reviewPromptPath || config.reviewPromptPath ||
         target.checklistPath || config.checklistPath;
       const usesLegacyReviewPromptPath =
         configuredReviewPromptPath === './docs/checklist.md' ||
-        configuredReviewPromptPath === './docs/checklist.default.md';
+        configuredReviewPromptPath === './docs/checklist.default.md' ||
+        /^\.\/docs\/checklists\/.+\.md$/.test(configuredReviewPromptPath || '');
       if (usesLegacyReviewPromptPath) {
         console.warn(
           `[${key}] config.json's checklistPath/reviewPromptPath ("${configuredReviewPromptPath}") ` +
