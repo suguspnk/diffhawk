@@ -9,7 +9,7 @@ Repo: `~/Symph/projects/pr-review-bot` (git initialized, no remote — keep it
 local only unless explicitly decided otherwise later).
 
 This doc is the full spec. Nothing has been implemented yet — pick this up in
-a fresh session with: "implement the PR review bot per HANDOFF.md".
+a fresh session with: "implement the PR review bot per PRD.md".
 
 ## Why this exists (context from design conversation)
 
@@ -50,7 +50,7 @@ a fresh session with: "implement the PR review bot per HANDOFF.md".
 
 ```
 diffhawk/
-├── HANDOFF.md              (this file)
+├── PRD.md                  (this file)
 ├── package.json            (pnpm, type: module, bin entry)
 ├── pnpm-lock.yaml
 ├── config.json             (repos to watch, reviewer username, checklist paths)

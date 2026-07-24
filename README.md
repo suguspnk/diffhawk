@@ -7,7 +7,7 @@ to `gh` to find PRs and to a reviewer CLI of your choice (Claude Code, Codex,
 or any other command) to generate the review, then posts it back as an inline,
 severity-tagged GitHub review.
 
-Full design rationale lives in [HANDOFF.md](./HANDOFF.md). This doc is just
+Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
 
 ## Prerequisites
