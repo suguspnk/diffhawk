@@ -1,5 +1,8 @@
 {
-  "githubUsername": "your-github-username",
+  "githubAccount": {
+    "hostname": "github.com",
+    "username": "your-github-username"
+  },
   "searchScope": "per-repo",
   "pollTargets": [
     {

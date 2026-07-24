@@ -27,8 +27,8 @@ Before running anything, make sure you have:
    ```bash
    gh auth status
    ```
-   If this fails, run `gh auth login` first — diffhawk never handles your
-   GitHub credentials directly, it only ever calls `gh`.
+   If this fails, run `gh auth login` first. Multiple authenticated accounts
+   are supported; Diffhawk asks which one should post reviews.
 4. **A reviewer CLI**, already logged in on its own — pick one:
    - [Claude Code](https://claude.com/claude-code): `claude /login`
    - [Codex CLI](https://github.com/openai/codex): `codex login`
@@ -48,8 +48,9 @@ node bin/init.mjs
 ```
 
 This will:
-1. Verify `gh` is authenticated (exits with instructions if not).
-2. Show every repo you have access to — your own, plus any org or
+1. List the accounts authenticated in `gh` and ask which account should
+   search for review requests and post reviews.
+2. Show every repo that selected account can access — its own, plus any org or
    collaborator repos — as a type-to-filter, multi-select list (handy if
    that's hundreds or thousands of repos). Select the ones you want
    diffhawk to watch.
@@ -78,14 +79,18 @@ cp config.example.json config.json
 
 | Field | Meaning |
 |---|---|
-| `githubUsername` | Your GitHub username — used to search for `review-requested:<username>`. |
+| `githubAccount` | `{ hostname, username }` for the authenticated `gh` account that searches for review requests and posts reviews. |
 | `searchScope` | `"per-repo"` (default) to only watch `pollTargets`, or `"global"` to search every repo you have access to. |
 | `pollTargets` | Array of `{ repo, checklistPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, gitignored). |
 
 `config.json` is gitignored on purpose — it's local, machine-specific config,
-not something to commit.
+not something to commit. It stores only the selected hostname and username,
+never a token. Each poll retrieves that account's token from the GitHub CLI
+credential store and passes it only to its child `gh` processes. Legacy
+configs with `githubUsername` continue to work and are interpreted as an
+account on `github.com`.
 
 ## Try it (dry run)
 
@@ -109,7 +114,8 @@ node bin/poll.mjs
 This posts an actual GitHub PR review (inline comments + summary) for every
 PR where you're the requested reviewer and the head commit hasn't been
 reviewed yet. On success, it records the reviewed SHA in `state.json` so the
-same commit isn't re-reviewed next run.
+same commit isn't re-reviewed next run. State keys include the selected
+GitHub account, so two accounts can review the same PR independently.
 
 If anything fails partway (reviewer CLI errors, GitHub API rejects the post,
 etc.), diffhawk logs the failure to `poll.log` and skips posting for that PR
@@ -144,6 +150,9 @@ it up manually:
 ## Troubleshooting
 
 - **`gh` not authenticated** — `gh auth login`, then rerun.
+- **Configured GitHub account is unavailable** — authenticate it with
+  `gh auth login --hostname <hostname>`, or rerun init and select another
+  account. Polling does not depend on whichever account is globally active.
 - **Reviewer CLI "found but not authenticated"** during `init` — run the
   login command it prints (e.g. `claude /login`), then continue.
 - **Nothing happens on a poll run** — check `poll.log` in the repo root for

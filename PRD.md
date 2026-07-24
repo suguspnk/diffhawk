@@ -245,7 +245,10 @@ stdin, since that matches how the user already works — but keep it swappable.
 
 ```json
 {
-  "githubUsername": "antonio",
+  "githubAccount": {
+    "hostname": "github.com",
+    "username": "antonio"
+  },
   "pollTargets": [
     {
       "repo": "OWNER/socialpostai-v2",
@@ -267,7 +270,7 @@ repo) before wiring up `pollTargets` at implementation time.
 
 ```json
 {
-  "OWNER/socialpostai-v2#123": {
+  "github.com@antonio::OWNER/socialpostai-v2#123": {
     "lastReviewedSha": "abc123...",
     "lastReviewedAt": "2026-07-24T18:00:00Z"
   }
@@ -314,12 +317,17 @@ cloned checkout). Steps, in order:
 
 1. **Welcome banner.** One line — name + one-sentence purpose. No ASCII art.
 
-2. **GitHub auth check** (automatic, not a prompt). Runs `gh auth status`
-   silently.
-   - Pass → continue, pre-fill username from `gh api user --jq .login`.
-   - Fail → print the exact fix (`gh auth login`) and exit immediately.
-     Never prompts for a token directly (this bot never handles credentials
-     itself — it only ever shells out to an already-authenticated `gh`).
+2. **GitHub reviewer account selection.** Runs `gh auth status`, lists every
+   authenticated account, and asks which account should search for review
+   requests and post reviews.
+   - No authenticated accounts → print the exact fix (`gh auth login`) and
+     exit immediately.
+   - Store only the selected hostname and username in config, never a token.
+   - Resolve that account at poll time with
+     `gh auth token --hostname ... --user ...` and pass the token only to
+     child `gh` processes. Do not use
+     `gh auth switch`, because it mutates global CLI state and races with
+     other scheduled Diffhawk instances.
 
 3. **Repo selection — decided: checklist, not a mode toggle.** No
    "one repo vs. all repos" branch. Instead:
@@ -435,6 +443,8 @@ All open items from spec drafting are now resolved:
      CodeRabbit's "learnings" feature).
 8. **Onboarding UX designed** (`diffhawk init`, see full section above):
    interactive wizard using `@clack/prompts`. Key resolved sub-decisions:
+   - GitHub account selection lists every account authenticated in `gh` and
+     pins repository discovery and polling to the selected identity.
    - Repo selection is a **multi-select checklist of all accessible repos**
      (`gh repo list`), not a "one repo vs. all repos" mode toggle.
    - Reviewer-backend step **detects known agent CLIs** (Claude Code,
