@@ -7,7 +7,7 @@
   "pollTargets": [
     {
       "repo": "OWNER/REPO",
-      "checklistPath": "./docs/checklist.md",
+      "checklistPath": "./docs/checklists/OWNER-REPO.md",
       "learningsPath": "./docs/learnings.md"
     }
   ],

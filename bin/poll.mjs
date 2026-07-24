@@ -154,7 +154,11 @@ async function main() {
         continue;
       }
 
-      const checklistPath = resolvePath(target.checklistPath || config.checklistPath || './docs/checklist.md');
+      // The template (not a per-repo copy) is the fallback here — this only
+      // fires when config.json has no checklistPath at all (e.g. a
+      // hand-edited or pre-per-repo-checklist config), and the template is
+      // the one checklist file guaranteed to exist without having run init.
+      const checklistPath = resolvePath(target.checklistPath || config.checklistPath || './docs/checklist.default.md');
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
       const checklist = await readOptional(checklistPath);
       const learnings = await readOptional(learningsPath);

@@ -16,6 +16,7 @@ import {
   saveState,
 } from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
+import { ensureChecklist } from '../lib/checklists.mjs';
 import {
   cronPreview, installCron,
   launchdPreview, installLaunchd,
@@ -27,6 +28,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const pollScriptPath = path.join(rootDir, 'bin', 'poll.mjs');
 const configPath = path.join(rootDir, 'config.json');
+const checklistTemplatePath = path.join(rootDir, 'docs', 'checklist.default.md');
 
 function resolveProjectPath(filePath) {
   return path.isAbsolute(filePath) ? filePath : path.resolve(rootDir, filePath);
@@ -113,7 +115,19 @@ async function main() {
   });
   if (p.isCancel(selectedRepos)) exitCancelled();
 
-  p.log.info('Review checklist: docs/checklist.md — edit this file anytime to change what diffhawk looks for, no need to rerun setup.');
+  const checklistPaths = {};
+  for (const repo of selectedRepos) {
+    checklistPaths[repo] = await ensureChecklist(repo, {
+      resolveProjectPath,
+      templatePath: checklistTemplatePath,
+    });
+  }
+  p.log.info(
+    `Review checklist: one copy per repo under docs/checklists/ (seeded from ` +
+    `docs/checklist.default.md) — edit a repo's copy anytime to change what ` +
+    `diffhawk looks for there, no need to rerun setup. Existing copies were ` +
+    `left untouched.`,
+  );
   p.log.info('Learnings file: docs/learnings.md — append notes here when diffhawk repeats a bad suggestion.');
 
   const s2 = p.spinner();
@@ -228,7 +242,7 @@ async function main() {
     searchScope: 'per-repo',
     pollTargets: selectedRepos.map((repo) => ({
       repo,
-      checklistPath: './docs/checklist.md',
+      checklistPath: `./${checklistPaths[repo]}`,
       learningsPath: './docs/learnings.md',
     })),
     reviewerCommand,

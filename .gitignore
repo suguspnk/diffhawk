@@ -1,6 +1,7 @@
 # diffhawk-specific
 state.json
 config.json
+docs/checklists/
 
 # Logs
 logs
