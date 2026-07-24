@@ -45,8 +45,12 @@ async function main() {
     process.exit(1);
   }
 
-  const selectedRepos = await p.multiselect({
-    message: 'Which repos should diffhawk auto-review PRs for?',
+  // autocompleteMultiselect (not plain multiselect) since accounts with
+  // many orgs/collaborations can easily have 1000+ accessible repos —
+  // a static scrollable checklist is unusable at that scale, this adds
+  // type-to-filter.
+  const selectedRepos = await p.autocompleteMultiselect({
+    message: `Which repos should diffhawk auto-review PRs for? (${repos.length} available — type to filter)`,
     options: repos.map((r) => ({ value: r.nameWithOwner, label: r.nameWithOwner })),
     required: true,
   });

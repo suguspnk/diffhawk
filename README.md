@@ -49,8 +49,10 @@ node bin/init.mjs
 
 This will:
 1. Verify `gh` is authenticated (exits with instructions if not).
-2. Show a checklist of every repo you have access to — select the ones you
-   want diffhawk to watch.
+2. Show every repo you have access to — your own, plus any org or
+   collaborator repos — as a type-to-filter, multi-select list (handy if
+   that's hundreds or thousands of repos). Select the ones you want
+   diffhawk to watch.
 3. Print where the default checklist (`docs/checklist.md`) and learnings file
    (`docs/learnings.md`) live — edit those anytime, no need to rerun setup.
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
