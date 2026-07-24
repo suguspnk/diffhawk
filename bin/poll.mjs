@@ -35,6 +35,21 @@ async function logFailure(logPath, message) {
   console.error(line.trim());
 }
 
+// Logs the start of a potentially slow step (network/reviewer-CLI calls),
+// so a run that appears to hang shows which step it's actually waiting on
+// instead of going silent between "reviewing X" and the next printed line.
+function logStep(message) {
+  console.log(`[${new Date().toISOString()}] ${message}`);
+}
+
+async function timedStep(message, fn) {
+  logStep(`${message}...`);
+  const start = Date.now();
+  const result = await fn();
+  logStep(`${message}: done (${Date.now() - start}ms)`);
+  return result;
+}
+
 async function main() {
   const configPath = resolvePath('config.json');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
@@ -58,11 +73,14 @@ async function main() {
   for (const target of targets) {
     let candidates;
     try {
-      candidates = await searchReviewRequestedPRs({
-        username: config.githubUsername,
-        repo: target.repo,
-        global: Boolean(target.global),
-      });
+      candidates = await timedStep(
+        `searching for PRs awaiting review in ${target.repo ?? '(global)'}`,
+        () => searchReviewRequestedPRs({
+          username: config.githubUsername,
+          repo: target.repo,
+          global: Boolean(target.global),
+        }),
+      );
     } catch (err) {
       await logFailure(logPath, `search failed for ${target.repo ?? '(global)'}: ${err.message}`);
       continue;
@@ -76,7 +94,7 @@ async function main() {
     for (const { repo, number } of candidates) {
       let pr;
       try {
-        pr = await getPullRequest({ repo, number });
+        pr = await timedStep(`fetching PR metadata for ${repo}#${number}`, () => getPullRequest({ repo, number }));
       } catch (err) {
         await logFailure(logPath, `pr view failed for ${repo}#${number}: ${err.message}`);
         continue;
@@ -92,7 +110,7 @@ async function main() {
 
       let diff;
       try {
-        diff = await getPullRequestDiff({ repo, number });
+        diff = await timedStep(`[${key}] fetching diff`, () => getPullRequestDiff({ repo, number }));
       } catch (err) {
         await logFailure(logPath, `diff fetch failed for ${key}: ${err.message}`);
         continue;
@@ -107,7 +125,10 @@ async function main() {
 
       let rawOutput;
       try {
-        rawOutput = await invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt });
+        rawOutput = await timedStep(
+          `[${key}] invoking reviewer ("${config.reviewerCommand}")`,
+          () => invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt }),
+        );
       } catch (err) {
         // Decided: log and skip posting entirely, leave state unchanged so
         // the next poll retries — never post a broken/empty review.
@@ -125,14 +146,14 @@ async function main() {
       }
 
       try {
-        await postReview({
+        await timedStep(`[${key}] posting review`, () => postReview({
           repo,
           number,
           commitId: pr.headRefOid,
           body: summary,
           comments: findings,
           diff,
-        });
+        }));
       } catch (err) {
         await logFailure(logPath, `post review failed for ${key}: ${err.message}`);
         continue;
