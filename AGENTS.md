@@ -19,17 +19,28 @@ bin/poll.mjs              one-shot poll entrypoint (--dry-run supported)
 lib/paths.mjs             resolves the per-user state directory (~/.openrevuwer, or $OPENREVUWER_HOME)
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
 lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
-lib/reviewer-adapter.mjs  abstraction over the configured reviewer command
+lib/reviewer-adapter.mjs  abstraction over the configured reviewer command + prompt templating
+lib/review-prompts.mjs    seeds/locates each watched repo's review-prompt file under the user's openrevuwer home
 lib/agent-detect.mjs      detects Claude Code / Codex on PATH + auth status
 lib/scheduler.mjs         cron/launchd/Task Scheduler installers
-docs/checklist.md         bundled default review checklist injected into every prompt
+docs/review-prompt.default.md  bundled template new per-repo review prompts are seeded from
 ```
 
 All per-user state — `config.json`, `state.json`, `poll.log`, and the
-editable `docs/checklist.md` / `docs/learnings.md` — lives under
-`~/.openrevuwer/` (override with `OPENREVUWER_HOME`), not in this repo. See
-`lib/paths.mjs`. `config.example.json` here is just the template `init`
-copies from on first run.
+editable `docs/review-prompts/<owner>/<repo>.md` files / `docs/learnings.md`
+— lives under `~/.openrevuwer/` (override with `OPENREVUWER_HOME`), not in
+this repo. See `lib/paths.mjs`. `config.example.json` here is just the
+config template; `docs/review-prompt.default.md` is the review-prompt
+template `init` seeds each repo's copy from on first use.
+
+`lib/reviewer-adapter.mjs`'s `buildPrompt` fills a repo's review-prompt
+template's `{{pr_title}}`/`{{pr_number}}`/`{{pr_body}}`/`{{diff}}`/
+`{{learnings_section}}` placeholders and always appends a fixed JSON
+output-format instruction afterward — that instruction is never part of the
+editable template, since `parseFindings` depends on it structurally. A
+template with no `{{diff}}` placeholder (e.g. an un-migrated pre-template
+checklist file) is treated as legacy content and wrapped with the old fixed
+framing instead, so it keeps producing a working prompt.
 
 ## Key constraints (from the design spec — see PRD.md for the "why")
 

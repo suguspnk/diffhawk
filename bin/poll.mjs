@@ -103,7 +103,13 @@ async function main() {
   }
 
   const targets = config.searchScope === 'global'
-    ? [{ repo: null, global: true, checklistPath: config.checklistPath, learningsPath: config.learningsPath }]
+    ? [{
+        repo: null,
+        global: true,
+        reviewPromptPath: config.reviewPromptPath,
+        checklistPath: config.checklistPath,
+        learningsPath: config.learningsPath,
+      }]
     : config.pollTargets;
 
   if (!Array.isArray(targets) || targets.length === 0) {
@@ -167,15 +173,37 @@ async function main() {
         continue;
       }
 
-      const defaultChecklistPath = path.join(packageRootDir, 'docs', 'checklist.md');
-      const checklistPath = target.checklistPath || config.checklistPath
-        ? resolvePath(target.checklistPath || config.checklistPath)
-        : defaultChecklistPath;
+      // The bundled default (packageRootDir, not the user's openrevuwer
+      // home) is the fallback here — this only fires when config.json has
+      // no reviewPromptPath at all (e.g. a hand-edited config), and the
+      // bundled default is the one review-prompt file guaranteed to exist
+      // without having run init.
+      //
+      // "checklistPath" (this key's name before this change) is still read
+      // as a fallback for one more release. Unlike the earlier repo-root
+      // diffhawk era (whose paths resolved against a different base and
+      // are a separate, already-documented no-automatic-migration case —
+      // see README's "Upgrading from a local diffhawk clone" note), a
+      // config written under the current ~/.openrevuwer/ model with
+      // "checklistPath": "./docs/checklist.md" still resolves to a real,
+      // existing file (init seeded it there before this change), so it's
+      // read as-is here rather than redirected. Its CONTENT is old-format
+      // (a plain criteria list, no {{diff}} placeholder) though — buildPrompt
+      // detects that and wraps it with the old fixed framing/sections
+      // instead of running placeholder substitution on it, so this old
+      // file keeps producing a working prompt without needing migration.
+      const defaultReviewPromptPath = path.join(packageRootDir, 'docs', 'review-prompt.default.md');
+      const configuredReviewPromptPath =
+        target.reviewPromptPath || config.reviewPromptPath ||
+        target.checklistPath || config.checklistPath;
+      const reviewPromptPath = configuredReviewPromptPath
+        ? resolvePath(configuredReviewPromptPath)
+        : defaultReviewPromptPath;
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
-      const checklist = await readOptional(checklistPath);
+      const template = await readOptional(reviewPromptPath);
       const learnings = await readOptional(learningsPath);
 
-      const prompt = buildPrompt({ checklist, learnings, pr, diff });
+      const prompt = buildPrompt({ template, learnings, pr, diff });
 
       let rawOutput;
       try {
