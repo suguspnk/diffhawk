@@ -3,12 +3,24 @@ import { readFile, appendFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  currentUsername,
   searchReviewRequestedPRs,
   getPullRequest,
   getPullRequestDiff,
   postReview,
 } from '../lib/github.mjs';
-import { loadState, saveState, prKey, needsReview, recordReview } from '../lib/state.mjs';
+import {
+  configuredGitHubAccount,
+  resolveGitHubAuth,
+} from '../lib/github-auth.mjs';
+import {
+  loadState,
+  saveState,
+  prKey,
+  migrateLegacyState,
+  needsReview,
+  recordReview,
+} from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,7 +68,26 @@ async function main() {
 
   const stateFile = resolvePath(config.stateFile || './state.json');
   const logPath = resolvePath('poll.log');
+  const githubAccount = configuredGitHubAccount(config);
+  const githubAuth = await resolveGitHubAuth(githubAccount);
+  const authenticatedUsername = await currentUsername({ auth: githubAuth });
+
+  if (authenticatedUsername.toLowerCase() !== githubAccount.username.toLowerCase()) {
+    throw new Error(
+      `configured GitHub reviewer is ${githubAccount.username}, but the selected ` +
+      `credential belongs to ${authenticatedUsername}`,
+    );
+  }
+
+  console.log(
+    `GitHub reviewer: ${authenticatedUsername} (${githubAccount.hostname})`,
+  );
+
   const state = await loadState(stateFile);
+  const usesLegacyAccountConfig = !config.githubAccount && Boolean(config.githubUsername);
+  if (usesLegacyAccountConfig && migrateLegacyState(state, githubAccount) && !DRY_RUN) {
+    await saveState(stateFile, state);
+  }
 
   const targets = config.searchScope === 'global'
     ? [{ repo: null, global: true, checklistPath: config.checklistPath, learningsPath: config.learningsPath }]
@@ -76,9 +107,10 @@ async function main() {
       candidates = await timedStep(
         `searching for PRs awaiting review in ${target.repo ?? '(global)'}`,
         () => searchReviewRequestedPRs({
-          username: config.githubUsername,
+          username: githubAccount.username,
           repo: target.repo,
           global: Boolean(target.global),
+          auth: githubAuth,
         }),
       );
     } catch (err) {
@@ -94,13 +126,16 @@ async function main() {
     for (const { repo, number } of candidates) {
       let pr;
       try {
-        pr = await timedStep(`fetching PR metadata for ${repo}#${number}`, () => getPullRequest({ repo, number }));
+        pr = await timedStep(
+          `fetching PR metadata for ${repo}#${number}`,
+          () => getPullRequest({ repo, number, auth: githubAuth }),
+        );
       } catch (err) {
         await logFailure(logPath, `pr view failed for ${repo}#${number}: ${err.message}`);
         continue;
       }
 
-      const key = prKey(repo, number);
+      const key = prKey(repo, number, githubAccount);
       if (!needsReview(state, key, pr.headRefOid)) {
         console.log(`skip ${key} (already reviewed at ${pr.headRefOid})`);
         continue;
@@ -110,7 +145,10 @@ async function main() {
 
       let diff;
       try {
-        diff = await timedStep(`[${key}] fetching diff`, () => getPullRequestDiff({ repo, number }));
+        diff = await timedStep(
+          `[${key}] fetching diff`,
+          () => getPullRequestDiff({ repo, number, auth: githubAuth }),
+        );
       } catch (err) {
         await logFailure(logPath, `diff fetch failed for ${key}: ${err.message}`);
         continue;
@@ -153,6 +191,7 @@ async function main() {
           body: summary,
           comments: findings,
           diff,
+          auth: githubAuth,
         }));
       } catch (err) {
         await logFailure(logPath, `post review failed for ${key}: ${err.message}`);

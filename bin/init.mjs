@@ -1,9 +1,20 @@
 #!/usr/bin/env node
 import * as p from '@clack/prompts';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkAuth, currentUsername, listAccessibleRepos } from '../lib/github.mjs';
+import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
+import {
+  legacyGitHubAccount,
+  listAuthenticatedAccounts,
+  resolveGitHubAuth,
+} from '../lib/github-auth.mjs';
+import {
+  loadState,
+  migrateLegacyStateForReviewer,
+  sameReviewer,
+  saveState,
+} from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
 import {
   cronPreview, installCron,
@@ -15,6 +26,11 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const pollScriptPath = path.join(rootDir, 'bin', 'poll.mjs');
+const configPath = path.join(rootDir, 'config.json');
+
+function resolveProjectPath(filePath) {
+  return path.isAbsolute(filePath) ? filePath : path.resolve(rootDir, filePath);
+}
 
 function exitCancelled() {
   p.cancel('Setup cancelled — nothing was written.');
@@ -25,19 +41,60 @@ async function main() {
   console.clear();
   p.intro('diffhawk — auto-review PRs where you\'re the requested reviewer');
 
-  const authed = await checkAuth();
-  if (!authed) {
+  let existingConfig = null;
+  try {
+    existingConfig = JSON.parse(await readFile(configPath, 'utf8'));
+  } catch (err) {
+    if (err.code !== 'ENOENT' && !(err instanceof SyntaxError)) throw err;
+    if (err instanceof SyntaxError) {
+      p.log.warn(
+        'Existing config.json is invalid; its legacy review state cannot be migrated automatically.',
+      );
+    }
+  }
+
+  let accounts;
+  try {
+    accounts = await listAuthenticatedAccounts();
+  } catch (err) {
     p.log.error('GitHub CLI is not authenticated.');
+    p.outro(`${err.message}, then re-run \`diffhawk init\`.`);
+    process.exit(1);
+  }
+
+  if (accounts.length === 0) {
+    p.log.error('GitHub CLI has no authenticated accounts.');
     p.outro('Run `gh auth login`, then re-run `diffhawk init`.');
     process.exit(1);
   }
 
-  const username = await currentUsername();
-  p.log.success(`GitHub CLI authenticated as ${username}`);
+  const accountChoice = await p.select({
+    message: 'Which GitHub account should review pull requests?',
+    options: accounts.map((account) => ({
+      value: JSON.stringify({
+        hostname: account.hostname,
+        username: account.username,
+      }),
+      label: `${account.username} (${account.hostname})`,
+      hint: account.active ? 'currently active in gh' : undefined,
+    })),
+  });
+  if (p.isCancel(accountChoice)) exitCancelled();
+
+  const githubAccount = JSON.parse(accountChoice);
+  const githubAuth = await resolveGitHubAuth(githubAccount);
+  const username = await currentUsername({ auth: githubAuth });
+  if (username.toLowerCase() !== githubAccount.username.toLowerCase()) {
+    p.log.error(
+      `Selected ${githubAccount.username}, but its credential belongs to ${username}.`,
+    );
+    process.exit(1);
+  }
+  p.log.success(`GitHub reviews will be posted as ${username}`);
 
   const s = p.spinner();
   s.start('Fetching repos you have access to');
-  const repos = await listAccessibleRepos();
+  const repos = await listAccessibleRepos({ auth: githubAuth });
   s.stop(`Found ${repos.length} repo(s)`);
 
   if (repos.length === 0) {
@@ -158,8 +215,16 @@ async function main() {
     }
   }
 
+  const stateFile = typeof existingConfig?.stateFile === 'string' &&
+    existingConfig.stateFile.trim()
+    ? existingConfig.stateFile
+    : './state.json';
+
   const config = {
-    githubUsername: username,
+    githubAccount: {
+      hostname: githubAccount.hostname,
+      username,
+    },
     searchScope: 'per-repo',
     pollTargets: selectedRepos.map((repo) => ({
       repo,
@@ -168,14 +233,34 @@ async function main() {
     })),
     reviewerCommand,
     reviewerInputMode,
-    stateFile: './state.json',
+    stateFile,
   };
 
   p.note(JSON.stringify(config, null, 2), 'Config to write (config.json)');
   const confirmWrite = await p.confirm({ message: 'Write config.json?', initialValue: true });
   if (p.isCancel(confirmWrite) || !confirmWrite) exitCancelled();
 
-  await writeFile(path.join(rootDir, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf8');
+  let previousAccount = null;
+  try {
+    previousAccount = legacyGitHubAccount(existingConfig);
+  } catch {
+    p.log.warn(
+      'Existing legacy GitHub account is invalid; review state was not migrated.',
+    );
+  }
+
+  if (sameReviewer(previousAccount, config.githubAccount)) {
+    const statePath = resolveProjectPath(config.stateFile);
+    const state = await loadState(statePath);
+    if (migrateLegacyStateForReviewer(state, previousAccount, config.githubAccount)) {
+      // Write state first. If the later config write fails, the old config can
+      // still read these scoped keys, so the upgrade remains retry-safe.
+      await saveState(statePath, state);
+      p.log.success(`Migrated legacy review state for ${username}`);
+    }
+  }
+
+  await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
 
   p.outro(`Setup complete. Try a real dry run:\n\n  node ${path.relative(process.cwd(), pollScriptPath)} --dry-run`);
 }

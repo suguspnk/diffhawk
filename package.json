@@ -10,7 +10,8 @@
   },
   "scripts": {
     "poll": "node bin/poll.mjs",
-    "init": "node bin/init.mjs"
+    "init": "node bin/init.mjs",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"
