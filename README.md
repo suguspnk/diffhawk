@@ -84,6 +84,7 @@ cp config.example.json config.json
 | `pollTargets` | Array of `{ repo, checklistPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, gitignored). |
+| `lockFile` | Path to the lock file used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`). If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
 `config.json` is gitignored on purpose — it's local, machine-specific config,
 not something to commit. It stores only the selected hostname and username,

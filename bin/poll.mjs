@@ -22,6 +22,7 @@ import {
   recordReview,
 } from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
+import { acquireLock } from '../lib/lock.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -68,6 +69,7 @@ async function main() {
 
   const stateFile = resolvePath(config.stateFile || './state.json');
   const logPath = resolvePath('poll.log');
+
   const githubAccount = configuredGitHubAccount(config);
   const githubAuth = await resolveGitHubAuth(githubAccount);
   const authenticatedUsername = await currentUsername({ auth: githubAuth });
@@ -83,6 +85,24 @@ async function main() {
     `GitHub reviewer: ${authenticatedUsername} (${githubAccount.hostname})`,
   );
 
+  // Guards state.json's read-then-write cycle below against a second,
+  // overlapping poll run (e.g. a slow reviewer CLI still in flight when the
+  // next scheduled tick fires) racing on the same file.
+  const lockPath = resolvePath(config.lockFile || `${stateFile}.lock`);
+  const releaseLock = await acquireLock(lockPath);
+  if (!releaseLock) {
+    console.log(`another poll run holds ${lockPath} — skipping this tick`);
+    return;
+  }
+
+  try {
+    await pollOnce({ config, stateFile, logPath, githubAccount, githubAuth });
+  } finally {
+    await releaseLock();
+  }
+}
+
+async function pollOnce({ config, stateFile, logPath, githubAccount, githubAuth }) {
   const state = await loadState(stateFile);
   const usesLegacyAccountConfig = !config.githubAccount && Boolean(config.githubUsername);
   if (usesLegacyAccountConfig && migrateLegacyState(state, githubAccount) && !DRY_RUN) {
