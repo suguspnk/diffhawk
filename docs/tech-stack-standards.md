@@ -1,6 +1,6 @@
 # Tech Stack Standards
 
-This document is **context for AI coding agents** working on diffhawk, not
+This document is **context for AI coding agents** working on openrevuwer, not
 end-user documentation. It records industry best practices, common
 pitfalls, and authoritative references for every component in this repo's
 stack, so an agent can make stack-appropriate decisions without re-deriving
@@ -32,7 +32,7 @@ them from scratch. Keep entries dense and actionable; update via the
 
 ### Overview
 
-diffhawk is a Node.js 18+ ESM CLI tool (`"type": "module"` in
+openrevuwer is a Node.js 18+ ESM CLI tool (`"type": "module"` in
 `package.json`) with no server component. It shells out to `gh` and to a
 user-configured reviewer CLI via `node:child_process`, so `execFile`
 discipline is central to its security model.
@@ -52,7 +52,7 @@ discipline is central to its security model.
   legacy polyfill packages to keep the dependency surface minimal.
 - Use `execFile` (or `spawn` with the default `shell: false`), never `exec`
   or `shell: true`, whenever any argument is derived from external or
-  untrusted content — this is exactly the diffhawk case: PR titles, bodies,
+  untrusted content — this is exactly the openrevuwer case: PR titles, bodies,
   diffs, and reviewer CLI output are all untrusted.
 - Never set `shell: true` on `execFile`/`spawn` to work around quoting
   issues; fix the argument array instead. Node's own docs deprecate this
@@ -142,7 +142,7 @@ discipline is central to its security model.
 
 ### Overview
 
-diffhawk shells out to `gh` (via `execFile`, no shell) to search for PRs,
+openrevuwer shells out to `gh` (via `execFile`, no shell) to search for PRs,
 fetch metadata/diffs, and post reviews. It runs unattended on a schedule, not
 interactively.
 
@@ -181,7 +181,7 @@ interactively.
   trusting ambient keychain-based auth.
 - Avoid using a broad classic PAT for scheduled multi-repo automation,
   because a leaked classic PAT can touch every repo its owner can access —
-  scope a fine-grained PAT to only what diffhawk needs.
+  scope a fine-grained PAT to only what openrevuwer needs.
 - Avoid firing rapid successive write calls (posting multiple reviews in
   quick succession) in a poll loop without backoff, because GitHub's
   secondary rate limits throttle burst patterns independently of the
@@ -197,7 +197,7 @@ interactively.
 
 ### Overview
 
-diffhawk uses pnpm (`pnpm-lock.yaml`, lockfileVersion `9.0`) as its package
+openrevuwer uses pnpm (`pnpm-lock.yaml`, lockfileVersion `9.0`) as its package
 manager for a single-package (non-monorepo) CLI project.
 
 ### Best Practices
@@ -246,7 +246,7 @@ manager for a single-package (non-monorepo) CLI project.
 
 ### Overview
 
-diffhawk shells out to two untrusted-content-adjacent targets: `gh` and a
+openrevuwer shells out to two untrusted-content-adjacent targets: `gh` and a
 user-configured reviewer CLI. Every invocation deliberately uses `execFile`
 (argv array, no shell) instead of `exec`, specifically to prevent PR
 titles/bodies/diffs — external, attacker-influenceable content — from being
@@ -291,7 +291,7 @@ interpreted as shell syntax.
 - Avoid assuming `execFile` is safe against every downstream binary —
   some binaries interpret their own arguments as scripts or forward them to
   a shell internally (`node -e`, `python -c`, or a user-configured
-  `reviewerCommand` that is itself `bash -c "..."`). diffhawk's own use of
+  `reviewerCommand` that is itself `bash -c "..."`). openrevuwer's own use of
   `execFile` doesn't protect against unsafe interpolation one level down
   inside a user-configured reviewer command.
 - Avoid assuming "no shell metacharacters" is sufficient — argument/flag
@@ -310,7 +310,7 @@ interpreted as shell syntax.
 
 ### Overview
 
-diffhawk is designed to run on a recurring schedule via one of three
+openrevuwer is designed to run on a recurring schedule via one of three
 OS-native schedulers — cron or launchd on macOS/Linux, Windows Task
 Scheduler on Windows — installed programmatically by `lib/scheduler.mjs`.
 
@@ -324,7 +324,7 @@ Scheduler on Windows — installed programmatically by `lib/scheduler.mjs`.
   don't overwrite — so failures are visible across runs (cron:
   `>> poll.log 2>&1`; launchd: `StandardOutPath`/`StandardErrorPath`;
   Task Scheduler: redirect inside the wrapper script).
-- Prevent overlapping runs with a lock (e.g. `flock -n /tmp/diffhawk.lock
+- Prevent overlapping runs with a lock (e.g. `flock -n /tmp/openrevuwer.lock
   node bin/poll.mjs` on Unix), especially since `poll.mjs` both reads and
   writes `state.json` — an overlapping run risks a race on that file.
 - Prefer launchd over cron on macOS for reliability across sleep/wake, and
@@ -348,7 +348,7 @@ Scheduler on Windows — installed programmatically by `lib/scheduler.mjs`.
   missing `PATH` entry.
 - Avoid skipping error redirection, because an unredirected scheduler job
   fails silently — there'd be no record of why a poll didn't post a review,
-  which conflicts with diffhawk's own requirement that failures be visible
+  which conflicts with openrevuwer's own requirement that failures be visible
   (logged to `poll.log`).
 - Avoid trusting `launchctl load`/`unload` as sufficient after a plist edit
   without a full reload, and avoid assuming a short `StartInterval` "just

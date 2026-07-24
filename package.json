@@ -1,13 +1,34 @@
 {
-  "name": "diffhawk",
+  "name": "openrevuwer",
   "version": "0.1.0",
   "description": "Local, agent-agnostic poller that auto-reviews GitHub PRs when you're the requested reviewer.",
   "license": "MIT",
   "type": "module",
-  "bin": {
-    "diffhawk": "./bin/poll.mjs",
-    "diffhawk-init": "./bin/init.mjs"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/suguspnk/diffhawk.git"
   },
+  "homepage": "https://github.com/suguspnk/diffhawk#readme",
+  "bugs": {
+    "url": "https://github.com/suguspnk/diffhawk/issues"
+  },
+  "keywords": [
+    "github",
+    "pull-request",
+    "code-review",
+    "cli",
+    "claude-code",
+    "codex"
+  ],
+  "bin": {
+    "openrevuwer": "./bin/openrevuwer.mjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "docs/checklist.md",
+    "config.example.json"
+  ],
   "scripts": {
     "poll": "node bin/poll.mjs",
     "init": "node bin/init.mjs",

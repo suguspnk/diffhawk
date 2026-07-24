@@ -6,7 +6,7 @@ import path from 'node:path';
 import { cronPreview, installCron } from '../lib/scheduler.mjs';
 
 async function fakeCrontab() {
-  const directory = await mkdtemp(path.join(tmpdir(), 'diffhawk-crontab-test-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-crontab-test-'));
   const command = path.join(directory, 'crontab');
   const stateFile = path.join(directory, 'state');
   const script = `#!${process.execPath}
@@ -58,11 +58,11 @@ test('installCron writes stdin, preserves unrelated entries, and replaces its ma
 
   await writeFile(
     fake.stateFile,
-    '0 0 * * * /usr/bin/backup\n1 1 * * * old-diffhawk # diffhawk poll\n',
+    '0 0 * * * /usr/bin/backup\n1 1 * * * old-openrevuwer # openrevuwer poll\n',
     'utf8',
   );
 
-  const pollScriptPath = '/opt/diffhawk/bin/poll.mjs';
+  const pollScriptPath = '/opt/openrevuwer/bin/poll.mjs';
   await installCron({
     pollScriptPath,
     intervalMinutes: 15,
@@ -74,10 +74,10 @@ test('installCron writes stdin, preserves unrelated entries, and replaces its ma
   const installed = await readFile(fake.stateFile, 'utf8');
   const expected = cronPreview({ pollScriptPath, intervalMinutes: 15 }).preview;
   assert.match(installed, /^0 0 \* \* \* \/usr\/bin\/backup$/m);
-  assert.equal(installed.includes('old-diffhawk'), false);
-  assert.equal(installed.split('# diffhawk poll').length - 1, 1);
+  assert.equal(installed.includes('old-openrevuwer'), false);
+  assert.equal(installed.split('# openrevuwer poll').length - 1, 1);
   assert.match(installed, new RegExp(
-    `${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} # diffhawk poll`,
+    `${expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} # openrevuwer poll`,
   ));
   assert.equal(installed.endsWith('\n'), true);
 });
@@ -91,7 +91,7 @@ test('installCron times out instead of hanging forever', {
 
   await assert.rejects(
     installCron({
-      pollScriptPath: '/opt/diffhawk/bin/poll.mjs',
+      pollScriptPath: '/opt/openrevuwer/bin/poll.mjs',
       intervalMinutes: 15,
       crontabCommand: fake.command,
       environment: { ...fake.environment, FAKE_CRONTAB_HANG: '1' },
@@ -112,7 +112,7 @@ test('installCron does not overwrite state when listing the crontab fails', {
 
   await assert.rejects(
     installCron({
-      pollScriptPath: '/opt/diffhawk/bin/poll.mjs',
+      pollScriptPath: '/opt/openrevuwer/bin/poll.mjs',
       intervalMinutes: 15,
       crontabCommand: fake.command,
       environment: { ...fake.environment, FAKE_CRONTAB_LIST_ERROR: '1' },

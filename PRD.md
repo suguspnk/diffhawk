@@ -27,10 +27,10 @@ a fresh session with: "implement the PR review bot per PRD.md".
      detect **new commits since the last review** and re-trigger. So state is
      keyed by PR + last-reviewed commit SHA, not a boolean seen/unseen flag.
   3. Needs a real review prompt, not "review this PR" — **decided: write a
-     new checklist from scratch, owned by diffhawk itself** (not borrowed
-     from `socialpostai-v2` or any watched repo — keeps diffhawk's own
+     new checklist from scratch, owned by openrevuwer itself** (not borrowed
+     from `socialpostai-v2` or any watched repo — keeps openrevuwer's own
      standards independent of any one project's docs). Default location:
-     `diffhawk/docs/checklist.md`. "Configurable" means **directly
+     `openrevuwer/docs/checklist.md`. "Configurable" means **directly
      editable** — just open and edit `docs/checklist.md`, no wizard/UI
      needed for routine changes. `checklistPath` in config exists on top of
      that for the less common case of pointing a specific watched repo at
@@ -49,14 +49,14 @@ a fresh session with: "implement the PR review bot per PRD.md".
 ## Architecture
 
 ```
-diffhawk/
+openrevuwer/
 ├── PRD.md                  (this file)
 ├── package.json            (pnpm, type: module, bin entry)
 ├── pnpm-lock.yaml
 ├── config.json             (repos to watch, reviewer username, checklist paths)
 ├── state.json              (gitignored — per-PR last-reviewed SHA, local only)
 ├── docs/
-│   ├── checklist.md          (diffhawk's own default review checklist)
+│   ├── checklist.md          (openrevuwer's own default review checklist)
 │   └── learnings.md          (optional, user-maintained — durable review notes/corrections)
 ├── bin/
 │   ├── poll.mjs             (one-shot poll entrypoint)
@@ -105,7 +105,7 @@ poller as a `pnpm` script / bin.
 4. **For PRs needing review**, build the review prompt:
    - Fetch diff: `gh pr diff <N> --repo OWNER/REPO`
    - Fetch PR metadata (title, description, base/head branch) via `gh pr view`
-   - Load the checklist doc from `checklistPath` (defaults to diffhawk's own
+   - Load the checklist doc from `checklistPath` (defaults to openrevuwer's own
      `docs/checklist.md`; overridable per-repo in config) and inline it into
      the prompt as review criteria.
    - Load `docs/learnings.md` (or repo-configured `learningsPath`) if present
@@ -174,7 +174,7 @@ poller as a `pnpm` script / bin.
 
 Prior-art research (CodeRabbit, Greptile, Bito, etc.) shows inline,
 severity-tagged comments are the near-universal pattern — a single summary
-comment (diffhawk's original design) is lower-value than line-anchored
+comment (openrevuwer's original design) is lower-value than line-anchored
 feedback. **Decided: adopt this.**
 
 The reviewer adapter must return findings as JSON, not freeform prose, e.g.:
@@ -212,7 +212,7 @@ false positives. **Decided: adopt a lightweight local equivalent.**
   intentional because Y", "this repo always does Z, not the checklist's
   default recommendation"). "Configurable" here means **directly editable**
   — the user opens the file and edits it, there's no wizard/UI for it.
-- Not auto-written by diffhawk itself in v1 — the user manually appends
+- Not auto-written by openrevuwer itself in v1 — the user manually appends
   entries after noticing the bot repeat a bad suggestion. (Auto-capturing
   "user reacted 👎 to this comment" would require polling PR comment
   reactions, which is a reasonable future enhancement but out of scope for
@@ -252,8 +252,8 @@ stdin, since that matches how the user already works — but keep it swappable.
   "pollTargets": [
     {
       "repo": "OWNER/socialpostai-v2",
-      "checklistPath": "/absolute/path/to/diffhawk/docs/checklist.md",
-      "learningsPath": "/absolute/path/to/diffhawk/docs/learnings.md"
+      "checklistPath": "/absolute/path/to/openrevuwer/docs/checklist.md",
+      "learningsPath": "/absolute/path/to/openrevuwer/docs/learnings.md"
     }
   ],
   "reviewerCommand": "claude -p",
@@ -261,7 +261,7 @@ stdin, since that matches how the user already works — but keep it swappable.
 }
 ```
 
-**Decided: repo name is `suguspnk/diffhawk`** for this bot's own repo (not
+**Decided: repo name is `suguspnk/openrevuwer`** for this bot's own repo (not
 to be confused with `socialpostai-v2`, which is what it watches/reviews).
 Confirm the actual `OWNER/socialpostai-v2` slug (check `git remote -v` in that
 repo) before wiring up `pollTargets` at implementation time.
@@ -280,7 +280,7 @@ repo) before wiring up `pollTargets` at implementation time.
 ## Scheduling
 
 `node bin/poll.mjs` remains a one-shot script — no built-in daemon/loop
-mode. **Decided: the `diffhawk init` wizard installs the schedule**, not a
+mode. **Decided: the `openrevuwer init` wizard installs the schedule**, not a
 manual next-session step — see **Onboarding** below for the exact flow
 (cron / launchd / Task Scheduler, each with a confirm-before-write, or
 "I'll do it myself" which only prints instructions). This section covers
@@ -301,7 +301,7 @@ what each option actually installs:
   wizard (below) checks this at setup time so auth problems surface before
   the first poll, not silently as a failed/skipped review later.
 
-## Onboarding (`diffhawk init`)
+## Onboarding (`openrevuwer init`)
 
 **Decided: an interactive setup wizard**, not a hand-edited config file.
 Modeled on well-known CLI onboarding flows (`gh auth login`, `npm init`,
@@ -312,7 +312,7 @@ inline validation, ends in a real test run rather than a wall of docs.
 mid-flow without leaving a half-written config), good default look
 (rounded borders/spinners) without needing custom styling work.
 
-Command: `pnpm dlx diffhawk init` (or `node bin/init.mjs` if run from a
+Command: `pnpm dlx openrevuwer init` (or `node bin/init.mjs` if run from a
 cloned checkout). Steps, in order:
 
 1. **Welcome banner.** One line — name + one-sentence purpose. No ASCII art.
@@ -330,7 +330,7 @@ cloned checkout). Steps, in order:
      `gh auth token --hostname ... --user ...` and pass the token only to
      child `gh` processes. Do not use
      `gh auth switch`, because it mutates global CLI state and races with
-     other scheduled Diffhawk instances.
+     other scheduled Openrevuwer instances.
 
 3. **Repo selection — decided: checklist, not a mode toggle.** No
    "one repo vs. all repos" branch. Instead:
@@ -352,7 +352,7 @@ cloned checkout). Steps, in order:
    during onboarding (that already exists as a manually-edited config
    option — see `checklistPath` in Config shape). The wizard just prints
    one line: *"Review checklist: docs/checklist.md — edit this file
-   anytime to change what diffhawk looks for, no need to rerun setup."*
+   anytime to change what openrevuwer looks for, no need to rerun setup."*
    Same one-line treatment for `docs/learnings.md`.
 
 5. **Reviewer backend — detect known agent CLIs, offer custom as always
@@ -385,7 +385,7 @@ cloned checkout). Steps, in order:
    - "I'll do it myself" — prints the equivalent manual snippet/steps for
      whichever platform the user is on and does nothing further.
 
-   **Decided: for the first three, diffhawk installs the entry itself**
+   **Decided: for the first three, openrevuwer installs the entry itself**
    (writes the crontab line / launchd plist + `launchctl load` / Task
    Scheduler entry) — not just instructions. But because this is a
    standing OS-level configuration change made on the user's behalf, the
@@ -418,7 +418,7 @@ All open items from spec drafting are now resolved:
 1. **Language: Node, managed with pnpm.** Bash was ruled out — it doesn't run
    natively on Windows, and cross-OS support (no WSL/Git Bash requirement) is
    a hard requirement. Node runs identically on all three OSes.
-2. **Bot repo name: `suguspnk/diffhawk`.** Still need the actual
+2. **Bot repo name: `suguspnk/openrevuwer`.** Still need the actual
    `OWNER/socialpostai-v2` slug for the *watched* repo — check `git remote -v`
    there at implementation time.
 3. **Search scope: configurable**, per-repo (default) or global via
@@ -430,21 +430,21 @@ All open items from spec drafting are now resolved:
    research:** inline, severity-tagged comments (via the REST API's
    `comments[]`, since `gh pr review` CLI can't anchor per-line), not a
    single review body — see **Structured output format** above.
-6. **Checklist source: diffhawk's own**, written from scratch at
+6. **Checklist source: openrevuwer's own**, written from scratch at
    `docs/checklist.md` — not borrowed from `socialpostai-v2` or any watched
    repo. Configurable per-repo via `checklistPath` so it can be overridden
    once deployed.
 7. **Prior-art research done** (competitive scan of CodeRabbit, Qodo/PR-Agent,
    Sourcery, DeepSource, Greptile, Hermes Agent, etc. — see conversation
    history). Confirmed no existing product does local-polling +
-   no-GitHub-App + BYO-LLM the way diffhawk does; two design patterns
+   no-GitHub-App + BYO-LLM the way openrevuwer does; two design patterns
    adopted from the scan:
    - **Inline, severity-tagged comments** instead of a single summary
      comment (near-universal pattern across commercial tools).
    - **A `docs/learnings.md` file** inlined into every prompt, so
      user-corrected mistakes don't repeat (lightweight local analog to
      CodeRabbit's "learnings" feature).
-8. **Onboarding UX designed** (`diffhawk init`, see full section above):
+8. **Onboarding UX designed** (`openrevuwer init`, see full section above):
    interactive wizard using `@clack/prompts`. Key resolved sub-decisions:
    - GitHub account selection lists every account authenticated in `gh` and
      pins repository discovery and polling to the selected identity.
@@ -466,7 +466,7 @@ All open items from spec drafting are now resolved:
 
 ## Open items for the next session
 
-1. Write `docs/checklist.md` (diffhawk's own review checklist — content not
+1. Write `docs/checklist.md` (openrevuwer's own review checklist — content not
    yet drafted). `docs/learnings.md` can start empty/absent — it's meant to
    accumulate over time, not be pre-populated.
 2. Implement `bin/init.mjs` per the Onboarding section — scheduling install
