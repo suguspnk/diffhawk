@@ -144,7 +144,7 @@ it up manually:
 
 ## Customizing reviews
 
-- **`docs/checklists/<owner>-<repo>.md`** — what diffhawk looks for in that
+- **`docs/checklists/<owner>/<repo>.md`** — what diffhawk looks for in that
   specific repo. `init` seeds one copy per watched repo from
   `docs/checklist.default.md` the first time you add that repo; edit a
   repo's copy directly any time, no code change or wizard rerun needed, and

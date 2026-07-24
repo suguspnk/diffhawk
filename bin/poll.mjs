@@ -158,7 +158,28 @@ async function main() {
       // fires when config.json has no checklistPath at all (e.g. a
       // hand-edited or pre-per-repo-checklist config), and the template is
       // the one checklist file guaranteed to exist without having run init.
-      const checklistPath = resolvePath(target.checklistPath || config.checklistPath || './docs/checklist.default.md');
+      //
+      // A config.json written before per-repo checklists existed has the
+      // old shared path baked in literally (e.g. "./docs/checklist.md"),
+      // which this repo's docs/checklist.md was renamed away from — so
+      // that path no longer resolves to anything, and without this check
+      // readOptional would silently return '' (an empty checklist, not an
+      // error) for every poll from then on. Redirect that one specific
+      // legacy value to the template instead of leaving it broken.
+      const configuredChecklistPath = target.checklistPath || config.checklistPath;
+      const usesLegacyChecklistPath = configuredChecklistPath === './docs/checklist.md';
+      if (usesLegacyChecklistPath) {
+        console.warn(
+          `[${key}] config.json's checklistPath ("./docs/checklist.md") no longer exists ` +
+          `— using docs/checklist.default.md instead. Run \`node bin/init.mjs\` to get a ` +
+          `dedicated, per-repo checklist for ${repo} at docs/checklists/${repo}.md.`,
+        );
+      }
+      const checklistPath = resolvePath(
+        usesLegacyChecklistPath
+          ? './docs/checklist.default.md'
+          : configuredChecklistPath || './docs/checklist.default.md',
+      );
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
       const checklist = await readOptional(checklistPath);
       const learnings = await readOptional(learningsPath);
