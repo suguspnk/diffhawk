@@ -68,6 +68,11 @@ async function main() {
       continue;
     }
 
+    if (candidates.length === 0) {
+      console.log(`no PRs awaiting your review in ${target.repo ?? '(global)'}`);
+      continue;
+    }
+
     for (const { repo, number } of candidates) {
       let pr;
       try {
@@ -138,6 +143,8 @@ async function main() {
       console.log(`posted review for ${key}`);
     }
   }
+
+  console.log('poll complete');
 }
 
 main().catch(async (err) => {
