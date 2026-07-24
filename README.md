@@ -90,7 +90,9 @@ not something to commit. It stores only the selected hostname and username,
 never a token. Each poll retrieves that account's token from the GitHub CLI
 credential store and passes it only to its child `gh` processes. Legacy
 configs with `githubUsername` continue to work and are interpreted as an
-account on `github.com`.
+account on `github.com`. Rerunning init with that same account migrates its
+existing review state to account-scoped keys; selecting a different account
+leaves the legacy state untouched so the new reviewer starts independently.
 
 ## Try it (dry run)
 

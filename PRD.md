@@ -323,6 +323,9 @@ cloned checkout). Steps, in order:
    - No authenticated accounts → print the exact fix (`gh auth login`) and
      exit immediately.
    - Store only the selected hostname and username in config, never a token.
+   - When upgrading a legacy config and retaining the same reviewer, migrate
+     unscoped state keys before writing the new config. Never attribute legacy
+     state to a newly selected, different account.
    - Resolve that account at poll time with
      `gh auth token --hostname ... --user ...` and pass the token only to
      child `gh` processes. Do not use

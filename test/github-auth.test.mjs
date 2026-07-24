@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   authEnvironment,
   configuredGitHubAccount,
+  legacyGitHubAccount,
   parseAuthStatus,
 } from '../lib/github-auth.mjs';
 
@@ -44,6 +45,23 @@ test('configuredGitHubAccount rejects missing account configuration', () => {
   assert.throws(
     () => configuredGitHubAccount({}),
     /missing githubAccount/,
+  );
+});
+
+test('legacyGitHubAccount identifies only the pre-account config shape', () => {
+  assert.deepEqual(
+    legacyGitHubAccount({
+      githubHostname: 'GitHub.com',
+      githubUsername: 'OctoCat',
+    }),
+    { hostname: 'github.com', username: 'OctoCat' },
+  );
+  assert.equal(
+    legacyGitHubAccount({
+      githubAccount: { hostname: 'github.com', username: 'octocat' },
+      githubUsername: 'legacy-user',
+    }),
+    null,
   );
 });
 
