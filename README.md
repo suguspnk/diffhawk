@@ -10,6 +10,13 @@ severity-tagged GitHub review.
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
 
+> **Upgrading from a local `diffhawk` clone?** Config, state, and logs used
+> to live in the repo root; they now live under `~/.openrevuwer/` (see
+> [Install](#install)). There's no automatic migration — copy your old
+> `config.json`/`state.json` into `~/.openrevuwer/` yourself, or just rerun
+> `init`. Without either, every currently-open PR you're a reviewer on will
+> be treated as new and re-reviewed on the next poll.
+
 ## Prerequisites
 
 Before running anything, make sure you have:
@@ -76,7 +83,7 @@ This will:
    Scheduler) — it shows you the **exact** entry before writing anything and
    asks for confirmation. You can also choose "I'll do it myself" to just get
    the instructions.
-6. Show you the final config and ask before writing `config.json`.
+6. Show you the final config and ask before writing `~/.openrevuwer/config.json`.
 
 Nothing is written to your system or to GitHub without an explicit
 confirmation at each step.

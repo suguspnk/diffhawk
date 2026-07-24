@@ -22,16 +22,12 @@ import {
   schtasksPreview, installSchtasks,
   manualInstructions,
 } from '../lib/scheduler.mjs';
-import { userHome, userPath } from '../lib/paths.mjs';
+import { userHome, userPath, resolveUserPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
 const pollScriptPath = path.join(packageRootDir, 'bin', 'poll.mjs');
 const configPath = userPath('config.json');
-
-function resolveProjectPath(filePath) {
-  return path.isAbsolute(filePath) ? filePath : userPath(filePath);
-}
 
 function exitCancelled() {
   p.cancel('Setup cancelled — nothing was written.');
@@ -264,7 +260,7 @@ async function main() {
   }
 
   if (sameReviewer(previousAccount, config.githubAccount)) {
-    const statePath = resolveProjectPath(config.stateFile);
+    const statePath = resolveUserPath(config.stateFile);
     const state = await loadState(statePath);
     if (migrateLegacyStateForReviewer(state, previousAccount, config.githubAccount)) {
       // Write state first. If the later config write fails, the old config can

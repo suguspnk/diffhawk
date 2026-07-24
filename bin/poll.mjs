@@ -22,7 +22,7 @@ import {
   recordReview,
 } from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
-import { userPath } from '../lib/paths.mjs';
+import { userPath, resolveUserPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
@@ -32,9 +32,7 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // Relative paths in config.json (checklistPath, learningsPath, stateFile) are
 // resolved against the user's openrevuwer home, not the package install dir —
 // see lib/paths.mjs for why.
-function resolvePath(p) {
-  return path.isAbsolute(p) ? p : userPath(p);
-}
+const resolvePath = resolveUserPath;
 
 async function readOptional(filePath) {
   try {

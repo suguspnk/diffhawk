@@ -7,18 +7,22 @@
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { parseArgs } from '../lib/dispatch.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const [subcommand, ...rest] = process.argv.slice(2);
+const parsed = parseArgs(process.argv.slice(2));
 
-const targetScript = subcommand === 'init'
-  ? path.join(__dirname, 'init.mjs')
-  : path.join(__dirname, 'poll.mjs');
+if (parsed.error) {
+  console.error(`openrevuwer: ${parsed.error}`);
+  console.error('Usage: openrevuwer [--dry-run]   Run a poll');
+  console.error('       openrevuwer init          Run the setup wizard');
+  process.exit(1);
+}
 
-const targetArgs = subcommand === 'init' ? rest : process.argv.slice(2);
+const targetScript = path.join(__dirname, `${parsed.subcommand}.mjs`);
 
-const result = spawnSync(process.execPath, [targetScript, ...targetArgs], {
+const result = spawnSync(process.execPath, [targetScript, ...parsed.flags], {
   stdio: 'inherit',
 });
 
