@@ -1,4 +1,4 @@
-# diffhawk
+# openrevuwer
 
 Local, agent-agnostic poller that auto-reviews GitHub PRs whenever you're the
 requested reviewer. Runs on your own machine on a schedule (cron / launchd /
@@ -16,8 +16,11 @@ rules) and [docs/tech-stack-standards.md](docs/tech-stack-standards.md)
 ## Layout
 
 ```
+bin/openrevuwer.mjs       published CLI entrypoint: dispatches to init.mjs or poll.mjs
 bin/init.mjs              interactive setup wizard (repo picker, reviewer CLI detect, scheduling)
 bin/poll.mjs              one-shot poll entrypoint (--dry-run supported)
+lib/dispatch.mjs          parses CLI arguments and dispatches init or poll commands
+lib/paths.mjs             resolves the per-user state directory (~/.openrevuwer, or $OPENREVUWER_HOME)
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
 lib/github-auth.mjs       resolves + scopes GitHub credentials (multi-account aware)
 lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
@@ -25,12 +28,15 @@ lib/reviewer-adapter.mjs  abstraction over the configured reviewer command
 lib/agent-detect.mjs      detects Claude Code / Codex on PATH + auth status
 lib/scheduler.mjs         cron/launchd/Task Scheduler installers
 test/                     node:test suite (`npm test`)
-docs/checklist.md         review checklist injected into every prompt
+docs/checklist.md         bundled default review checklist injected into every prompt
 docs/learnings.md         optional, gitignored — durable corrections fed into prompts
 ```
 
-`config.json` and `state.json` are gitignored (local, machine-specific).
-`config.example.json` is the template.
+All per-user state — `config.json`, `state.json`, `poll.log`, and the
+editable `docs/checklist.md` / `docs/learnings.md` — lives under
+`~/.openrevuwer/` (override with `OPENREVUWER_HOME`), not in this repo. See
+`lib/paths.mjs`. `config.example.json` here is just the template `init`
+copies from on first run.
 
 ## Key constraints (from the design spec — see PRD.md for the "why")
 
@@ -53,8 +59,13 @@ docs/learnings.md         optional, gitignored — durable corrections fed into 
 ## Running it
 
 ```bash
-node bin/poll.mjs --dry-run   # search, diff, prompt, invoke reviewer — no posting
-node bin/poll.mjs             # posts real GitHub reviews, updates state.json
+openrevuwer --dry-run   # search, diff, prompt, invoke reviewer — no posting
+openrevuwer             # posts real GitHub reviews, updates ~/.openrevuwer/state.json
+openrevuwer init        # setup wizard
 ```
 
-Failures are logged to `poll.log` in the repo root.
+When working in this repo directly (not the published package), the
+equivalent is `node bin/poll.mjs --dry-run` / `node bin/poll.mjs` /
+`node bin/init.mjs` — same behavior, same `~/.openrevuwer` state directory.
+
+Failures are logged to `~/.openrevuwer/poll.log`.
