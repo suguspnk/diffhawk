@@ -7,6 +7,9 @@ Be direct, no preamble.
 Flag concrete, high-confidence issues only. Skip style nitpicks unless they
 violate an explicit convention below. When in doubt, don't flag it.
 
+See [`docs/CODE_QUALITY_GUIDELINES.md`](CODE_QUALITY_GUIDELINES.md) for the
+full rationale and openrevuwer-specific detail behind each item below.
+
 ### Correctness
 
 - Logic errors: off-by-one, inverted conditions, wrong operator, unhandled

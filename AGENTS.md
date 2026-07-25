@@ -8,7 +8,10 @@ or any other command) to generate the review, then posts it back as an
 inline, severity-tagged GitHub review.
 
 Setup and usage: [README.md](README.md). Full design rationale and history:
-[PRD.md](PRD.md).
+[PRD.md](PRD.md). Coding standards for this repo:
+[docs/CODE_QUALITY_GUIDELINES.md](docs/CODE_QUALITY_GUIDELINES.md) (project
+rules) and [docs/tech-stack-standards.md](docs/tech-stack-standards.md)
+(external library/tool best practices).
 
 ## Layout
 
@@ -16,14 +19,19 @@ Setup and usage: [README.md](README.md). Full design rationale and history:
 bin/openrevuwer.mjs       published CLI entrypoint: dispatches to init.mjs or poll.mjs
 bin/init.mjs              interactive setup wizard (repo picker, reviewer CLI detect, scheduling)
 bin/poll.mjs              one-shot poll entrypoint (--dry-run supported)
+lib/dispatch.mjs          parses CLI arguments and dispatches init or poll commands
 lib/paths.mjs             resolves the per-user state directory (~/.openrevuwer, or $OPENREVUWER_HOME)
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
+lib/github-auth.mjs       resolves + scopes GitHub credentials (multi-account aware)
 lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
 lib/reviewer-adapter.mjs  abstraction over the configured reviewer command + prompt templating
 lib/review-prompts.mjs    seeds/locates each watched repo's review-prompt file under the user's openrevuwer home
 lib/agent-detect.mjs      detects Claude Code / Codex on PATH + auth status
 lib/scheduler.mjs         cron/launchd/Task Scheduler installers
+test/                     node:test suite (`npm test`)
 docs/review-prompt.default.md  bundled template new per-repo review prompts are seeded from
+docs/CODE_QUALITY_GUIDELINES.md  project-specific review and implementation guidance
+docs/learnings.md         optional, gitignored — durable corrections fed into prompts
 ```
 
 All per-user state — `config.json`, `state.json`, `poll.log`, and the
