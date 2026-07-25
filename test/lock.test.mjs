@@ -1,5 +1,6 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import {
   mkdir,
   readFile,
@@ -92,12 +93,21 @@ test('stale lock from a dead PID is reclaimed', async () => {
   await release();
 });
 
-test('lock held by a live process owned by another user (EPERM) blocks', async () => {
-  // PID 1 (init/launchd) is always alive and never signalable by a normal
-  // test user — process.kill(1, 0) throws EPERM, which must be treated as
-  // "alive", not as stale.
-  await writeFile(lockPath, '1');
-  assert.equal(await acquireLock(lockPath), null, 'live foreign-owned lock must block');
+test('lock held by a known live process blocks portably', async (t) => {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  t.after(() => {
+    child.kill();
+  });
+  await new Promise((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.once('error', reject);
+  });
+
+  await writeFile(lockPath, String(child.pid));
+  assert.equal(await acquireLock(lockPath), null, 'known live process lock must block');
 });
 
 test('a reused live PID with a different process identity is reclaimed', async () => {
@@ -207,6 +217,37 @@ test('a leaked reclaim gate older than the staleness threshold does not deadlock
   const release = await acquireLock(lockPath);
   assert.ok(release, 'stale lock behind a leaked gate should still be reclaimable');
   await release();
+});
+
+test('a recent reclaim gate returns without busy-looping', async () => {
+  await writeFile(lockPath, '999999999');
+  await writeFile(gatePath, 'recent-live-gate');
+
+  const started = Date.now();
+  assert.equal(await acquireLock(lockPath), null);
+  assert.ok(Date.now() - started < 1_000, 'recent gate should return promptly');
+  assert.equal(await readFile(gatePath, 'utf8'), 'recent-live-gate');
+});
+
+test('simultaneous stale-gate reclamation admits exactly one winner', async () => {
+  for (let i = 0; i < 25; i++) {
+    await cleanup();
+    await writeFile(lockPath, '999999999');
+    await writeFile(gatePath, `leaked-gate-${i}`);
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(gatePath, old, old);
+
+    const results = await Promise.all(
+      Array.from({ length: 16 }, () => acquireLock(lockPath)),
+    );
+    const winners = results.filter(Boolean);
+    assert.equal(
+      winners.length,
+      1,
+      `iteration ${i}: expected exactly 1 winner, got ${winners.length}`,
+    );
+    for (const release of winners) await release();
+  }
 });
 
 test('no stray lock/gate/temp files are left behind', async () => {
