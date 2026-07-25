@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as p from '@clack/prompts';
-import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
@@ -17,6 +17,10 @@ import {
 } from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
 import {
+  configuredReviewPromptPath,
+  ensureReviewPrompt,
+} from '../lib/review-prompts.mjs';
+import {
   cronPreview, installCron,
   launchdPreview, installLaunchd,
   schtasksPreview, installSchtasks,
@@ -29,6 +33,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
 const pollScriptPath = path.join(packageRootDir, 'bin', 'poll.mjs');
 const configPath = userPath('config.json');
+const reviewPromptTemplatePath = path.join(packageRootDir, 'docs', 'review-prompt.default.md');
 
 function exitCancelled() {
   p.cancel('Setup cancelled — nothing was written.');
@@ -41,16 +46,6 @@ async function main() {
 
   await mkdir(userHome(), { recursive: true });
   await mkdir(userPath('docs'), { recursive: true });
-
-  const userChecklistPath = userPath('docs', 'checklist.md');
-  try {
-    await readFile(userChecklistPath, 'utf8');
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-    // First run: seed the editable copy from the bundled default so
-    // "edit docs/checklist.md" in the README/prompts is immediately true.
-    await copyFile(path.join(packageRootDir, 'docs', 'checklist.md'), userChecklistPath);
-  }
 
   let existingConfig = null;
   try {
@@ -124,7 +119,20 @@ async function main() {
   });
   if (p.isCancel(selectedRepos)) exitCancelled();
 
-  p.log.info(`Review checklist: ${userChecklistPath} — edit this file anytime to change what openrevuwer looks for, no need to rerun setup.`);
+  const reviewPromptPaths = {};
+  for (const repo of selectedRepos) {
+    const configuredPath = configuredReviewPromptPath(existingConfig, repo);
+    reviewPromptPaths[repo] = await ensureReviewPrompt(repo, {
+      templatePath: reviewPromptTemplatePath,
+      seedPath: configuredPath ? resolveUserPath(configuredPath) : undefined,
+    });
+  }
+  p.log.info(
+    `Review prompt: one copy per repo under ${userPath('docs', 'review-prompts')} ` +
+    `(seeded from the bundled default) — edit a repo's copy anytime to change what ` +
+    `openrevuwer looks for and how it frames the review there, no need to rerun ` +
+    `setup. Existing copies were left untouched.`,
+  );
   p.log.info(`Learnings file: ${userPath('docs', 'learnings.md')} — append notes here when openrevuwer repeats a bad suggestion.`);
 
   const s2 = p.spinner();
@@ -239,7 +247,7 @@ async function main() {
     searchScope: 'per-repo',
     pollTargets: selectedRepos.map((repo) => ({
       repo,
-      checklistPath: './docs/checklist.md',
+      reviewPromptPath: reviewPromptPaths[repo],
       learningsPath: './docs/learnings.md',
     })),
     reviewerCommand,

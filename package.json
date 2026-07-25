@@ -26,7 +26,7 @@
   "files": [
     "bin",
     "lib",
-    "docs/checklist.md",
+    "docs/review-prompt.default.md",
     "config.example.json"
   ],
   "scripts": {

@@ -22,6 +22,10 @@ import {
   recordReview,
 } from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
+import {
+  ensureReviewPrompt,
+  reviewPromptProvisioning,
+} from '../lib/review-prompts.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
 import {
   processInBatches,
@@ -30,6 +34,11 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
+const defaultReviewPromptPath = path.join(
+  packageRootDir,
+  'docs',
+  'review-prompt.default.md',
+);
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -108,7 +117,13 @@ async function main() {
   }
 
   const targets = config.searchScope === 'global'
-    ? [{ repo: null, global: true, checklistPath: config.checklistPath, learningsPath: config.learningsPath }]
+    ? [{
+        repo: null,
+        global: true,
+        reviewPromptPath: config.reviewPromptPath,
+        checklistPath: config.checklistPath,
+        learningsPath: config.learningsPath,
+      }]
     : config.pollTargets;
 
   if (!Array.isArray(targets) || targets.length === 0) {
@@ -206,19 +221,22 @@ async function main() {
       return;
     }
 
-    const defaultChecklistPath = path.join(packageRootDir, 'docs', 'checklist.md');
-    const checklistPath = target.checklistPath || config.checklistPath
-      ? resolvePath(target.checklistPath || config.checklistPath)
-      : defaultChecklistPath;
+    // Prompt provisioning remains inside the worker so batched candidates
+    // retain main's per-repository migration and isolation behavior.
+    const provisioning = reviewPromptProvisioning(config, target, resolvePath);
+    const reviewPromptPath = await ensureReviewPrompt(repo, {
+      templatePath: defaultReviewPromptPath,
+      ...provisioning,
+    });
     const learningsPath = resolvePath(
       target.learningsPath || config.learningsPath || './docs/learnings.md',
     );
-    const [checklist, learnings] = await Promise.all([
-      readOptional(checklistPath),
+    const [template, learnings] = await Promise.all([
+      readOptional(reviewPromptPath),
       readOptional(learningsPath),
     ]);
 
-    const prompt = buildPrompt({ checklist, learnings, pr, diff });
+    const prompt = buildPrompt({ template, learnings, pr, diff });
 
     let rawOutput;
     try {
