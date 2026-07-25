@@ -93,6 +93,21 @@ test('ensureReviewPrompt falls back to the default when a configured seed is mis
   assert.equal(await readFile(absolutePath, 'utf8'), 'bundled default\n');
 });
 
+test('ensureReviewPrompt creates a missing explicitly configured destination', async (t) => {
+  const home = await withScratchHome(t);
+  const templatePath = path.join(home, 'review-prompt.default.md');
+  const destinationPath = path.join(home, 'docs', 'custom', 'repo.md');
+  await writeFile(templatePath, 'bundled default\n');
+
+  const absolutePath = await ensureReviewPrompt('owner/repo', {
+    templatePath,
+    destinationPath,
+  });
+
+  assert.equal(absolutePath, destinationPath);
+  assert.equal(await readFile(destinationPath, 'utf8'), 'bundled default\n');
+});
+
 test('ensureReviewPrompt never overwrites an existing per-repo prompt', async (t) => {
   await withScratchHome(t);
   const home = process.env.OPENREVUWER_HOME;
@@ -171,6 +186,10 @@ test('configuredReviewPromptPath prefers a matching repo target over a shared le
     configuredReviewPromptPath(config, 'owner/unlisted'),
     './docs/shared.md',
   );
+  assert.equal(
+    configuredReviewPromptPath(config, 'owner/repo', { includeTargets: false }),
+    './docs/shared.md',
+  );
 });
 
 test('global prompt seeding creates independent copies for each repository', async (t) => {
@@ -194,4 +213,31 @@ test('global prompt seeding creates independent copies for each repository', asy
   assert.notEqual(firstPath, secondPath);
   assert.equal(await readFile(firstPath, 'utf8'), 'repo one customization\n');
   assert.equal(await readFile(secondPath, 'utf8'), 'shared legacy customization\n');
+});
+
+test('concurrent prompt seeding succeeds without overwriting the winner', async (t) => {
+  const home = await withScratchHome(t);
+  const templatePath = path.join(home, 'review-prompt.default.md');
+  const seedPaths = Array.from(
+    { length: 16 },
+    (_, index) => path.join(home, `seed-${index}.md`),
+  );
+  await writeFile(templatePath, 'bundled default\n');
+  await Promise.all(
+    seedPaths.map((seedPath, index) => writeFile(seedPath, `seed ${index}\n`)),
+  );
+
+  const paths = await Promise.all(
+    seedPaths.map((seedPath) => ensureReviewPrompt('owner/repo', {
+      templatePath,
+      seedPath,
+    })),
+  );
+
+  assert.equal(new Set(paths).size, 1);
+  const content = await readFile(paths[0], 'utf8');
+  assert.ok(
+    seedPaths.some((_, index) => content === `seed ${index}\n`),
+    `unexpected seeded content: ${content}`,
+  );
 });

@@ -206,15 +206,29 @@ async function main() {
       // discovered repo's independent prompt lazily, using a configured
       // shared/legacy prompt only as its initial content. Subsequent edits
       // remain isolated to that repository.
-      const configuredPath = configuredReviewPromptPath(config, repo);
+      const configuredPath = configuredReviewPromptPath(config, repo, {
+        // pollTargets are explicitly ignored by the global-search contract.
+        includeTargets: !target.global,
+      });
+      const resolvedConfiguredPath = configuredPath
+        ? resolvePath(configuredPath)
+        : null;
+      const explicitReviewPromptPath = !target.global &&
+        (target.reviewPromptPath || config.reviewPromptPath);
       const reviewPromptPath = target.global
         ? await ensureReviewPrompt(repo, {
             templatePath: defaultReviewPromptPath,
-            seedPath: configuredPath ? resolvePath(configuredPath) : undefined,
+            seedPath: resolvedConfiguredPath,
           })
-        : configuredPath
-          ? resolvePath(configuredPath)
-          : defaultReviewPromptPath;
+        : explicitReviewPromptPath
+          ? await ensureReviewPrompt(repo, {
+              templatePath: defaultReviewPromptPath,
+              destinationPath: resolvePath(explicitReviewPromptPath),
+            })
+          : resolvedConfiguredPath ||
+            await ensureReviewPrompt(repo, {
+              templatePath: defaultReviewPromptPath,
+            });
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
       const template = await readOptional(reviewPromptPath);
       const learnings = await readOptional(learningsPath);
