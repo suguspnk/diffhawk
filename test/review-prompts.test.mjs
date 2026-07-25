@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { reviewPromptPathFor, ensureReviewPrompt } from '../lib/review-prompts.mjs';
+import {
+  configuredReviewPromptPath,
+  reviewPromptPathFor,
+  ensureReviewPrompt,
+} from '../lib/review-prompts.mjs';
 
 // reviewPromptPathFor/ensureReviewPrompt resolve against lib/paths.mjs's
 // userHome(), which reads OPENREVUWER_HOME at call time — point it at a
@@ -58,6 +62,35 @@ test('ensureReviewPrompt seeds a new repo prompt from the template', async (t) =
   assert.equal(absolutePath, path.join(home, 'docs', 'review-prompts', 'owner', 'repo.md'));
   const content = await readFile(absolutePath, 'utf8');
   assert.equal(content, 'Review this diff.\n- rule one\n');
+});
+
+test('ensureReviewPrompt migrates a configured prompt instead of replacing it with the default', async (t) => {
+  const home = await withScratchHome(t);
+  const templatePath = path.join(home, 'review-prompt.default.md');
+  const seedPath = path.join(home, 'docs', 'checklist.md');
+  await mkdir(path.dirname(seedPath), { recursive: true });
+  await writeFile(templatePath, 'bundled default\n');
+  await writeFile(seedPath, 'custom legacy checklist\n');
+
+  const absolutePath = await ensureReviewPrompt('owner/repo', {
+    templatePath,
+    seedPath,
+  });
+
+  assert.equal(await readFile(absolutePath, 'utf8'), 'custom legacy checklist\n');
+});
+
+test('ensureReviewPrompt falls back to the default when a configured seed is missing', async (t) => {
+  const home = await withScratchHome(t);
+  const templatePath = path.join(home, 'review-prompt.default.md');
+  await writeFile(templatePath, 'bundled default\n');
+
+  const absolutePath = await ensureReviewPrompt('owner/repo', {
+    templatePath,
+    seedPath: path.join(home, 'docs', 'missing-checklist.md'),
+  });
+
+  assert.equal(await readFile(absolutePath, 'utf8'), 'bundled default\n');
 });
 
 test('ensureReviewPrompt never overwrites an existing per-repo prompt', async (t) => {
@@ -119,4 +152,46 @@ test('ensureReviewPrompt run twice for the same repo is idempotent and does not 
   const absolutePath = await ensureReviewPrompt('owner/repo', { templatePath });
 
   assert.equal(await readFile(absolutePath, 'utf8'), 'v1\n');
+});
+
+test('configuredReviewPromptPath prefers a matching repo target over a shared legacy path', () => {
+  const config = {
+    checklistPath: './docs/shared.md',
+    pollTargets: [
+      { repo: 'owner/other', reviewPromptPath: './docs/other.md' },
+      { repo: 'owner/repo', checklistPath: './docs/custom-legacy.md' },
+    ],
+  };
+
+  assert.equal(
+    configuredReviewPromptPath(config, 'owner/repo'),
+    './docs/custom-legacy.md',
+  );
+  assert.equal(
+    configuredReviewPromptPath(config, 'owner/unlisted'),
+    './docs/shared.md',
+  );
+});
+
+test('global prompt seeding creates independent copies for each repository', async (t) => {
+  const home = await withScratchHome(t);
+  const templatePath = path.join(home, 'review-prompt.default.md');
+  const seedPath = path.join(home, 'docs', 'shared-legacy.md');
+  await mkdir(path.dirname(seedPath), { recursive: true });
+  await writeFile(templatePath, 'bundled default\n');
+  await writeFile(seedPath, 'shared legacy customization\n');
+
+  const firstPath = await ensureReviewPrompt('owner/repo-one', {
+    templatePath,
+    seedPath,
+  });
+  const secondPath = await ensureReviewPrompt('owner/repo-two', {
+    templatePath,
+    seedPath,
+  });
+  await writeFile(firstPath, 'repo one customization\n');
+
+  assert.notEqual(firstPath, secondPath);
+  assert.equal(await readFile(firstPath, 'utf8'), 'repo one customization\n');
+  assert.equal(await readFile(secondPath, 'utf8'), 'shared legacy customization\n');
 });

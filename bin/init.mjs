@@ -16,7 +16,10 @@ import {
   saveState,
 } from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
-import { ensureReviewPrompt } from '../lib/review-prompts.mjs';
+import {
+  configuredReviewPromptPath,
+  ensureReviewPrompt,
+} from '../lib/review-prompts.mjs';
 import {
   cronPreview, installCron,
   launchdPreview, installLaunchd,
@@ -117,8 +120,10 @@ async function main() {
 
   const reviewPromptPaths = {};
   for (const repo of selectedRepos) {
+    const configuredPath = configuredReviewPromptPath(existingConfig, repo);
     reviewPromptPaths[repo] = await ensureReviewPrompt(repo, {
       templatePath: reviewPromptTemplatePath,
+      seedPath: configuredPath ? resolveUserPath(configuredPath) : undefined,
     });
   }
   p.log.info(

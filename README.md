@@ -109,6 +109,11 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 
+With `"searchScope": "global"`, each repository's prompt is created lazily
+under `~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md` the first time a
+matching PR is found. A legacy config-level `reviewPromptPath` or
+`checklistPath` is used only to seed each independent copy.
+
 `~/.openrevuwer/config.json` is local, machine-specific config — it's never
 committed to a repo. It stores only the selected hostname and username, never
 a token. Each poll retrieves that account's token from the GitHub CLI

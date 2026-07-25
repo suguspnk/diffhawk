@@ -22,10 +22,19 @@ import {
   recordReview,
 } from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
+import {
+  configuredReviewPromptPath,
+  ensureReviewPrompt,
+} from '../lib/review-prompts.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
+const defaultReviewPromptPath = path.join(
+  packageRootDir,
+  'docs',
+  'review-prompt.default.md',
+);
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -192,13 +201,20 @@ async function main() {
       // detects that and wraps it with the old fixed framing/sections
       // instead of running placeholder substitution on it, so this old
       // file keeps producing a working prompt without needing migration.
-      const defaultReviewPromptPath = path.join(packageRootDir, 'docs', 'review-prompt.default.md');
-      const configuredReviewPromptPath =
-        target.reviewPromptPath || config.reviewPromptPath ||
-        target.checklistPath || config.checklistPath;
-      const reviewPromptPath = configuredReviewPromptPath
-        ? resolvePath(configuredReviewPromptPath)
-        : defaultReviewPromptPath;
+      //
+      // Global search discovers repositories only at poll time. Seed each
+      // discovered repo's independent prompt lazily, using a configured
+      // shared/legacy prompt only as its initial content. Subsequent edits
+      // remain isolated to that repository.
+      const configuredPath = configuredReviewPromptPath(config, repo);
+      const reviewPromptPath = target.global
+        ? await ensureReviewPrompt(repo, {
+            templatePath: defaultReviewPromptPath,
+            seedPath: configuredPath ? resolvePath(configuredPath) : undefined,
+          })
+        : configuredPath
+          ? resolvePath(configuredPath)
+          : defaultReviewPromptPath;
       const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
       const template = await readOptional(reviewPromptPath);
       const learnings = await readOptional(learningsPath);
