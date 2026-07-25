@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_REVIEW_BATCH_SIZE,
+  isValidReviewBatchSize,
   processInBatches,
   resolveReviewBatchSize,
 } from '../lib/poll-batching.mjs';
@@ -14,6 +15,14 @@ test('review batch size defaults to five when omitted', () => {
 test('review batch size accepts positive whole numbers', () => {
   assert.equal(resolveReviewBatchSize(1), 1);
   assert.equal(resolveReviewBatchSize(12), 12);
+});
+
+test('review batch size validity can be reused when preserving init config', () => {
+  assert.equal(isValidReviewBatchSize(1), true);
+  assert.equal(isValidReviewBatchSize(12), true);
+  for (const value of [undefined, null, 0, -1, 1.5, '5']) {
+    assert.equal(isValidReviewBatchSize(value), false);
+  }
 });
 
 test('review batch size rejects malformed config values', () => {
