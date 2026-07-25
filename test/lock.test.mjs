@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { acquireLock } from '../lib/lock.mjs';
 
-const lockPath = path.join(tmpdir(), `diffhawk-lock-test-${process.pid}.lock`);
+const lockPath = path.join(tmpdir(), `openrevuwer-lock-test-${process.pid}.lock`);
 const gatePath = `${lockPath}.reclaiming`;
 
 async function cleanup() {
