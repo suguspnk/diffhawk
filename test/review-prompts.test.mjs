@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   configuredReviewPromptPath,
+  reviewPromptProvisioning,
   reviewPromptPathFor,
   ensureReviewPrompt,
 } from '../lib/review-prompts.mjs';
@@ -189,6 +190,73 @@ test('configuredReviewPromptPath prefers a matching repo target over a shared le
   assert.equal(
     configuredReviewPromptPath(config, 'owner/repo', { includeTargets: false }),
     './docs/shared.md',
+  );
+});
+
+test('legacy per-target checklists seed independent per-repo destinations', () => {
+  const config = {
+    reviewPromptPath: './docs/shared-prompt.md',
+    checklistPath: './docs/shared-checklist.md',
+  };
+  const target = {
+    repo: 'owner/repo',
+    checklistPath: './docs/target-checklist.md',
+  };
+
+  assert.deepEqual(
+    reviewPromptProvisioning(config, target, (value) => `/home/${value}`),
+    {
+      destinationPath: undefined,
+      seedPath: '/home/./docs/target-checklist.md',
+    },
+  );
+});
+
+test('only a target-level review prompt is an explicit destination', () => {
+  const resolvePath = (value) => `/home/${value}`;
+  assert.deepEqual(
+    reviewPromptProvisioning(
+      { reviewPromptPath: './docs/shared.md' },
+      { repo: 'owner/repo' },
+      resolvePath,
+    ),
+    {
+      destinationPath: undefined,
+      seedPath: '/home/./docs/shared.md',
+    },
+  );
+  assert.deepEqual(
+    reviewPromptProvisioning(
+      { reviewPromptPath: './docs/shared.md' },
+      {
+        repo: 'owner/repo',
+        reviewPromptPath: './docs/repo.md',
+        checklistPath: './docs/legacy-repo.md',
+      },
+      resolvePath,
+    ),
+    {
+      destinationPath: '/home/./docs/repo.md',
+      seedPath: '/home/./docs/legacy-repo.md',
+    },
+  );
+});
+
+test('global prompt provisioning ignores per-target paths', () => {
+  assert.deepEqual(
+    reviewPromptProvisioning(
+      { reviewPromptPath: './docs/global-seed.md' },
+      {
+        global: true,
+        reviewPromptPath: './docs/stale-target.md',
+        checklistPath: './docs/stale-checklist.md',
+      },
+      (value) => `/home/${value}`,
+    ),
+    {
+      destinationPath: undefined,
+      seedPath: '/home/./docs/global-seed.md',
+    },
   );
 });
 
