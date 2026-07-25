@@ -196,10 +196,9 @@ test('a silent connected service is treated as ambiguous', async (t) => {
     }, resolve);
   });
 
-  assert.equal(
-    await acquireLock(key, { probeTimeoutMs: 20 }),
-    null,
-    'a connected peer that does not identify itself must not be bypassed',
+  await assert.rejects(
+    acquireLock(key, { probeTimeoutMs: 20 }),
+    /unable to identify a silent listener/,
   );
 });
 
