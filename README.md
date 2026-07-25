@@ -49,10 +49,10 @@ Or skip the install and run it on demand with `npx`:
 npx openrevuwer init
 ```
 
-Config, poll state, logs, and your editable checklist/learnings files all
-live under `~/.openrevuwer/` (override with the `OPENREVUWER_HOME` env var) —
-not inside the package install — so they survive upgrades and don't need
-write access to wherever npm put the package.
+Config, poll state, logs, and your editable per-repo review prompts/learnings
+files all live under `~/.openrevuwer/` (override with the `OPENREVUWER_HOME`
+env var) — not inside the package install — so they survive upgrades and
+don't need write access to wherever npm put the package.
 
 If you want scheduling (cron/launchd/Task Scheduler) to keep working long
 term, install with `npm install -g` rather than running through `npx` —
@@ -72,10 +72,11 @@ This will:
    collaborator repos — as a type-to-filter, multi-select list (handy if
    that's hundreds or thousands of repos). Select the ones you want
    openrevuwer to watch.
-3. Print where the default checklist (`~/.openrevuwer/docs/checklist.md`,
-   seeded from the bundled default on first run) and learnings file
-   (`~/.openrevuwer/docs/learnings.md`) live — edit those anytime, no need to
-   rerun setup.
+3. Seed a review prompt for each selected repo under
+   `~/.openrevuwer/docs/review-prompts/` (from the bundled default template,
+   only if that repo doesn't already have one) and print where it and the
+   shared learnings file (`~/.openrevuwer/docs/learnings.md`) live — edit
+   either anytime, no need to rerun setup.
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead.
@@ -104,10 +105,15 @@ then copy `<that path>/openrevuwer/config.example.json` to
 |---|---|
 | `githubAccount` | `{ hostname, username }` for the authenticated `gh` account that searches for review requests and posts reviews. |
 | `searchScope` | `"per-repo"` (default) to only watch `pollTargets`, or `"global"` to search every repo you have access to. |
-| `pollTargets` | Array of `{ repo, checklistPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
+| `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 | `lockFile` | Path to the lock file used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`). If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
+
+With `"searchScope": "global"`, each repository's prompt is created lazily
+under `~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md` the first time a
+matching PR is found. A legacy config-level `reviewPromptPath` or
+`checklistPath` is used only to seed each independent copy.
 
 `~/.openrevuwer/config.json` is local, machine-specific config — it's never
 committed to a repo. It stores only the selected hostname and username, never
@@ -168,8 +174,19 @@ it up manually:
 
 ## Customizing reviews
 
-- **`~/.openrevuwer/docs/checklist.md`** — what openrevuwer looks for. Edit it
-  directly; no code change or wizard rerun needed.
+- **`~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md`** — the actual
+  prompt sent to the reviewer CLI for that specific repo: framing, review
+  criteria, and where the PR title/body/diff and past learnings get
+  inserted (via `{{pr_title}}`, `{{pr_number}}`, `{{pr_body}}`, `{{diff}}`,
+  and `{{learnings_section}}` placeholders). `init` seeds one copy per
+  watched repo from the bundled default the first time you add that repo;
+  edit a repo's copy directly any time — reorder sections, change the
+  criteria, adjust the framing, no code change or wizard rerun needed — and
+  it never affects any other repo's prompt. Re-running `init` never
+  overwrites an existing copy. The strict JSON output-format instruction
+  the review-posting logic depends on to anchor inline comments is always
+  appended automatically and isn't part of this file, so an edit here can't
+  break that regardless of what you change.
 - **`~/.openrevuwer/docs/learnings.md`** — durable notes to stop openrevuwer repeating a bad
   suggestion (e.g. "don't flag X, it's intentional because Y"). Doesn't exist
   by default — create it whenever you have a correction to record. It's

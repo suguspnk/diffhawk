@@ -105,24 +105,27 @@ poller as a `pnpm` script / bin.
 4. **For PRs needing review**, build the review prompt:
    - Fetch diff: `gh pr diff <N> --repo OWNER/REPO`
    - Fetch PR metadata (title, description, base/head branch) via `gh pr view`
-   - Load the checklist doc from `checklistPath` (defaults to openrevuwer's own
-     `docs/checklist.md`; overridable per-repo in config) and inline it into
-     the prompt as review criteria.
+   - Load the repository's user-editable prompt from `reviewPromptPath`.
+     Setup seeds one independent prompt per repository from
+     `docs/review-prompt.default.md`; legacy checklist paths remain supported
+     as migration inputs.
    - Load `docs/learnings.md` (or repo-configured `learningsPath`) if present
      and inline it too — see **Learnings file** below.
    - Compose a prompt roughly like:
      ```
-     Review this pull request diff against the checklist below. Report
-     concrete, high-confidence issues only (bugs, security, correctness,
-     violations of established repo conventions). Cite file:line. Be direct,
-     no preamble.
+     Perform a complete review of the entire pull request diff. Report every
+     distinct, concrete, high-confidence issue you can substantiate. Do not
+     stop after the first issue or impose an arbitrary findings limit.
+
+     The supplied diff is cumulative. On a re-review, inspect every file and
+     hunk — including code from earlier commits — as if it has not been
+     reviewed before. Use multiple silent passes for behavior/data flow,
+     correctness/edge cases, security/error handling/compatibility, tests,
+     and a final full-diff rescan. Deduplicate findings by root cause.
 
      For each issue, output a structured entry: file, line, severity
      (critical/major/nit), and the comment text — see "Structured output
      format" below for the exact shape the adapter must return.
-
-     ## Checklist
-     <contents of docs/checklist.md or repo-configured checklistPath>
 
      ## Past learnings (adjust future reviews accordingly)
      <contents of docs/learnings.md, if present>
