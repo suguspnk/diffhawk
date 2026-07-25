@@ -1,6 +1,14 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile, unlink, readdir, utimes } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  unlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { acquireLock } from '../lib/lock.mjs';
@@ -12,7 +20,9 @@ async function cleanup() {
   const dir = path.dirname(lockPath);
   const base = path.basename(lockPath);
   for (const f of await readdir(dir)) {
-    if (f.startsWith(base)) await unlink(path.join(dir, f)).catch(() => {});
+    if (f.startsWith(base)) {
+      await rm(path.join(dir, f), { recursive: true, force: true });
+    }
   }
 }
 
@@ -29,6 +39,34 @@ test('fresh acquire succeeds and release allows reacquire', async () => {
   const again = await acquireLock(lockPath);
   assert.ok(again, 'acquire after release should succeed');
   await again();
+});
+
+test('release ignores an already-missing lock but propagates real filesystem errors', async () => {
+  const releaseMissing = await acquireLock(lockPath);
+  await unlink(lockPath);
+  await releaseMissing();
+
+  const releaseError = await acquireLock(lockPath);
+  await unlink(lockPath);
+  await mkdir(lockPath);
+  await assert.rejects(
+    releaseError(),
+    (err) => err.code !== 'ENOENT',
+  );
+});
+
+test('an old release callback cannot remove a newer lock generation', async () => {
+  const firstRelease = await acquireLock(lockPath);
+  await firstRelease();
+
+  const secondRelease = await acquireLock(lockPath);
+  await firstRelease();
+  assert.equal(
+    JSON.parse(await readFile(lockPath, 'utf8')).pid,
+    process.pid,
+    'newer lock should remain after an old release callback is reused',
+  );
+  await secondRelease();
 });
 
 test('empty lock file (crash remnant) is reclaimed, not treated as held forever', async () => {
@@ -60,6 +98,43 @@ test('lock held by a live process owned by another user (EPERM) blocks', async (
   // "alive", not as stale.
   await writeFile(lockPath, '1');
   assert.equal(await acquireLock(lockPath), null, 'live foreign-owned lock must block');
+});
+
+test('a reused live PID with a different process identity is reclaimed', async () => {
+  const currentIdentity = `test-process-${process.pid}`;
+  await writeFile(lockPath, JSON.stringify({
+    version: 1,
+    pid: process.pid,
+    identity: 'previous-process-with-reused-pid',
+  }));
+
+  const release = await acquireLock(lockPath, {
+    getProcessIdentity: async () => currentIdentity,
+  });
+
+  assert.ok(release, 'mismatched process identity should make the old lock stale');
+  assert.equal(
+    JSON.parse(await readFile(lockPath, 'utf8')).identity,
+    currentIdentity,
+  );
+  await release();
+});
+
+test('a live PID with the matching process identity remains held', async () => {
+  const identity = `test-process-${process.pid}`;
+  await writeFile(lockPath, JSON.stringify({
+    version: 1,
+    pid: process.pid,
+    identity,
+  }));
+
+  assert.equal(
+    await acquireLock(lockPath, {
+      getProcessIdentity: async () => identity,
+    }),
+    null,
+    'matching PID and process identity should block a second holder',
+  );
 });
 
 test('simultaneous fresh acquires: exactly one winner (no empty-visible window)', async () => {
