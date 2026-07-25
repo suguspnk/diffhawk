@@ -6,7 +6,11 @@ import { readdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { acquireLock, lockPortFor } from '../lib/lock.mjs';
+import {
+  acquireLock,
+  compareLockOwners,
+  lockPortFor,
+} from '../lib/lock.mjs';
 
 function lockKey(label) {
   return path.join(
@@ -56,6 +60,13 @@ test('simultaneous acquires have exactly one winner', async () => {
     );
     await winners[0]();
   }
+});
+
+test('same-key contenders elect the lowest candidate rank', () => {
+  const laterCandidate = { identity: 'a'.repeat(64), rank: 1, port: 49_153 };
+  const earlierCandidate = { identity: 'a'.repeat(64), rank: 0, port: 49_152 };
+  assert.equal(compareLockOwners(earlierCandidate, laterCandidate), -1);
+  assert.equal(compareLockOwners(laterCandidate, earlierCandidate), 1);
 });
 
 test('different lock keys can be held concurrently', async () => {
