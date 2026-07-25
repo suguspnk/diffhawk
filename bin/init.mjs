@@ -26,6 +26,7 @@ import {
   schtasksPreview, installSchtasks,
   manualInstructions,
 } from '../lib/scheduler.mjs';
+import { isValidReviewBatchSize } from '../lib/poll-batching.mjs';
 import { userHome, userPath, resolveUserPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -253,6 +254,11 @@ async function main() {
     reviewerInputMode,
     stateFile,
   };
+  if (isValidReviewBatchSize(existingConfig?.reviewBatchSize)) {
+    // This advanced setting is intentionally configured by hand rather than
+    // prompted for. Preserve it when the setup wizard rewrites config.json.
+    config.reviewBatchSize = existingConfig.reviewBatchSize;
+  }
 
   p.note(JSON.stringify(config, null, 2), `Config to write (${configPath})`);
   const confirmWrite = await p.confirm({ message: 'Write config.json?', initialValue: true });

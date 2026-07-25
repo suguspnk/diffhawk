@@ -27,6 +27,10 @@ import {
   reviewPromptProvisioning,
 } from '../lib/review-prompts.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
+import {
+  processInBatches,
+  resolveReviewBatchSize,
+} from '../lib/poll-batching.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
@@ -87,6 +91,7 @@ async function main() {
     throw err;
   }
   const config = JSON.parse(configRaw);
+  const reviewBatchSize = resolveReviewBatchSize(config.reviewBatchSize);
 
   const stateFile = resolvePath(config.stateFile || './state.json');
   const logPath = resolvePath('poll.log');
@@ -129,6 +134,9 @@ async function main() {
     return;
   }
 
+  const reviewQueue = [];
+  const queuedPullRequests = new Set();
+
   for (const target of targets) {
     let candidates;
     try {
@@ -151,114 +159,127 @@ async function main() {
       continue;
     }
 
-    for (const { repo, number } of candidates) {
-      let pr;
-      try {
-        pr = await timedStep(
-          `fetching PR metadata for ${repo}#${number}`,
-          () => getPullRequest({ repo, number, auth: githubAuth }),
-        );
-      } catch (err) {
-        await logFailure(logPath, `pr view failed for ${repo}#${number}: ${err.message}`);
-        continue;
-      }
+    for (const candidate of candidates) {
+      const candidateKey = `${candidate.repo}#${candidate.number}`;
+      if (queuedPullRequests.has(candidateKey)) continue;
 
-      const key = prKey(repo, number, githubAccount);
-      if (!needsReview(state, key, pr.headRefOid)) {
-        console.log(`skip ${key} (already reviewed at ${pr.headRefOid})`);
-        continue;
-      }
-
-      console.log(`reviewing ${key} @ ${pr.headRefOid}`);
-
-      let diff;
-      try {
-        diff = await timedStep(
-          `[${key}] fetching diff`,
-          () => getPullRequestDiff({ repo, number, auth: githubAuth }),
-        );
-      } catch (err) {
-        await logFailure(logPath, `diff fetch failed for ${key}: ${err.message}`);
-        continue;
-      }
-
-      // The bundled default (packageRootDir, not the user's openrevuwer
-      // home) is the fallback here — this only fires when config.json has
-      // no reviewPromptPath at all (e.g. a hand-edited config), and the
-      // bundled default is the one review-prompt file guaranteed to exist
-      // without having run init.
-      //
-      // "checklistPath" (this key's name before this change) is still read
-      // as a fallback for one more release. Unlike the earlier repo-root
-      // diffhawk era (whose paths resolved against a different base and
-      // are a separate, already-documented no-automatic-migration case —
-      // see README's "Upgrading from a local diffhawk clone" note), a
-      // config written under the current ~/.openrevuwer/ model with
-      // "checklistPath": "./docs/checklist.md" still resolves to a real,
-      // existing file (init seeded it there before this change), so it's
-      // read as-is here rather than redirected. Its CONTENT is old-format
-      // (a plain criteria list, no {{diff}} placeholder) though — buildPrompt
-      // detects that and wraps it with the old fixed framing/sections
-      // instead of running placeholder substitution on it, so this old
-      // file keeps producing a working prompt without needing migration.
-      //
-      // Global search discovers repositories only at poll time. Seed each
-      // discovered repo's independent prompt lazily, using a configured
-      // shared/legacy prompt only as its initial content. Subsequent edits
-      // remain isolated to that repository.
-      const provisioning = reviewPromptProvisioning(config, target, resolvePath);
-      const reviewPromptPath = await ensureReviewPrompt(repo, {
-        templatePath: defaultReviewPromptPath,
-        ...provisioning,
-      });
-      const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
-      const template = await readOptional(reviewPromptPath);
-      const learnings = await readOptional(learningsPath);
-
-      const prompt = buildPrompt({ template, learnings, pr, diff });
-
-      let rawOutput;
-      try {
-        rawOutput = await timedStep(
-          `[${key}] invoking reviewer ("${config.reviewerCommand}")`,
-          () => invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt }),
-        );
-      } catch (err) {
-        // Decided: log and skip posting entirely, leave state unchanged so
-        // the next poll retries — never post a broken/empty review.
-        await logFailure(logPath, `reviewer adapter failed for ${key}: ${err.message}`);
-        continue;
-      }
-
-      const { summary, findings } = parseFindings(rawOutput);
-
-      if (DRY_RUN) {
-        console.log(`--- dry run result for ${key} ---`);
-        console.log(summary);
-        console.log(`${findings.length} inline finding(s)`);
-        continue;
-      }
-
-      try {
-        await timedStep(`[${key}] posting review`, () => postReview({
-          repo,
-          number,
-          commitId: pr.headRefOid,
-          body: summary,
-          comments: findings,
-          diff,
-          auth: githubAuth,
-        }));
-      } catch (err) {
-        await logFailure(logPath, `post review failed for ${key}: ${err.message}`);
-        continue;
-      }
-
-      recordReview(state, key, pr.headRefOid, new Date().toISOString());
-      await saveState(stateFile, state);
-      console.log(`posted review for ${key}`);
+      queuedPullRequests.add(candidateKey);
+      reviewQueue.push({ target, ...candidate });
     }
   }
+
+  if (reviewQueue.length === 0) {
+    console.log('poll complete');
+    return;
+  }
+
+  console.log(
+    `processing ${reviewQueue.length} candidate PR(s) in batches of ${reviewBatchSize}`,
+  );
+
+  // State writes remain sequential even though reviews run concurrently.
+  // Without this queue, overlapping writeFile calls could leave state.json
+  // missing a successfully posted review.
+  let stateWriteQueue = Promise.resolve();
+  function persistReview(key, sha) {
+    const write = stateWriteQueue.then(async () => {
+      recordReview(state, key, sha, new Date().toISOString());
+      await saveState(stateFile, state);
+    });
+    stateWriteQueue = write.catch(() => {});
+    return write;
+  }
+
+  async function reviewCandidate({ target, repo, number }) {
+    let pr;
+    try {
+      pr = await timedStep(
+        `fetching PR metadata for ${repo}#${number}`,
+        () => getPullRequest({ repo, number, auth: githubAuth }),
+      );
+    } catch (err) {
+      await logFailure(logPath, `pr view failed for ${repo}#${number}: ${err.message}`);
+      return;
+    }
+
+    const key = prKey(repo, number, githubAccount);
+    if (!needsReview(state, key, pr.headRefOid)) {
+      console.log(`skip ${key} (already reviewed at ${pr.headRefOid})`);
+      return;
+    }
+
+    console.log(`reviewing ${key} @ ${pr.headRefOid}`);
+
+    let diff;
+    try {
+      diff = await timedStep(
+        `[${key}] fetching diff`,
+        () => getPullRequestDiff({ repo, number, auth: githubAuth }),
+      );
+    } catch (err) {
+      await logFailure(logPath, `diff fetch failed for ${key}: ${err.message}`);
+      return;
+    }
+
+    // Prompt provisioning remains inside the worker so batched candidates
+    // retain main's per-repository migration and isolation behavior.
+    const provisioning = reviewPromptProvisioning(config, target, resolvePath);
+    const reviewPromptPath = await ensureReviewPrompt(repo, {
+      templatePath: defaultReviewPromptPath,
+      ...provisioning,
+    });
+    const learningsPath = resolvePath(
+      target.learningsPath || config.learningsPath || './docs/learnings.md',
+    );
+    const [template, learnings] = await Promise.all([
+      readOptional(reviewPromptPath),
+      readOptional(learningsPath),
+    ]);
+
+    const prompt = buildPrompt({ template, learnings, pr, diff });
+
+    let rawOutput;
+    try {
+      rawOutput = await timedStep(
+        `[${key}] invoking reviewer ("${config.reviewerCommand}")`,
+        () => invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt }),
+      );
+    } catch (err) {
+      // Decided: log and skip posting entirely, leave state unchanged so
+      // the next poll retries — never post a broken/empty review.
+      await logFailure(logPath, `reviewer adapter failed for ${key}: ${err.message}`);
+      return;
+    }
+
+    const { summary, findings } = parseFindings(rawOutput);
+
+    if (DRY_RUN) {
+      console.log(`--- dry run result for ${key} ---`);
+      console.log(summary);
+      console.log(`${findings.length} inline finding(s)`);
+      return;
+    }
+
+    try {
+      await timedStep(`[${key}] posting review`, () => postReview({
+        repo,
+        number,
+        commitId: pr.headRefOid,
+        body: summary,
+        comments: findings,
+        diff,
+        auth: githubAuth,
+      }));
+    } catch (err) {
+      await logFailure(logPath, `post review failed for ${key}: ${err.message}`);
+      return;
+    }
+
+    await persistReview(key, pr.headRefOid);
+    console.log(`posted review for ${key}`);
+  }
+
+  await processInBatches(reviewQueue, reviewBatchSize, reviewCandidate);
 
   console.log('poll complete');
 }

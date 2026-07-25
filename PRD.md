@@ -90,7 +90,11 @@ poller as a `pnpm` script / bin.
    cover every repo the user has access to from one config entry. Default to
    per-repo (explicit, predictable) unless global is set.
 
-2. **For each candidate PR**, get the current head commit SHA:
+2. **Review candidates in bounded concurrent batches.** Build one queue across
+   all configured poll targets, deduplicate PRs that appear more than once,
+   and process up to `reviewBatchSize` PRs concurrently (default `5`). This is
+   an advanced `config.json` setting and is not prompted for during onboarding.
+   For each candidate, get the current head commit SHA:
    ```bash
    gh pr view <N> --repo OWNER/REPO --json headRefOid,number,title,url
    ```
@@ -260,6 +264,7 @@ stdin, since that matches how the user already works — but keep it swappable.
     }
   ],
   "reviewerCommand": "claude -p",
+  "reviewBatchSize": 5,
   "stateFile": "./state.json"
 }
 ```

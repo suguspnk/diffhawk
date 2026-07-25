@@ -107,6 +107,7 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `searchScope` | `"per-repo"` (default) to only watch `pollTargets`, or `"global"` to search every repo you have access to. |
 | `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
+| `reviewBatchSize` | Maximum PR reviews to run concurrently (defaults to `5`). This advanced setting is configured by editing the file; the onboarding wizard does not prompt for it. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 
 With `"searchScope": "global"`, each repository's prompt is created lazily
@@ -145,7 +146,9 @@ openrevuwer
 
 This posts an actual GitHub PR review (inline comments + summary) for every
 PR where you're the requested reviewer and the head commit hasn't been
-reviewed yet. On success, it records the reviewed SHA in
+reviewed yet. Reviews run concurrently in batches of five by default; set
+`reviewBatchSize` in `~/.openrevuwer/config.json` to change that limit. On
+success, it records the reviewed SHA in
 `~/.openrevuwer/state.json` so the same commit isn't re-reviewed next run.
 State keys include the selected GitHub account, so two accounts can review
 the same PR independently.
