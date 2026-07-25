@@ -62,3 +62,34 @@ test('batch processing rejects an invalid size instead of stalling', async () =>
     /reviewBatchSize must be a positive whole number/,
   );
 });
+
+test('a worker failure waits for its started siblings before propagating', async () => {
+  let releaseSibling;
+  let laterBatchStarted = false;
+
+  const run = processInBatches([1, 2, 3], 2, (item) => {
+    if (item === 1) throw new Error('worker failed');
+    if (item === 2) {
+      return new Promise((resolve) => {
+        releaseSibling = resolve;
+      });
+    }
+    if (item === 3) laterBatchStarted = true;
+    return item;
+  });
+  const rejection = assert.rejects(run, /worker failed/);
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(laterBatchStarted, false);
+
+  let propagated = false;
+  run.catch(() => {
+    propagated = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(propagated, false);
+
+  releaseSibling();
+  await rejection;
+  assert.equal(laterBatchStarted, false);
+});
