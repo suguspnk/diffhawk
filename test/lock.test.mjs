@@ -183,6 +183,26 @@ test('an unrelated service on the first port is skipped safely', async (t) => {
   await release();
 });
 
+test('a silent connected service is treated as ambiguous', async (t) => {
+  const key = lockKey('silent-service');
+  const server = createServer(() => {});
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({
+      host: '127.0.0.1',
+      port: lockPortFor(key),
+      exclusive: true,
+    }, resolve);
+  });
+
+  assert.equal(
+    await acquireLock(key, { probeTimeoutMs: 20 }),
+    null,
+    'a connected peer that does not identify itself must not be bypassed',
+  );
+});
+
 test('contention behind an unrelated first-port service still has one winner', async (t) => {
   const key = lockKey('fallback-contention');
   const server = createServer((socket) => socket.end('not-openrevuwer\n'));
