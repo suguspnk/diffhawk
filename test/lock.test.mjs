@@ -60,10 +60,7 @@ test('simultaneous acquires have exactly one winner', async () => {
 
 test('different lock keys can be held concurrently', async () => {
   const firstKey = lockKey('independent-one');
-  let secondKey = lockKey('independent-two');
-  while (lockPortFor(secondKey) === lockPortFor(firstKey)) {
-    secondKey = lockKey('independent-two');
-  }
+  const secondKey = lockKey('independent-two');
   const first = await acquireLock(firstKey);
   const second = await acquireLock(secondKey);
   assert.ok(first);
@@ -125,10 +122,42 @@ test('acquisition and release leave no filesystem artifacts', async () => {
   assert.deepEqual(leftovers, []);
 });
 
-test('an unrelated service on the deterministic port fails clearly', async (t) => {
-  const key = lockKey('port-collision');
+async function findFirstPortCollision() {
+  const seen = new Map();
+  for (let index = 0; index < 100_000; index++) {
+    const key = lockKey(`collision-${index}`);
+    const port = lockPortFor(key);
+    const previous = seen.get(port);
+    if (previous) return [previous, key];
+    seen.set(port, key);
+  }
+  throw new Error('failed to find a deterministic first-port collision');
+}
+
+test('different keys with the same first port remain independent', async () => {
+  const [firstKey, secondKey] = await findFirstPortCollision();
+  assert.equal(lockPortFor(firstKey), lockPortFor(secondKey));
+
+  const firstRelease = await acquireLock(firstKey);
+  const secondRelease = await acquireLock(secondKey);
+  assert.ok(firstRelease);
+  assert.ok(secondRelease);
+  assert.equal(await acquireLock(firstKey), null);
+  assert.equal(await acquireLock(secondKey), null);
+
+  await firstRelease();
+  assert.equal(
+    await acquireLock(secondKey),
+    null,
+    'the fallback owner remains discoverable after the colliding owner exits',
+  );
+  await secondRelease();
+});
+
+test('an unrelated service on the first port is skipped safely', async (t) => {
+  const key = lockKey('unrelated-service');
   const server = createServer((socket) => socket.end('not-openrevuwer\n'));
-  t.after(() => server.close());
+  t.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen({
@@ -138,10 +167,30 @@ test('an unrelated service on the deterministic port fails clearly', async (t) =
     }, resolve);
   });
 
-  await assert.rejects(
-    acquireLock(key),
-    /occupied by another service.*set lockFile to a different value/,
+  const release = await acquireLock(key);
+  assert.ok(release);
+  await release();
+});
+
+test('contention behind an unrelated first-port service still has one winner', async (t) => {
+  const key = lockKey('fallback-contention');
+  const server = createServer((socket) => socket.end('not-openrevuwer\n'));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({
+      host: '127.0.0.1',
+      port: lockPortFor(key),
+      exclusive: true,
+    }, resolve);
+  });
+
+  const results = await Promise.all(
+    Array.from({ length: 16 }, () => acquireLock(key)),
   );
+  const winners = results.filter(Boolean);
+  assert.equal(winners.length, 1);
+  await winners[0]();
 });
 
 test('invalid probe settings fail before attempting acquisition', async () => {

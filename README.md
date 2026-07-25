@@ -108,7 +108,7 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
-| `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`; the legacy field name is retained for compatibility). Ownership uses a kernel-managed loopback listener, not a filesystem lock file, so crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
+| `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`; the legacy field name is retained for compatibility). Ownership uses one of a deterministic sequence of kernel-managed loopback listeners, not a filesystem lock file, so distinct keys can bypass port collisions and crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
 With `"searchScope": "global"`, each repository's prompt is created lazily
 under `~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md` the first time a
