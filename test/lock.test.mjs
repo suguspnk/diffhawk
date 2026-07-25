@@ -97,6 +97,30 @@ test('simultaneous stale-lock reclamation: exactly one winner', async () => {
   }
 });
 
+test('an old stale lock does not make an actively held reclaim gate look abandoned', async () => {
+  // A hard link inherits the source inode's mtime. If the reclaim gate is
+  // linked directly from an old lock, contenders can immediately classify
+  // that newly acquired gate as stale and remove it out from under its
+  // holder.
+  for (let i = 0; i < 25; i++) {
+    await cleanup();
+    await writeFile(lockPath, '999999999');
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(lockPath, old, old);
+
+    const results = await Promise.all(
+      Array.from({ length: 16 }, () => acquireLock(lockPath)),
+    );
+    const winners = results.filter(Boolean);
+    assert.equal(
+      winners.length,
+      1,
+      `iteration ${i}: expected exactly 1 winner, got ${winners.length}`,
+    );
+    for (const release of winners) await release();
+  }
+});
+
 test('a leaked reclaim gate older than the staleness threshold does not deadlock', async () => {
   // Simulate a process killed between acquiring the gate and releasing it:
   // a stale lock plus a gate file whose mtime is far in the past.
