@@ -16,6 +16,7 @@ import {
   saveState,
 } from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
+import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
 import {
   configuredReviewPromptPath,
   ensureReviewPrompt,
@@ -180,6 +181,36 @@ async function main() {
     reviewerCommand = agent.reviewerCommand;
   }
 
+  const reviewFocusCountChoice = await p.select({
+    message: 'How many review focus categories should each PR use?',
+    initialValue: isValidReviewFocusCount(existingConfig?.reviewFocusCount)
+      ? existingConfig.reviewFocusCount
+      : 4,
+    options: [
+      {
+        value: 4,
+        label: 'All 4 categories + synthesis (recommended)',
+        hint: 'best coverage; 5 reviewer calls per PR',
+      },
+      {
+        value: 3,
+        label: '3 categories + synthesis',
+        hint: 'skips tests/adversarial review; 4 calls per PR',
+      },
+      {
+        value: 2,
+        label: '2 categories + synthesis',
+        hint: 'behavior and security; 3 calls per PR',
+      },
+      {
+        value: 1,
+        label: '1 category + synthesis',
+        hint: 'behavior/correctness only; 2 calls per PR',
+      },
+    ],
+  });
+  if (p.isCancel(reviewFocusCountChoice)) exitCancelled();
+
   const scheduleChoice = await p.select({
     message: 'How should openrevuwer be scheduled to run?',
     options: [
@@ -252,6 +283,7 @@ async function main() {
     })),
     reviewerCommand,
     reviewerInputMode,
+    reviewFocusCount: reviewFocusCountChoice,
     stateFile,
   };
   if (isValidReviewBatchSize(existingConfig?.reviewBatchSize)) {
@@ -260,6 +292,10 @@ async function main() {
     config.reviewBatchSize = existingConfig.reviewBatchSize;
   }
 
+  p.log.info(
+    `Review coverage: ${reviewFocusCountChoice} focus categor${reviewFocusCountChoice === 1 ? 'y' : 'ies'} + ` +
+    `1 synthesis pass = ${reviewFocusCountChoice + 1} reviewer calls per PR.`,
+  );
   p.note(JSON.stringify(config, null, 2), `Config to write (${configPath})`);
   const confirmWrite = await p.confirm({ message: 'Write config.json?', initialValue: true });
   if (p.isCancel(confirmWrite) || !confirmWrite) exitCancelled();
