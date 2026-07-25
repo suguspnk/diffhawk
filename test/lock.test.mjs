@@ -1,266 +1,157 @@
-import { test, beforeEach, afterEach } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  unlink,
-  utimes,
-  writeFile,
-} from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { acquireLock } from '../lib/lock.mjs';
+import { acquireLock, lockPortFor } from '../lib/lock.mjs';
 
-const lockPath = path.join(tmpdir(), `openrevuwer-lock-test-${process.pid}.lock`);
-const gatePath = `${lockPath}.reclaiming`;
-
-async function cleanup() {
-  const dir = path.dirname(lockPath);
-  const base = path.basename(lockPath);
-  for (const f of await readdir(dir)) {
-    if (f.startsWith(base)) {
-      await rm(path.join(dir, f), { recursive: true, force: true });
-    }
-  }
+function lockKey(label) {
+  return path.join(
+    tmpdir(),
+    `openrevuwer-lock-test-${label}-${process.pid}-${randomUUID()}.lock`,
+  );
 }
 
-beforeEach(cleanup);
-afterEach(cleanup);
-
-test('fresh acquire succeeds and release allows reacquire', async () => {
-  const release = await acquireLock(lockPath);
-  assert.ok(release, 'first acquire should succeed');
-
-  assert.equal(await acquireLock(lockPath), null, 'second acquire while held should block');
+test('fresh acquire succeeds, blocks overlap, and release allows reacquire', async () => {
+  const key = lockKey('basic');
+  const release = await acquireLock(key);
+  assert.ok(release);
+  assert.equal(await acquireLock(key), null);
 
   await release();
-  const again = await acquireLock(lockPath);
-  assert.ok(again, 'acquire after release should succeed');
+  const again = await acquireLock(key);
+  assert.ok(again);
   await again();
 });
 
-test('release ignores an already-missing lock but propagates real filesystem errors', async () => {
-  const releaseMissing = await acquireLock(lockPath);
-  await unlink(lockPath);
-  await releaseMissing();
-
-  const releaseError = await acquireLock(lockPath);
-  await unlink(lockPath);
-  await mkdir(lockPath);
-  await assert.rejects(
-    releaseError(),
-    (err) => err.code !== 'ENOENT',
-  );
-});
-
-test('an old release callback cannot remove a newer lock generation', async () => {
-  const firstRelease = await acquireLock(lockPath);
+test('release is idempotent and cannot release a newer owner', async () => {
+  const key = lockKey('release-generation');
+  const firstRelease = await acquireLock(key);
   await firstRelease();
 
-  const secondRelease = await acquireLock(lockPath);
+  const secondRelease = await acquireLock(key);
   await firstRelease();
   assert.equal(
-    JSON.parse(await readFile(lockPath, 'utf8')).pid,
-    process.pid,
-    'newer lock should remain after an old release callback is reused',
+    await acquireLock(key),
+    null,
+    'an old release callback must not close the newer owner server',
   );
   await secondRelease();
 });
 
-test('empty lock file (crash remnant) is reclaimed, not treated as held forever', async () => {
-  // Number('') === 0, and process.kill(0, 0) always succeeds — an empty
-  // lock must not be classified as a live holder.
-  await writeFile(lockPath, '');
-  const release = await acquireLock(lockPath);
-  assert.ok(release, 'empty lock should be reclaimed');
-  await release();
+test('simultaneous acquires have exactly one winner', async () => {
+  for (let iteration = 0; iteration < 50; iteration++) {
+    const key = lockKey(`contention-${iteration}`);
+    const results = await Promise.all(
+      Array.from({ length: 32 }, () => acquireLock(key)),
+    );
+    const winners = results.filter(Boolean);
+    assert.equal(
+      winners.length,
+      1,
+      `iteration ${iteration}: expected one winner, got ${winners.length}`,
+    );
+    await winners[0]();
+  }
 });
 
-test('garbage (non-numeric) lock content is reclaimed', async () => {
-  await writeFile(lockPath, 'not-a-pid\n');
-  const release = await acquireLock(lockPath);
-  assert.ok(release, 'garbage lock should be reclaimed');
-  await release();
+test('different lock keys can be held concurrently', async () => {
+  const firstKey = lockKey('independent-one');
+  let secondKey = lockKey('independent-two');
+  while (lockPortFor(secondKey) === lockPortFor(firstKey)) {
+    secondKey = lockKey('independent-two');
+  }
+  const first = await acquireLock(firstKey);
+  const second = await acquireLock(secondKey);
+  assert.ok(first);
+  assert.ok(second);
+  await Promise.all([first(), second()]);
 });
 
-test('stale lock from a dead PID is reclaimed', async () => {
-  await writeFile(lockPath, '999999999'); // far above any real PID range in use
-  const release = await acquireLock(lockPath);
-  assert.ok(release, 'dead-PID lock should be reclaimed');
-  await release();
-});
-
-test('lock held by a known live process blocks portably', async (t) => {
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], {
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+test('a crashed holder is released by the operating system', async (t) => {
+  const key = lockKey('crash');
+  const moduleUrl = new URL('../lib/lock.mjs', import.meta.url).href;
+  const script = `
+    import { acquireLock } from ${JSON.stringify(moduleUrl)};
+    const release = await acquireLock(${JSON.stringify(key)});
+    if (!release) process.exit(2);
+    process.stdout.write('ready\\n');
+    setInterval(() => {}, 60_000);
+  `;
+  const child = spawn(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
+  );
   t.after(() => {
-    child.kill();
+    if (child.exitCode === null) child.kill();
   });
+
   await new Promise((resolve, reject) => {
-    child.once('spawn', resolve);
+    let stdout = '';
     child.once('error', reject);
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+      if (stdout.includes('ready\n')) resolve();
+    });
+    child.once('exit', (code) => {
+      if (!stdout.includes('ready\n')) {
+        reject(new Error(`lock-holder child exited before ready (${code})`));
+      }
+    });
   });
 
-  await writeFile(lockPath, String(child.pid));
-  assert.equal(await acquireLock(lockPath), null, 'known live process lock must block');
-});
+  assert.equal(await acquireLock(key), null, 'child should own the lock');
+  child.kill(process.platform === 'win32' ? undefined : 'SIGKILL');
+  await new Promise((resolve) => child.once('exit', resolve));
 
-test('a reused live PID with a different process identity is reclaimed', async () => {
-  const currentIdentity = `test-process-${process.pid}`;
-  await writeFile(lockPath, JSON.stringify({
-    version: 1,
-    pid: process.pid,
-    identity: 'previous-process-with-reused-pid',
-  }));
-
-  const release = await acquireLock(lockPath, {
-    getProcessIdentity: async () => currentIdentity,
-  });
-
-  assert.ok(release, 'mismatched process identity should make the old lock stale');
-  assert.equal(
-    JSON.parse(await readFile(lockPath, 'utf8')).identity,
-    currentIdentity,
-  );
+  const release = await acquireLock(key);
+  assert.ok(release, 'lock should be reusable immediately after holder exit');
   await release();
 });
 
-test('a live PID with the matching process identity remains held', async () => {
-  const identity = `test-process-${process.pid}`;
-  await writeFile(lockPath, JSON.stringify({
-    version: 1,
-    pid: process.pid,
-    identity,
-  }));
-
-  assert.equal(
-    await acquireLock(lockPath, {
-      getProcessIdentity: async () => identity,
-    }),
-    null,
-    'matching PID and process identity should block a second holder',
-  );
-});
-
-test('simultaneous fresh acquires: exactly one winner (no empty-visible window)', async () => {
-  // Regression test for the lock-visible-before-content race: with the old
-  // open('wx')-then-write flow, a contender could read the momentarily
-  // empty lock, classify it stale, and steal it mid-acquire.
-  for (let i = 0; i < 25; i++) {
-    await cleanup();
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => acquireLock(lockPath)),
-    );
-    const winners = results.filter(Boolean);
-    assert.equal(winners.length, 1, `iteration ${i}: expected exactly 1 winner, got ${winners.length}`);
-    for (const release of winners) await release();
-  }
-});
-
-test('simultaneous stale-lock reclamation: exactly one winner', async () => {
-  // Regression test for the reclamation TOCTOU race: contenders that all
-  // read the same dead PID must not each independently reclaim and acquire.
-  for (const contenders of [2, 8, 16]) {
-    for (let i = 0; i < 15; i++) {
-      await cleanup();
-      await writeFile(lockPath, '999999999');
-      const results = await Promise.all(
-        Array.from({ length: contenders }, () => acquireLock(lockPath)),
-      );
-      const winners = results.filter(Boolean);
-      assert.equal(
-        winners.length, 1,
-        `${contenders}-way iteration ${i}: expected exactly 1 winner, got ${winners.length}`,
-      );
-      for (const release of winners) await release();
-    }
-  }
-});
-
-test('an old stale lock does not make an actively held reclaim gate look abandoned', async () => {
-  // A hard link inherits the source inode's mtime. If the reclaim gate is
-  // linked directly from an old lock, contenders can immediately classify
-  // that newly acquired gate as stale and remove it out from under its
-  // holder.
-  for (let i = 0; i < 25; i++) {
-    await cleanup();
-    await writeFile(lockPath, '999999999');
-    const old = new Date(Date.now() - 60 * 60 * 1000);
-    await utimes(lockPath, old, old);
-
-    const results = await Promise.all(
-      Array.from({ length: 16 }, () => acquireLock(lockPath)),
-    );
-    const winners = results.filter(Boolean);
-    assert.equal(
-      winners.length,
-      1,
-      `iteration ${i}: expected exactly 1 winner, got ${winners.length}`,
-    );
-    for (const release of winners) await release();
-  }
-});
-
-test('a leaked reclaim gate older than the staleness threshold does not deadlock', async () => {
-  // Simulate a process killed between acquiring the gate and releasing it:
-  // a stale lock plus a gate file whose mtime is far in the past.
-  await writeFile(lockPath, '999999999');
-  await writeFile(gatePath, '999999999');
-  const old = new Date(Date.now() - 60 * 60 * 1000); // 1h ago, well past GATE_STALE_MS
-  await utimes(gatePath, old, old);
-
-  const release = await acquireLock(lockPath);
-  assert.ok(release, 'stale lock behind a leaked gate should still be reclaimable');
+test('acquisition and release leave no filesystem artifacts', async () => {
+  const key = lockKey('no-artifacts');
+  const directory = path.dirname(key);
+  const prefix = path.basename(key);
+  const release = await acquireLock(key);
   await release();
+
+  const leftovers = (await readdir(directory))
+    .filter((entry) => entry.startsWith(prefix));
+  assert.deepEqual(leftovers, []);
 });
 
-test('a recent reclaim gate returns without busy-looping', async () => {
-  await writeFile(lockPath, '999999999');
-  await writeFile(gatePath, 'recent-live-gate');
+test('an unrelated service on the deterministic port fails clearly', async (t) => {
+  const key = lockKey('port-collision');
+  const server = createServer((socket) => socket.end('not-openrevuwer\n'));
+  t.after(() => server.close());
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({
+      host: '127.0.0.1',
+      port: lockPortFor(key),
+      exclusive: true,
+    }, resolve);
+  });
 
-  const started = Date.now();
-  assert.equal(await acquireLock(lockPath), null);
-  assert.ok(Date.now() - started < 1_000, 'recent gate should return promptly');
-  assert.equal(await readFile(gatePath, 'utf8'), 'recent-live-gate');
-});
-
-test('simultaneous stale-gate reclamation admits exactly one winner', async () => {
-  for (let i = 0; i < 25; i++) {
-    await cleanup();
-    await writeFile(lockPath, '999999999');
-    await writeFile(gatePath, `leaked-gate-${i}`);
-    const old = new Date(Date.now() - 60 * 60 * 1000);
-    await utimes(gatePath, old, old);
-
-    const results = await Promise.all(
-      Array.from({ length: 16 }, () => acquireLock(lockPath)),
-    );
-    const winners = results.filter(Boolean);
-    assert.equal(
-      winners.length,
-      1,
-      `iteration ${i}: expected exactly 1 winner, got ${winners.length}`,
-    );
-    for (const release of winners) await release();
-  }
-});
-
-test('no stray lock/gate/temp files are left behind', async () => {
-  // Exercise contended acquire + release, then verify the directory holds
-  // nothing with the lock's prefix.
-  await writeFile(lockPath, '999999999');
-  const results = await Promise.all(
-    Array.from({ length: 8 }, () => acquireLock(lockPath)),
+  await assert.rejects(
+    acquireLock(key),
+    /occupied by another service.*set lockFile to a different value/,
   );
-  for (const release of results.filter(Boolean)) await release();
+});
 
-  const dir = path.dirname(lockPath);
-  const base = path.basename(lockPath);
-  const leftovers = (await readdir(dir)).filter((f) => f.startsWith(base));
-  assert.deepEqual(leftovers, [], `unexpected leftovers: ${leftovers.join(', ')}`);
+test('invalid probe settings fail before attempting acquisition', async () => {
+  const key = lockKey('invalid-options');
+  await assert.rejects(
+    acquireLock(key, { probeAttempts: 0 }),
+    /probeAttempts must be a positive whole number/,
+  );
+  await assert.rejects(
+    acquireLock(key, { probeTimeoutMs: 0 }),
+    /probeTimeoutMs must be a positive whole number/,
+  );
 });

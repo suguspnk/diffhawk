@@ -110,10 +110,10 @@ async function main() {
   // Guards state.json's read-then-write cycle below against a second,
   // overlapping poll run (e.g. a slow reviewer CLI still in flight when the
   // next scheduled tick fires) racing on the same file.
-  const lockPath = resolvePath(config.lockFile || `${stateFile}.lock`);
-  const releaseLock = await acquireLock(lockPath);
+  const lockKey = resolvePath(config.lockFile || `${stateFile}.lock`);
+  const releaseLock = await acquireLock(lockKey);
   if (!releaseLock) {
-    console.log(`another poll run holds ${lockPath} — skipping this tick`);
+    console.log(`another poll run holds ${lockKey} — skipping this tick`);
     return;
   }
 
