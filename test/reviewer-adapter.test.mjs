@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { buildPrompt, parseFindings } from '../lib/reviewer-adapter.mjs';
 
 const pr = { title: 'Fix off-by-one in pagination', number: 42, body: 'Closes #41.' };
@@ -144,4 +145,32 @@ test('parseFindings still parses valid JSON output produced from a custom templa
   const { summary, findings } = parseFindings(rawOutput);
   assert.equal(summary, 'Looks fine overall.');
   assert.deepEqual(findings, [{ path: 'a.js', line: 3, severity: 'nit', comment: 'unused var' }]);
+});
+
+test('bundled per-repo template requires an exhaustive review of the cumulative diff', async () => {
+  const template = await readFile(
+    new URL('../docs/review-prompt.default.md', import.meta.url),
+    'utf8',
+  );
+  const prompt = buildPrompt({
+    template,
+    learnings: '- Watch for missing cleanup',
+    pr: {
+      title: 'Handle uploaded files',
+      number: 42,
+      body: 'Adds upload processing.',
+    },
+    diff: 'diff --git a/upload.mjs b/upload.mjs',
+  });
+  const normalizedPrompt = prompt.replace(/\s+/g, ' ');
+
+  assert.match(normalizedPrompt, /complete review of the entire pull request diff/i);
+  assert.match(normalizedPrompt, /do not stop after finding the first issue/i);
+  assert.match(normalizedPrompt, /do not impose an arbitrary limit on findings/i);
+  assert.match(normalizedPrompt, /supplied diff is cumulative/i);
+  assert.match(normalizedPrompt, /including code from earlier commits/i);
+  assert.match(normalizedPrompt, /as if it has not been reviewed before/i);
+  assert.match(normalizedPrompt, /re-scan the full diff/i);
+  assert.match(normalizedPrompt, /deduplicate findings by root cause/i);
+  assert.match(normalizedPrompt, /Respond with JSON only/);
 });
