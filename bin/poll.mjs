@@ -23,6 +23,10 @@ import {
 } from '../lib/state.mjs';
 import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
+import {
+  processInBatches,
+  resolveReviewBatchSize,
+} from '../lib/poll-batching.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
@@ -78,6 +82,7 @@ async function main() {
     throw err;
   }
   const config = JSON.parse(configRaw);
+  const reviewBatchSize = resolveReviewBatchSize(config.reviewBatchSize);
 
   const stateFile = resolvePath(config.stateFile || './state.json');
   const logPath = resolvePath('poll.log');
@@ -114,6 +119,9 @@ async function main() {
     return;
   }
 
+  const reviewQueue = [];
+  const queuedPullRequests = new Set();
+
   for (const target of targets) {
     let candidates;
     try {
@@ -136,89 +144,124 @@ async function main() {
       continue;
     }
 
-    for (const { repo, number } of candidates) {
-      let pr;
-      try {
-        pr = await timedStep(
-          `fetching PR metadata for ${repo}#${number}`,
-          () => getPullRequest({ repo, number, auth: githubAuth }),
-        );
-      } catch (err) {
-        await logFailure(logPath, `pr view failed for ${repo}#${number}: ${err.message}`);
-        continue;
-      }
+    for (const candidate of candidates) {
+      const candidateKey = `${candidate.repo}#${candidate.number}`;
+      if (queuedPullRequests.has(candidateKey)) continue;
 
-      const key = prKey(repo, number, githubAccount);
-      if (!needsReview(state, key, pr.headRefOid)) {
-        console.log(`skip ${key} (already reviewed at ${pr.headRefOid})`);
-        continue;
-      }
-
-      console.log(`reviewing ${key} @ ${pr.headRefOid}`);
-
-      let diff;
-      try {
-        diff = await timedStep(
-          `[${key}] fetching diff`,
-          () => getPullRequestDiff({ repo, number, auth: githubAuth }),
-        );
-      } catch (err) {
-        await logFailure(logPath, `diff fetch failed for ${key}: ${err.message}`);
-        continue;
-      }
-
-      const defaultChecklistPath = path.join(packageRootDir, 'docs', 'checklist.md');
-      const checklistPath = target.checklistPath || config.checklistPath
-        ? resolvePath(target.checklistPath || config.checklistPath)
-        : defaultChecklistPath;
-      const learningsPath = resolvePath(target.learningsPath || config.learningsPath || './docs/learnings.md');
-      const checklist = await readOptional(checklistPath);
-      const learnings = await readOptional(learningsPath);
-
-      const prompt = buildPrompt({ checklist, learnings, pr, diff });
-
-      let rawOutput;
-      try {
-        rawOutput = await timedStep(
-          `[${key}] invoking reviewer ("${config.reviewerCommand}")`,
-          () => invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt }),
-        );
-      } catch (err) {
-        // Decided: log and skip posting entirely, leave state unchanged so
-        // the next poll retries — never post a broken/empty review.
-        await logFailure(logPath, `reviewer adapter failed for ${key}: ${err.message}`);
-        continue;
-      }
-
-      const { summary, findings } = parseFindings(rawOutput);
-
-      if (DRY_RUN) {
-        console.log(`--- dry run result for ${key} ---`);
-        console.log(summary);
-        console.log(`${findings.length} inline finding(s)`);
-        continue;
-      }
-
-      try {
-        await timedStep(`[${key}] posting review`, () => postReview({
-          repo,
-          number,
-          commitId: pr.headRefOid,
-          body: summary,
-          comments: findings,
-          diff,
-          auth: githubAuth,
-        }));
-      } catch (err) {
-        await logFailure(logPath, `post review failed for ${key}: ${err.message}`);
-        continue;
-      }
-
-      recordReview(state, key, pr.headRefOid, new Date().toISOString());
-      await saveState(stateFile, state);
-      console.log(`posted review for ${key}`);
+      queuedPullRequests.add(candidateKey);
+      reviewQueue.push({ target, ...candidate });
     }
   }
+
+  if (reviewQueue.length === 0) {
+    console.log('poll complete');
+    return;
+  }
+
+  console.log(
+    `processing ${reviewQueue.length} candidate PR(s) in batches of ${reviewBatchSize}`,
+  );
+
+  // State writes remain sequential even though reviews run concurrently.
+  // Without this queue, overlapping writeFile calls could leave state.json
+  // missing a successfully posted review.
+  let stateWriteQueue = Promise.resolve();
+  function persistReview(key, sha) {
+    const write = stateWriteQueue.then(async () => {
+      recordReview(state, key, sha, new Date().toISOString());
+      await saveState(stateFile, state);
+    });
+    stateWriteQueue = write.catch(() => {});
+    return write;
+  }
+
+  async function reviewCandidate({ target, repo, number }) {
+    let pr;
+    try {
+      pr = await timedStep(
+        `fetching PR metadata for ${repo}#${number}`,
+        () => getPullRequest({ repo, number, auth: githubAuth }),
+      );
+    } catch (err) {
+      await logFailure(logPath, `pr view failed for ${repo}#${number}: ${err.message}`);
+      return;
+    }
+
+    const key = prKey(repo, number, githubAccount);
+    if (!needsReview(state, key, pr.headRefOid)) {
+      console.log(`skip ${key} (already reviewed at ${pr.headRefOid})`);
+      return;
+    }
+
+    console.log(`reviewing ${key} @ ${pr.headRefOid}`);
+
+    let diff;
+    try {
+      diff = await timedStep(
+        `[${key}] fetching diff`,
+        () => getPullRequestDiff({ repo, number, auth: githubAuth }),
+      );
+    } catch (err) {
+      await logFailure(logPath, `diff fetch failed for ${key}: ${err.message}`);
+      return;
+    }
+
+    const defaultChecklistPath = path.join(packageRootDir, 'docs', 'checklist.md');
+    const checklistPath = target.checklistPath || config.checklistPath
+      ? resolvePath(target.checklistPath || config.checklistPath)
+      : defaultChecklistPath;
+    const learningsPath = resolvePath(
+      target.learningsPath || config.learningsPath || './docs/learnings.md',
+    );
+    const [checklist, learnings] = await Promise.all([
+      readOptional(checklistPath),
+      readOptional(learningsPath),
+    ]);
+
+    const prompt = buildPrompt({ checklist, learnings, pr, diff });
+
+    let rawOutput;
+    try {
+      rawOutput = await timedStep(
+        `[${key}] invoking reviewer ("${config.reviewerCommand}")`,
+        () => invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt }),
+      );
+    } catch (err) {
+      // Decided: log and skip posting entirely, leave state unchanged so
+      // the next poll retries — never post a broken/empty review.
+      await logFailure(logPath, `reviewer adapter failed for ${key}: ${err.message}`);
+      return;
+    }
+
+    const { summary, findings } = parseFindings(rawOutput);
+
+    if (DRY_RUN) {
+      console.log(`--- dry run result for ${key} ---`);
+      console.log(summary);
+      console.log(`${findings.length} inline finding(s)`);
+      return;
+    }
+
+    try {
+      await timedStep(`[${key}] posting review`, () => postReview({
+        repo,
+        number,
+        commitId: pr.headRefOid,
+        body: summary,
+        comments: findings,
+        diff,
+        auth: githubAuth,
+      }));
+    } catch (err) {
+      await logFailure(logPath, `post review failed for ${key}: ${err.message}`);
+      return;
+    }
+
+    await persistReview(key, pr.headRefOid);
+    console.log(`posted review for ${key}`);
+  }
+
+  await processInBatches(reviewQueue, reviewBatchSize, reviewCandidate);
 
   console.log('poll complete');
 }
