@@ -113,6 +113,7 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `reviewBatchSize` | Maximum PR reviews to run concurrently (defaults to `5`). This advanced setting is configured by editing the file; the onboarding wizard does not prompt for it. |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
+| `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`; the legacy field name is retained for compatibility). Ownership uses one of a deterministic sequence of kernel-managed loopback listeners, not a filesystem lock file, so distinct keys can bypass port collisions and crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
 With `"searchScope": "global"`, each repository's prompt is created lazily
 under `~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md` the first time a

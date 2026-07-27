@@ -2,6 +2,7 @@
 # ~/.openrevuwer/, not here, but ignore them in case something runs with
 # OPENREVUWER_HOME unset to a repo-local path during local development
 state.json
+state.json.lock
 config.json
 poll.log
 
