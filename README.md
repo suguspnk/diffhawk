@@ -80,11 +80,14 @@ This will:
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead.
-5. Offer to install a schedule (cron, launchd on macOS, or Windows Task
+5. Ask how many independent review focus categories to run per PR. The
+   recommended choice runs all four categories plus synthesis; lower choices
+   reduce reviewer calls by skipping later categories.
+6. Offer to install a schedule (cron, launchd on macOS, or Windows Task
    Scheduler) — it shows you the **exact** entry before writing anything and
    asks for confirmation. You can also choose "I'll do it myself" to just get
    the instructions.
-6. Show you the final config and ask before writing `~/.openrevuwer/config.json`.
+7. Show you the final config and ask before writing `~/.openrevuwer/config.json`.
 
 Nothing is written to your system or to GitHub without an explicit
 confirmation at each step.
@@ -108,6 +111,7 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `reviewBatchSize` | Maximum PR reviews to run concurrently (defaults to `5`). This advanced setting is configured by editing the file; the onboarding wizard does not prompt for it. |
+| `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 
 With `"searchScope": "global"`, each repository's prompt is created lazily
@@ -135,6 +139,8 @@ openrevuwer --dry-run
 ```
 
 You should see one block per matching PR with a summary and finding count.
+Each review runs four independent focused passes plus a final synthesis pass by
+default, so a dry run can take longer than a single reviewer invocation.
 If a PR is already up to date in `~/.openrevuwer/state.json`, it's skipped and
 logged as such.
 

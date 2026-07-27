@@ -141,9 +141,15 @@ poller as a `pnpm` script / bin.
      <diff>
      ```
 
-5. **Invoke the reviewer adapter** (agent-agnostic — see below) with that
-   prompt, capture its output as structured findings (see **Structured output
-   format** below), not just raw text.
+5. **Run independent reviewer passes** (agent-agnostic — see below) against the
+   same complete prompt and diff. The default pass set covers behavior and
+   correctness, security and trust boundaries, integration and reliability,
+   and tests plus an adversarial rescan. Each pass returns structured findings.
+   A final synthesis invocation receives all candidate findings, independently
+   checks the complete diff, merges duplicate root causes, discards unsupported
+   claims, and returns the one summary/findings result to post. If any pass or
+   synthesis invocation fails or returns malformed output, skip posting and
+   leave state untouched so the next poll retries.
 
 6. **Post the review.** **Decided: formal `gh pr review`**, not a plain
    comment — shows up in the PR's review list, not just as a comment.
@@ -265,6 +271,7 @@ stdin, since that matches how the user already works — but keep it swappable.
   ],
   "reviewerCommand": "claude -p",
   "reviewBatchSize": 5,
+  "reviewFocusCount": 4,
   "stateFile": "./state.json"
 }
 ```
@@ -386,7 +393,16 @@ cloned checkout). Steps, in order:
      the adapter can shell out to).
    - Selection sets `reviewerCommand` (and `reviewerInputMode`) in config.
 
-6. **Scheduling.** Select one:
+6. **Review focus coverage.** Ask how many independent review focus
+   categories to run before synthesis:
+   - 4 — behavior/correctness, security/trust boundaries,
+     integration/reliability, and tests/adversarial rescan (recommended)
+   - 3, 2, or 1 — progressively fewer categories and fewer reviewer calls
+   The selection sets `reviewFocusCount` and the final config preview explains
+   the resulting reviewer-call count. On rerun, default to the existing value
+   when it is valid.
+
+7. **Scheduling.** Select one:
    - `cron` (macOS/Linux)
    - `launchd` (macOS, preferred over cron — survives reboots better)
    - Windows Task Scheduler

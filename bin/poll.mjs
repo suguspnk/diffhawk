@@ -21,7 +21,10 @@ import {
   needsReview,
   recordReview,
 } from '../lib/state.mjs';
-import { buildPrompt, invokeReviewer, parseFindings } from '../lib/reviewer-adapter.mjs';
+import {
+  invokeMultiPassReview,
+  resolveReviewFocusCount,
+} from '../lib/reviewer-adapter.mjs';
 import {
   ensureReviewPrompt,
   reviewPromptProvisioning,
@@ -92,6 +95,7 @@ async function main() {
   }
   const config = JSON.parse(configRaw);
   const reviewBatchSize = resolveReviewBatchSize(config.reviewBatchSize);
+  const reviewFocusCount = resolveReviewFocusCount(config.reviewFocusCount);
 
   const stateFile = resolvePath(config.stateFile || './state.json');
   const logPath = resolvePath('poll.log');
@@ -236,13 +240,18 @@ async function main() {
       readOptional(learningsPath),
     ]);
 
-    const prompt = buildPrompt({ template, learnings, pr, diff });
-
-    let rawOutput;
+    let review;
     try {
-      rawOutput = await timedStep(
-        `[${key}] invoking reviewer ("${config.reviewerCommand}")`,
-        () => invokeReviewer({ reviewerCommand: config.reviewerCommand, prompt }),
+      review = await timedStep(
+        `[${key}] invoking reviewer ("${config.reviewerCommand}", ${reviewFocusCount} focused passes + synthesis)`,
+        () => invokeMultiPassReview({
+          reviewerCommand: config.reviewerCommand,
+          template,
+          learnings,
+          pr,
+          diff,
+          reviewFocusCount,
+        }),
       );
     } catch (err) {
       // Decided: log and skip posting entirely, leave state unchanged so
@@ -251,7 +260,7 @@ async function main() {
       return;
     }
 
-    const { summary, findings } = parseFindings(rawOutput);
+    const { summary, findings } = review;
 
     if (DRY_RUN) {
       console.log(`--- dry run result for ${key} ---`);
