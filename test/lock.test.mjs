@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -131,6 +131,31 @@ test('acquisition and release leave no filesystem artifacts', async () => {
   const leftovers = (await readdir(directory))
     .filter((entry) => entry.startsWith(prefix));
   assert.deepEqual(leftovers, []);
+});
+
+test('release destroys accepted probing sockets before closing', async (t) => {
+  const key = lockKey('half-open-probe');
+  const release = await acquireLock(key);
+  assert.ok(release);
+
+  const client = createConnection({
+    host: '127.0.0.1',
+    port: lockPortFor(key),
+  });
+  t.after(() => client.destroy());
+  await new Promise((resolve, reject) => {
+    client.once('connect', resolve);
+    client.once('error', reject);
+  });
+
+  await assert.doesNotReject(async () => {
+    await Promise.race([
+      release(),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('lock release timed out')), 250);
+      }),
+    ]);
+  });
 });
 
 async function findFirstPortCollision() {
