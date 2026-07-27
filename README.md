@@ -80,11 +80,14 @@ This will:
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead.
-5. Offer to install a schedule (cron, launchd on macOS, or Windows Task
+5. Ask how many independent review focus categories to run per PR. The
+   recommended choice runs all four categories plus synthesis; lower choices
+   reduce reviewer calls by skipping later categories.
+6. Offer to install a schedule (cron, launchd on macOS, or Windows Task
    Scheduler) — it shows you the **exact** entry before writing anything and
    asks for confirmation. You can also choose "I'll do it myself" to just get
    the instructions.
-6. Show you the final config and ask before writing `~/.openrevuwer/config.json`.
+7. Show you the final config and ask before writing `~/.openrevuwer/config.json`.
 
 Nothing is written to your system or to GitHub without an explicit
 confirmation at each step.
@@ -107,6 +110,8 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `searchScope` | `"per-repo"` (default) to only watch `pollTargets`, or `"global"` to search every repo you have access to. |
 | `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
+| `reviewBatchSize` | Maximum PR reviews to run concurrently (defaults to `5`). This advanced setting is configured by editing the file; the onboarding wizard does not prompt for it. |
+| `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 | `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`; the legacy field name is retained for compatibility). Ownership uses one of a deterministic sequence of kernel-managed loopback listeners, not a filesystem lock file, so distinct keys can bypass port collisions and crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
@@ -135,6 +140,8 @@ openrevuwer --dry-run
 ```
 
 You should see one block per matching PR with a summary and finding count.
+Each review runs four independent focused passes plus a final synthesis pass by
+default, so a dry run can take longer than a single reviewer invocation.
 If a PR is already up to date in `~/.openrevuwer/state.json`, it's skipped and
 logged as such.
 
@@ -146,7 +153,9 @@ openrevuwer
 
 This posts an actual GitHub PR review (inline comments + summary) for every
 PR where you're the requested reviewer and the head commit hasn't been
-reviewed yet. On success, it records the reviewed SHA in
+reviewed yet. Reviews run concurrently in batches of five by default; set
+`reviewBatchSize` in `~/.openrevuwer/config.json` to change that limit. On
+success, it records the reviewed SHA in
 `~/.openrevuwer/state.json` so the same commit isn't re-reviewed next run.
 State keys include the selected GitHub account, so two accounts can review
 the same PR independently.

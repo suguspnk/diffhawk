@@ -13,5 +13,7 @@
   ],
   "reviewerCommand": "claude -p --output-format text",
   "reviewerInputMode": "stdin",
+  "reviewBatchSize": 5,
+  "reviewFocusCount": 4,
   "stateFile": "./state.json"
 }
