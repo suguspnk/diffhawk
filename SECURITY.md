@@ -32,7 +32,8 @@ local reviewer software. Its main controls are:
   persisted in OpenMergeLens configuration.
 - The reviewer receives no GitHub token. A per-review local gateway permits
   read-only inspection of only the selected repository and pull request.
-- Commands use argument arrays with no shell interpolation.
+- Native commands use argument arrays without a shell. Windows command shims
+  are launched through `cmd.exe` with dedicated metacharacter escaping.
 - Logs redact common credential formats, and local state is created with
   private filesystem permissions where the platform supports them.
 - Reviews are anchored to the fetched diff and the head commit is rechecked

@@ -19,11 +19,16 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
 
   assert.equal(packageJson.name, 'openmergelens');
   assert.deepEqual(packageJson.bin, {
-    openmergelens: './bin/openmergelens.mjs',
+    openmergelens: 'bin/openmergelens.mjs',
   });
   assert.equal(
     packageJson.repository.url,
     'git+https://github.com/suguspnk/openmergelens.git',
+  );
+  assert.equal(
+    packageJson.scripts.prepublishOnly,
+    'pnpm release:check',
+    'interactive publishes must run the same audit and package gate as CI',
   );
 });
 

@@ -20,6 +20,7 @@ import {
   reviewerCommandForGitHubGateway,
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
+import { parseCommand } from '../lib/reviewer-adapter.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -133,7 +134,7 @@ test('the generated Codex command grants no direct GitHub network access', () =>
 
 test('custom reviewer commands must explicitly consume the per-review MCP contract', () => {
   const gateway = {
-    mcpConfigPath: '/tmp/review/mcp.json',
+    mcpConfigPath: '/tmp/review with spaces/mcp.json',
     mcpServerPath: '/tmp/review/server.mjs',
   };
   assert.equal(
@@ -141,8 +142,46 @@ test('custom reviewer commands must explicitly consume the per-review MCP contra
       'agent --mcp-config "{{mcp_config}}" --allowed-tool "{{mcp_tool}}"',
       gateway,
     ),
-    'agent --mcp-config "/tmp/review/mcp.json" ' +
+    'agent --mcp-config "/tmp/review with spaces/mcp.json" ' +
       '--allowed-tool "mcp__openmergelens__inspect_github_pr"',
+  );
+  const windowsCommand = reviewerCommandForGitHubGateway(
+    'agent --mcp-config={{mcp_config}} --allowed-tool={{mcp_tool}}',
+    {
+      ...gateway,
+      mcpConfigPath: 'C:\\Users\\Review User\\mcp.json',
+    },
+  );
+  assert.equal(
+    windowsCommand,
+    'agent --mcp-config="C:\\Users\\Review User\\mcp.json" ' +
+      '--allowed-tool="mcp__openmergelens__inspect_github_pr"',
+  );
+  assert.deepEqual(parseCommand(windowsCommand), {
+    cmd: 'agent',
+    args: [
+      '--mcp-config=C:\\Users\\Review User\\mcp.json',
+      '--allowed-tool=mcp__openmergelens__inspect_github_pr',
+    ],
+  });
+  const claudeWindowsCommand = reviewerCommandForGitHubGateway(
+    CLAUDE_REVIEWER_COMMAND,
+    {
+      ...gateway,
+      mcpConfigPath: 'C:\\Users\\Review User\\mcp.json',
+    },
+  );
+  const claudeWindowsArgs = parseCommand(claudeWindowsCommand).args;
+  assert.equal(
+    claudeWindowsArgs[claudeWindowsArgs.indexOf('--mcp-config') + 1],
+    'C:\\Users\\Review User\\mcp.json',
+  );
+  assert.throws(
+    () => reviewerCommandForGitHubGateway(
+      'agent --mcp {{mcp_config}} --tool {{mcp_tool}}',
+      { ...gateway, mcpConfigPath: '/tmp/unsafe"name/mcp.json' },
+    ),
+    /MCP config path cannot be represented safely/,
   );
   assert.throws(
     () => reviewerCommandForGitHubGateway('agent --review', gateway),

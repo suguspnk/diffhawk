@@ -31,8 +31,9 @@ Before running anything, make sure you have:
 3. **A reviewer CLI**, already logged in on its own — pick one:
    - [Claude Code](https://claude.com/claude-code): `claude /login`
    - [Codex CLI](https://github.com/openai/codex): `codex login`
-   - Anything else that can read a prompt from stdin and print text/JSON to
-     stdout.
+   - A custom CLI that can read a prompt from stdin, print text/JSON to
+     stdout, attach a per-run MCP server, and restrict access to the named MCP
+     inspection tool.
 
 ## Install
 

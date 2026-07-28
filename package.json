@@ -26,7 +26,7 @@
     "codex"
   ],
   "bin": {
-    "openmergelens": "./bin/openmergelens.mjs"
+    "openmergelens": "bin/openmergelens.mjs"
   },
   "files": [
     "bin/init.mjs",
@@ -46,7 +46,7 @@
     "test": "node --test",
     "pack:check": "npm pack --dry-run",
     "release:check": "pnpm test && pnpm audit --prod --audit-level low && pnpm run pack:check",
-    "prepublishOnly": "pnpm test && pnpm run pack:check"
+    "prepublishOnly": "pnpm release:check"
   },
   "engines": {
     "node": "^22.14.0 || ^24.0.0"

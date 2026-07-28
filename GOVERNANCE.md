@@ -20,7 +20,8 @@ person is available to review.
   bypass for the approval requirement after required CI checks pass: check
   that the change matches the design constraints in [CLAUDE.md](CLAUDE.md) /
   [PRD.md](PRD.md), that any relevant tests/dry-run checks pass, and
-  that docs (README, PRD, checklist) are updated if behavior changed.
+  that the relevant user, design, and release documentation is updated if
+  behavior changed.
 - If a second maintainer joins, PRs opened by one maintainer should be
   reviewed and approved by another before merging, rather than self-merged.
 - Direct pushes to `main` are avoided in favor of PRs, even for small changes,
