@@ -10,11 +10,13 @@ const work = {
   hostname: 'github.com',
   username: 'work',
   repositories: ['owner/repo'],
+  aiProcessingConsent: ['owner/repo'],
 };
 const personal = {
   hostname: 'github.com',
   username: 'personal',
   repositories: ['owner/repo'],
+  aiProcessingConsent: ['owner/repo'],
 };
 
 function config(accounts = [work, personal]) {
@@ -41,6 +43,12 @@ async function fixture(t) {
 
 function successfulDependencies(events) {
   return {
+    createGitHubMutationQueue: () => ({
+      run: async (operation) => {
+        events.push('mutation:scheduled');
+        return operation();
+      },
+    }),
     resolveGitHubAuth: async (account) => ({ ...account, token: `${account.username}-token` }),
     currentUsername: async ({ auth }) => auth.username,
     searchReviewRequestedPRs: async ({ username, repo }) => {
@@ -63,9 +71,10 @@ function successfulDependencies(events) {
       events.push(`review:${learnings}`);
       return { summary: 'reviewed', findings: [] };
     },
-    postReview: async ({ auth }) => {
-      events.push(`post:${auth.username}`);
-    },
+    postReview: async ({ auth, scheduleMutation }) =>
+      scheduleMutation(async () => {
+        events.push(`post:${auth.username}`);
+      }),
   };
 }
 
@@ -92,6 +101,10 @@ test('two requested accounts independently review and persist the same PR', asyn
     'post:personal',
     'post:work',
   ]);
+  assert.equal(
+    events.filter((event) => event === 'mutation:scheduled').length,
+    2,
+  );
   assert.deepEqual(events.filter((event) => event.startsWith('review:')).sort(), [
     'review:learning:personal',
     'review:learning:work',
@@ -124,6 +137,26 @@ test('one unavailable account does not block healthy account work and marks fail
   assert.equal(events.includes('post:personal'), true);
   assert.equal(events.includes('post:work'), false);
   assert.match(await readFile(files.logPath, 'utf8'), /\[work@github\.com\].*account unavailable/);
+});
+
+test('a repository without AI-processing consent never reaches search or reviewer execution', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const unconsented = {
+    ...work,
+    aiProcessingConsent: [],
+  };
+
+  const result = await pollOnce({
+    config: config([unconsented]),
+    ...files,
+    dependencies: successfulDependencies(events),
+  });
+
+  assert.equal(result.failed, true);
+  assert.equal(result.reviewed, 0);
+  assert.equal(result.failures[0].note, 'AI-processing consent required');
+  assert.deepEqual(events, []);
 });
 
 test('a PR failure leaves its state untouched while another account completes', async (t) => {

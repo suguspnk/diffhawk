@@ -20,30 +20,59 @@ function lockKey(label) {
 }
 
 test('fresh acquire succeeds, blocks overlap, and release allows reacquire', async () => {
-  const key = lockKey('basic');
-  const release = await acquireLock(key);
-  assert.ok(release);
-  assert.equal(await acquireLock(key), null);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`basic-${attempt}`);
+    let release;
+    let again;
+    try {
+      release = await acquireLock(key);
+      assert.ok(release);
+      assert.equal(await acquireLock(key), null);
 
-  await release();
-  const again = await acquireLock(key);
-  assert.ok(again);
-  await again();
+      await release();
+      release = null;
+      again = await acquireLock(key);
+      assert.ok(again);
+      await again();
+      return;
+    } catch (err) {
+      if (release) await release();
+      if (again) await again();
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
 
 test('release is idempotent and cannot release a newer owner', async () => {
-  const key = lockKey('release-generation');
-  const firstRelease = await acquireLock(key);
-  await firstRelease();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`release-generation-${attempt}`);
+    let firstRelease;
+    let secondRelease;
+    try {
+      firstRelease = await acquireLock(key);
+      assert.ok(firstRelease);
+      await firstRelease();
 
-  const secondRelease = await acquireLock(key);
-  await firstRelease();
-  assert.equal(
-    await acquireLock(key),
-    null,
-    'an old release callback must not close the newer owner server',
-  );
-  await secondRelease();
+      secondRelease = await acquireLock(key);
+      assert.ok(secondRelease);
+      await firstRelease();
+      assert.equal(
+        await acquireLock(key),
+        null,
+        'an old release callback must not close the newer owner server',
+      );
+      await secondRelease();
+      return;
+    } catch (err) {
+      if (secondRelease) await secondRelease();
+      else if (firstRelease) await firstRelease();
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
 
 test('simultaneous acquires have exactly one winner', async () => {
@@ -104,45 +133,67 @@ test('different lock keys can be held concurrently', async () => {
 });
 
 test('a crashed holder is released by the operating system', async (t) => {
-  const key = lockKey('crash');
   const moduleUrl = new URL('../lib/lock.mjs', import.meta.url).href;
-  const script = `
-    import { acquireLock } from ${JSON.stringify(moduleUrl)};
-    const release = await acquireLock(${JSON.stringify(key)});
-    if (!release) process.exit(2);
-    process.stdout.write('ready\\n');
-    setInterval(() => {}, 60_000);
-  `;
-  const child = spawn(
-    process.execPath,
-    ['--input-type=module', '--eval', script],
-    { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
-  );
-  t.after(() => {
-    if (child.exitCode === null) child.kill();
-  });
-
-  await new Promise((resolve, reject) => {
-    let stdout = '';
-    child.once('error', reject);
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf8');
-      if (stdout.includes('ready\n')) resolve();
-    });
-    child.once('exit', (code) => {
-      if (!stdout.includes('ready\n')) {
-        reject(new Error(`lock-holder child exited before ready (${code})`));
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`crash-${attempt}`);
+    const script = `
+      import { acquireLock } from ${JSON.stringify(moduleUrl)};
+      try {
+        const release = await acquireLock(${JSON.stringify(key)});
+        if (!release) process.exit(2);
+        process.stdout.write('ready\\n');
+        setInterval(() => {}, 60_000);
+      } catch (error) {
+        if (error.code === 'ELOCKAMBIGUOUS') process.exit(3);
+        throw error;
       }
+    `;
+    const child = spawn(
+      process.execPath,
+      ['--input-type=module', '--eval', script],
+      { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
+    );
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
     });
-  });
 
-  assert.equal(await acquireLock(key), null, 'child should own the lock');
-  child.kill(process.platform === 'win32' ? undefined : 'SIGKILL');
-  await new Promise((resolve) => child.once('exit', resolve));
+    const readiness = await new Promise((resolve, reject) => {
+      let stdout = '';
+      child.once('error', reject);
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk.toString('utf8');
+        if (stdout.includes('ready\n')) resolve({ ready: true });
+      });
+      child.once('exit', (code) => {
+        if (!stdout.includes('ready\n')) resolve({ ready: false, code });
+      });
+    });
+    if (!readiness.ready) {
+      if (readiness.code === 3) continue;
+      throw new Error(
+        `lock-holder child exited before ready (${readiness.code})`,
+      );
+    }
 
-  const release = await acquireLock(key);
-  assert.ok(release, 'lock should be reusable immediately after holder exit');
-  await release();
+    try {
+      assert.equal(await acquireLock(key), null, 'child should own the lock');
+      child.kill(process.platform === 'win32' ? undefined : 'SIGKILL');
+      await new Promise((resolve) => child.once('exit', resolve));
+
+      const release = await acquireLock(key);
+      assert.ok(release, 'lock should be reusable immediately after holder exit');
+      await release();
+      return;
+    } catch (err) {
+      if (child.exitCode === null) {
+        child.kill(process.platform === 'win32' ? undefined : 'SIGKILL');
+        await new Promise((resolve) => child.once('exit', resolve));
+      }
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
 
 test('acquisition and release leave no filesystem artifacts', async () => {
