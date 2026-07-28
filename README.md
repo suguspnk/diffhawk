@@ -166,13 +166,20 @@ it up manually:
 
 - **cron** (macOS/Linux): add a line like
   ```
-  */15 * * * * /usr/bin/node /absolute/path/to/openrevuwer/bin/poll.mjs >> ~/.openrevuwer/poll.log 2>&1
+  */15 * * * * '/usr/bin/node' '/absolute/path/to/openrevuwer/bin/scheduled.mjs' '/Users/you/.openrevuwer/scheduler-environment.json' >> '/Users/you/.openrevuwer/poll.log' 2>&1
   ```
 - **launchd** (macOS): the wizard writes a plist to
   `~/Library/LaunchAgents/ai.socialpost.openrevuwer.poll.plist` and loads it with
   `launchctl load`.
 - **Windows Task Scheduler**: the wizard runs
-  `schtasks /create /sc minute /mo <N> /tn openrevuwer-poll /tr "node ...\bin\poll.mjs"`.
+  `schtasks /create /sc minute /mo <N> /tn openrevuwer-poll /tr "node ...\bin\scheduled.mjs ...\scheduler-environment.json"`.
+
+The wizard only offers schedulers supported by the current operating system.
+Installed schedules use an environment file under `~/.openrevuwer/` to retain
+the `PATH` validated during setup and any `OPENREVUWER_HOME` override. This
+keeps `gh` and the selected reviewer CLI discoverable under the restricted
+environments used by cron, launchd, and Task Scheduler. The file contains
+paths only, never GitHub or reviewer credentials.
 
 ## Customizing reviews
 

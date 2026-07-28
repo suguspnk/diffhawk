@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { detectAgents } from '../lib/agent-detect.mjs';
+
+test('detectAgents executes Windows npm shims through ComSpec', async () => {
+  const executions = [];
+  const agents = await detectAgents({
+    platform: 'win32',
+    environment: {
+      PATH: 'C:\\npm',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+    },
+    resolve: async (binary) => `C:\\npm\\${binary}.cmd`,
+    execute: async (...args) => executions.push(args),
+  });
+
+  assert.deepEqual(agents.map(({ status }) => status), ['ready', 'ready']);
+  assert.equal(executions.length, 2);
+  assert.equal(executions[0][0], 'C:\\Windows\\System32\\cmd.exe');
+  assert.deepEqual(executions[0][1].slice(0, 3), ['/d', '/s', '/c']);
+  assert.equal(executions[0][2].shell, false);
+  assert.equal(executions[0][2].windowsVerbatimArguments, true);
+});
+
+test('detectAgents distinguishes missing and failed agent checks', async () => {
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => {
+      if (binary === 'claude') throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      return '/usr/local/bin/codex';
+    },
+    execute: async () => {
+      throw new Error('not authenticated');
+    },
+  });
+
+  assert.deepEqual(agents.map(({ status }) => status), ['not-found', 'unauthenticated']);
+});

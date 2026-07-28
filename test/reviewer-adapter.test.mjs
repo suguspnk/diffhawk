@@ -5,13 +5,155 @@ import {
   buildPrompt,
   DEFAULT_REVIEW_FOCUS_COUNT,
   dedupeFindings,
+  invokeReviewer,
   invokeMultiPassReview,
   isValidReviewFocusCount,
+  parseCommand,
   parseFindings,
   resolveReviewFocusCount,
 } from '../lib/reviewer-adapter.mjs';
 
 const pr = { title: 'Fix off-by-one in pagination', number: 42, body: 'Closes #41.' };
+
+test('parseCommand preserves its portable quoting and escaping grammar', () => {
+  const cases = [
+    {
+      command: String.raw`reviewer --label="two words" hello\ world`,
+      expected: {
+        cmd: 'reviewer',
+        args: ['--label=two words', 'hello world'],
+      },
+    },
+    {
+      command: String.raw`"C:\Program Files\reviewer.exe" --config "C:\Users\me\App Data\config.json"`,
+      expected: {
+        cmd: String.raw`C:\Program Files\reviewer.exe`,
+        args: ['--config', String.raw`C:\Users\me\App Data\config.json`],
+      },
+    },
+    {
+      command: String.raw`reviewer --dir "C:\Program Files\Workspace\" --next value`,
+      expected: {
+        cmd: 'reviewer',
+        args: ['--dir', 'C:\\Program Files\\Workspace\\', '--next', 'value'],
+      },
+    },
+    {
+      command: String.raw`reviewer "" '' prefix"two words"suffix "say \"hello\"" 'it\'s fine'`,
+      expected: {
+        cmd: 'reviewer',
+        args: ['', '', 'prefixtwo wordssuffix', 'say "hello"', "it's fine"],
+      },
+    },
+    {
+      command: String.raw`reviewer ; && | $(touch\ file) > out`,
+      expected: {
+        cmd: 'reviewer',
+        args: [';', '&&', '|', '$(touch file)', '>', 'out'],
+      },
+    },
+  ];
+
+  for (const { command, expected } of cases) {
+    assert.deepEqual(parseCommand(command), expected, command);
+  }
+});
+
+test('parseCommand rejects unmatched quotes', () => {
+  assert.throws(
+    () => parseCommand('reviewer "unterminated'),
+    /invalid reviewerCommand: unmatched " quote/,
+  );
+});
+
+test('invokeReviewer passes mixed quoted and escaped custom arguments to a real child', async () => {
+  const reviewerCommand = [
+    `"${process.execPath}"`,
+    '-p',
+    '"JSON.stringify(process.argv.slice(1))"',
+    '--',
+    '--label="two words"',
+    String.raw`hello\ world`,
+    String.raw`"C:\Program Files\reviewer.exe"`,
+    '""',
+    ';',
+  ].join(' ');
+
+  const output = await invokeReviewer({ reviewerCommand, prompt: '' });
+
+  assert.deepEqual(JSON.parse(output), [
+    '--label=two words',
+    'hello world',
+    String.raw`C:\Program Files\reviewer.exe`,
+    '',
+    ';',
+  ]);
+});
+
+test('invokeReviewer uses the portable command preparation boundary', async () => {
+  let preparedInput;
+  const output = await invokeReviewer({
+    reviewerCommand: 'reviewer.cmd --label="two words"',
+    prompt: '',
+    platform: 'win32',
+    environment: { PATH: 'C:\\npm' },
+    prepare: async (command, args, options) => {
+      preparedInput = { command, args, options };
+      return {
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("prepared")'],
+        options: { shell: false },
+      };
+    },
+  });
+
+  assert.equal(output, 'prepared');
+  assert.deepEqual(preparedInput, {
+    command: 'reviewer.cmd',
+    args: ['--label=two words'],
+    options: {
+      platform: 'win32',
+      environment: { PATH: 'C:\\npm' },
+    },
+  });
+});
+
+test('invokeReviewer handles EPIPE when the reviewer exits before consuming a large prompt', async () => {
+  const reviewerCommand = `"${process.execPath}" -e "process.exit(7)"`;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand,
+      prompt: 'x'.repeat(16 * 1024 * 1024),
+    }),
+    /exited 7: \(no stderr\)/,
+  );
+});
+
+test('invokeReviewer rejects a stdin failure when the reviewer otherwise exits successfully', async () => {
+  const reviewerCommand = `"${process.execPath}" -e "process.exit(0)"`;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand,
+      prompt: 'x'.repeat(16 * 1024 * 1024),
+    }),
+    /failed to send prompt.*write EPIPE/,
+  );
+});
+
+test('invokeReviewer preserves launch errors when stdin also cannot accept the prompt', async () => {
+  const reviewerCommand = `openrevuwer-missing-reviewer-${process.pid}-${Date.now()}`;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand,
+      prompt: 'prompt',
+      timeoutMs: 100,
+    }),
+    new RegExp(`failed to launch "${reviewerCommand}".*ENOENT`),
+  );
+});
 
 test('buildPrompt fills every placeholder from the template', () => {
   const template = [
