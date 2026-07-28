@@ -150,11 +150,16 @@ async function main() {
     const agentOptions = agents.map((agent) => {
       const badge = agent.status === 'ready' ? '✓ ready'
         : agent.status === 'unauthenticated' ? '✗ found, not authenticated'
+        : agent.status === 'incompatible' ? '✗ update required'
         : 'not found';
       return {
         value: agent.id,
         label: `${agent.label} (${badge})`,
-        hint: agent.status === 'unauthenticated' ? `run: ${agent.loginCommand}` : undefined,
+        hint: agent.status === 'unauthenticated'
+          ? `run: ${agent.loginCommand}`
+          : agent.status === 'incompatible'
+            ? 'update the CLI to a release with required isolation flags'
+            : undefined,
       };
     });
     agentOptions.push({ value: 'custom', label: 'Custom command...' });
@@ -184,6 +189,13 @@ async function main() {
           initialValue: false,
         });
         if (p.isCancel(proceed) || !proceed) exitCancelled();
+      } else if (agent.status === 'incompatible') {
+        p.log.error(
+          `${agent.label} lacks required reviewer isolation flags: ` +
+          agent.missingCapabilities.join(', '),
+        );
+        p.log.info('Update the CLI before selecting this backend.');
+        exitCancelled();
       }
       reviewerCommand = agent.reviewerCommand;
     }
