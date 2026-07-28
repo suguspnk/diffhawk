@@ -26,15 +26,9 @@ a fresh session with: "implement the PR review bot per PRD.md".
   2. "Seen ≠ done" — must not just track "have I looked at this PR" but
      detect **new commits since the last review** and re-trigger. So state is
      keyed by PR + last-reviewed commit SHA, not a boolean seen/unseen flag.
-  3. Needs a real review prompt, not "review this PR" — **decided: write a
-     new checklist from scratch, owned by openrevuwer itself** (not borrowed
-     from `socialpostai-v2` or any watched repo — keeps openrevuwer's own
-     standards independent of any one project's docs). Default location:
-     `openrevuwer/docs/checklist.md`. "Configurable" means **directly
-     editable** — just open and edit `docs/checklist.md`, no wizard/UI
-     needed for routine changes. `checklistPath` in config exists on top of
-     that for the less common case of pointing a specific watched repo at
-     a wholly different checklist file.
+  3. Needs a real review prompt, not "review this PR." Prompts are directly
+     editable and shared per GitHub host/repository. Durable corrections are
+     isolated per GitHub host/account/repository.
   4. Output: post directly as a `gh pr comment` — auto-approved by the user
      for this specific automated flow, no confirmation prompt needed each run.
      (This approval is scoped to this bot's own posting behavior only — not a
@@ -53,11 +47,10 @@ openrevuwer/
 ├── PRD.md                  (this file)
 ├── package.json            (pnpm, type: module, bin entry)
 ├── pnpm-lock.yaml
-├── config.json             (repos to watch, reviewer username, checklist paths)
+├── config.example.json     (versioned multi-account config template)
 ├── state.json              (gitignored — per-PR last-reviewed SHA, local only)
 ├── docs/
-│   ├── checklist.md          (openrevuwer's own default review checklist)
-│   └── learnings.md          (optional, user-maintained — durable review notes/corrections)
+│   └── review-prompt.default.md (bundled seed for editable repository prompts)
 ├── bin/
 │   ├── poll.mjs             (one-shot poll entrypoint)
 │   └── init.mjs             (interactive onboarding wizard — @clack/prompts)
@@ -80,41 +73,43 @@ poller as a `pnpm` script / bin.
 
 ## Core logic (one poll cycle)
 
-1. **Discover candidate PRs.** **Decided: configurable**, not hardcoded either
-   way — `config.json` supports both modes:
+1. **Discover candidate PRs.** For every configured account and every
+   explicitly selected repository:
    ```bash
    gh api /search/issues -f q="is:pr is:open review-requested:antonio repo:OWNER/REPO" --jq '.items[].number'
    ```
-   Run once per repo listed under `pollTargets` for per-repo scoping, or set
-   a top-level `"searchScope": "global"` (omit `repo:` from the query) to
-   cover every repo the user has access to from one config entry. Default to
-   per-repo (explicit, predictable) unless global is set.
+   Global search is intentionally unsupported: coverage must be explicit.
+   Resolve each account with `gh auth token --hostname ... --user ...` and
+   scope every child command with that credential.
 
-2. **Review candidates in bounded concurrent batches.** Build one queue across
-   all configured poll targets, deduplicate PRs that appear more than once,
-   and process up to `reviewBatchSize` PRs concurrently (default `5`). This is
-   an advanced `config.json` setting and is not prompted for during onboarding.
+2. **Review candidates in bounded concurrent batches.** Build an independent
+   queue per account, deduplicate within that account, then round-robin the
+   queues into one global queue. Process up to `reviewBatchSize` PRs
+   concurrently across all accounts (default `5`).
    For each candidate, get the current head commit SHA:
    ```bash
    gh pr view <N> --repo OWNER/REPO --json headRefOid,number,title,url
    ```
 
 3. **Compare against state.json**:
-   - Key: `OWNER/REPO#N`
+   - Key: `HOST@USERNAME::OWNER/REPO#N`
    - If key absent → new PR, needs review.
    - If key present and stored SHA != current `headRefOid` → new commits since
      last review, needs re-review.
    - If key present and SHA matches → skip, already reviewed this exact head.
+   - If local state is missing, check the PR's submitted reviews for
+     openrevuwer's opaque account/repo/commit marker. If found, repair local
+     state and skip generation/posting. This closes the crash window between a
+     successful GitHub POST and the following state write.
 
 4. **For PRs needing review**, build the review prompt:
    - Fetch diff: `gh pr diff <N> --repo OWNER/REPO`
    - Fetch PR metadata (title, description, base/head branch) via `gh pr view`
-   - Load the repository's user-editable prompt from `reviewPromptPath`.
-     Setup seeds one independent prompt per repository from
-     `docs/review-prompt.default.md`; legacy checklist paths remain supported
-     as migration inputs.
-   - Load `docs/learnings.md` (or repo-configured `learningsPath`) if present
-     and inline it too — see **Learnings file** below.
+   - Load the repository's user-editable prompt from
+     `docs/review-prompts/<host>/<owner>/<repo>.md`. Accounts on the same host
+     share it.
+   - Load account-specific corrections from
+     `docs/learnings/<host>/<username>/<owner>/<repo>.md`.
    - Compose a prompt roughly like:
      ```
      Perform a complete review of the entire pull request diff. Report every
@@ -132,7 +127,7 @@ poller as a `pnpm` script / bin.
      format" below for the exact shape the adapter must return.
 
      ## Past learnings (adjust future reviews accordingly)
-     <contents of docs/learnings.md, if present>
+     <contents of the account/repository learnings file, if present>
 
      ## PR: <title> (#<N>)
      <description>
@@ -172,7 +167,10 @@ poller as a `pnpm` script / bin.
    confirmation gate — auto-approved per user's decision for this flow.
    Findings the adapter couldn't anchor to a specific file/line fall back
    into the top-level review `body` (the summary), so nothing silently
-   drops just because a line reference was missing.
+   drops just because a line reference was missing. Include a deterministic,
+   opaque HTML-comment marker in every review body. Retry the summary-only
+   fallback only for a confirmed HTTP 422; on ambiguous transport errors,
+   reconcile by listing reviews instead of issuing a second unsafe POST.
 
 7. **If the reviewer adapter fails or returns empty** (**decided**): log the
    failure details (PR key, command, exit code/stderr) to a local log file
@@ -220,11 +218,10 @@ Prior-art research shows tools like CodeRabbit let reviewers reject/accept
 AI suggestions, and that feedback shapes future reviews — reducing repeat
 false positives. **Decided: adopt a lightweight local equivalent.**
 
-- `docs/learnings.md` (default) or repo-configured `learningsPath`: a
-  free-form markdown file of durable notes ("don't flag X, it's
-  intentional because Y", "this repo always does Z, not the checklist's
-  default recommendation"). "Configurable" here means **directly editable**
-  — the user opens the file and edits it, there's no wizard/UI for it.
+- `docs/learnings/<host>/<username>/<owner>/<repo>.md`: a free-form markdown
+  file of durable notes ("don't flag X, it's intentional because Y"). The
+  deterministic path prevents corrections learned for one reviewer identity
+  or repository from contaminating another.
 - Not auto-written by openrevuwer itself in v1 — the user manually appends
   entries after noticing the bot repeat a bad suggestion. (Auto-capturing
   "user reacted 👎 to this comment" would require polling PR comment
@@ -254,19 +251,21 @@ LLM harness) is a one-line config change, not a code change.
 Suggested default for `reviewerCommand`: `claude -p` reading the prompt from
 stdin, since that matches how the user already works — but keep it swappable.
 
-## Config shape (draft)
+## Config shape
 
 ```json
 {
-  "githubAccount": {
-    "hostname": "github.com",
-    "username": "antonio"
-  },
-  "pollTargets": [
+  "configVersion": 2,
+  "githubAccounts": [
     {
-      "repo": "OWNER/socialpostai-v2",
-      "checklistPath": "/absolute/path/to/openrevuwer/docs/checklist.md",
-      "learningsPath": "/absolute/path/to/openrevuwer/docs/learnings.md"
+      "hostname": "github.com",
+      "username": "work-account",
+      "repositories": ["OWNER/socialpostai-v2"]
+    },
+    {
+      "hostname": "github.com",
+      "username": "personal-account",
+      "repositories": ["OWNER/personal-project"]
     }
   ],
   "reviewerCommand": "claude -p",
@@ -278,8 +277,7 @@ stdin, since that matches how the user already works — but keep it swappable.
 
 **Decided: repo name is `suguspnk/openrevuwer`** for this bot's own repo (not
 to be confused with `socialpostai-v2`, which is what it watches/reviews).
-Confirm the actual `OWNER/socialpostai-v2` slug (check `git remote -v` in that
-repo) before wiring up `pollTargets` at implementation time.
+Repository targets are always explicit `OWNER/REPO` strings.
 
 ## State file shape (gitignored, local only)
 
@@ -333,42 +331,31 @@ cloned checkout). Steps, in order:
 1. **Welcome banner.** One line — name + one-sentence purpose. No ASCII art.
 
 2. **GitHub reviewer account selection.** Runs `gh auth status`, lists every
-   authenticated account, and asks which account should search for review
-   requests and post reviews.
+   authenticated account, and asks for the complete set that should search
+   for review requests and post reviews. Existing configured accounts are
+   preselected.
    - No authenticated accounts → print the exact fix (`gh auth login`) and
      exit immediately.
-   - Store only the selected hostname and username in config, never a token.
-   - When upgrading a legacy config and retaining the same reviewer, migrate
-     unscoped state keys before writing the new config. Never attribute legacy
-     state to a newly selected, different account.
-   - Resolve that account at poll time with
+   - Store only hostnames, usernames, and explicit repositories in config,
+     never tokens.
+   - Config version 2 is a clean break; legacy config shapes are rejected and
+     are not migrated.
+   - Resolve each account at poll time with
      `gh auth token --hostname ... --user ...` and pass the token only to
      child `gh` processes. Do not use
      `gh auth switch`, because it mutates global CLI state and races with
      other scheduled Openrevuwer instances.
 
-3. **Repo selection — decided: checklist, not a mode toggle.** No
-   "one repo vs. all repos" branch. Instead:
-   - Fetch every repo the user has access to:
+3. **Repository selection — explicit per account.** No global mode:
+   - For each selected account, fetch every accessible repository:
      `gh repo list --json nameWithOwner,isPrivate --limit 200` (paginate if
      needed).
-   - Render as a multi-select checklist (`@clack/prompts` `multiselect`),
-     searchable/filterable by typing, nothing pre-checked.
-   - Selected repos become the `pollTargets` entries. This replaces the
-     earlier "global search scope" idea as the *onboarding default* — the
-     `searchScope: "global"` config option (see Decisions, item 3) still
-     exists for advanced/manual config editing, but the wizard itself
-     always resolves to an explicit repo list so the user always knows
-     exactly what's being watched.
+   - Render a searchable multi-select with existing repository choices
+     preselected. Require at least one repository per account.
 
-4. **Checklist step — decided: informational, not a fork.** Every
-   `pollTargets` entry gets the same default `checklistPath`
-   (`docs/checklist.md`); there's no per-repo "custom vs default" prompt
-   during onboarding (that already exists as a manually-edited config
-   option — see `checklistPath` in Config shape). The wizard just prints
-   one line: *"Review checklist: docs/checklist.md — edit this file
-   anytime to change what openrevuwer looks for, no need to rerun setup."*
-   Same one-line treatment for `docs/learnings.md`.
+4. **Review files — deterministic and previewed.** Seed one prompt per
+   host/repository and one empty learnings file per host/account/repository,
+   but only after the final confirmation. Never overwrite existing files.
 
 5. **Reviewer backend — detect known agent CLIs, offer custom as always
    available.**
@@ -419,13 +406,13 @@ cloned checkout). Steps, in order:
    picking "cron" earlier in the menu is not itself the confirmation.
    "I'll do it myself" skips this entirely; nothing is written to the OS.
 
-7. **Summary + confirm.** Render the resulting config as a compact table
-   (repos, checklist path, reviewer command, schedule) and ask for a final
-   y/n before writing `config.json`. If the user declines, exit without
-   writing anything (re-running `init` starts clean, doesn't merge/patch a
-   partial file).
+8. **Summary + confirm.** Preview config, deterministic review-file paths,
+   and the one shared schedule. Ask once before applying file/config/schedule
+   writes. If the user declines, leave configuration and review files
+   unchanged.
 
-8. **Success screen.** Print the one command to do a real dry run, e.g.
+9. **Success screen.** Print the command to do a complete dry run and an
+   account-filtered example using `--account USERNAME@HOSTNAME`, e.g.
    `node bin/poll.mjs --dry-run` (composes prompts and calls the reviewer
    adapter, but skips the actual `gh pr review` post) — onboarding ends at
    "see it produce real output," not "trust it blindly."
@@ -445,8 +432,7 @@ All open items from spec drafting are now resolved:
 2. **Bot repo name: `suguspnk/openrevuwer`.** Still need the actual
    `OWNER/socialpostai-v2` slug for the *watched* repo — check `git remote -v`
    there at implementation time.
-3. **Search scope: configurable**, per-repo (default) or global via
-   `"searchScope": "global"` in config.
+3. **Search scope: explicit per account.** Global search is unsupported.
 4. **Error handling:** log failure details, skip posting, leave state
    unchanged so it retries next poll.
 5. **Post format: formal `gh pr review`**, not a plain `gh pr comment` —
@@ -454,10 +440,8 @@ All open items from spec drafting are now resolved:
    research:** inline, severity-tagged comments (via the REST API's
    `comments[]`, since `gh pr review` CLI can't anchor per-line), not a
    single review body — see **Structured output format** above.
-6. **Checklist source: openrevuwer's own**, written from scratch at
-   `docs/checklist.md` — not borrowed from `socialpostai-v2` or any watched
-   repo. Configurable per-repo via `checklistPath` so it can be overridden
-   once deployed.
+6. **Prompt source: openrevuwer's own bundled template**, seeded into a
+   directly editable host/repository prompt path.
 7. **Prior-art research done** (competitive scan of CodeRabbit, Qodo/PR-Agent,
    Sourcery, DeepSource, Greptile, Hermes Agent, etc. — see conversation
    history). Confirmed no existing product does local-polling +
@@ -465,15 +449,15 @@ All open items from spec drafting are now resolved:
    adopted from the scan:
    - **Inline, severity-tagged comments** instead of a single summary
      comment (near-universal pattern across commercial tools).
-   - **A `docs/learnings.md` file** inlined into every prompt, so
-     user-corrected mistakes don't repeat (lightweight local analog to
-     CodeRabbit's "learnings" feature).
+   - **Account/repository learning files** are inlined only into that
+     identity's prompt, so corrections compound without cross-account
+     contamination.
 8. **Onboarding UX designed** (`openrevuwer init`, see full section above):
    interactive wizard using `@clack/prompts`. Key resolved sub-decisions:
-   - GitHub account selection lists every account authenticated in `gh` and
-     pins repository discovery and polling to the selected identity.
-   - Repo selection is a **multi-select checklist of all accessible repos**
-     (`gh repo list`), not a "one repo vs. all repos" mode toggle.
+   - GitHub account selection is a multi-select; every selected identity owns
+     an independent explicit repository list.
+   - Repo selection is a searchable multi-select of accessible repos for each
+     account, with no global mode.
    - Reviewer-backend step **detects known agent CLIs** (Claude Code,
      Codex) on PATH and **checks each is actually authenticated**, not
      just installed — surfacing the specific login command inline if not.
@@ -484,15 +468,18 @@ All open items from spec drafting are now resolved:
      exact entry and requires a final explicit confirm immediately before
      writing it, since it's a standing OS-level change. "I'll do it
      myself" only ever prints instructions, no OS write.
-   - Checklist/learnings paths are **not** a per-repo wizard prompt — they
-     default the same for every repo and are meant to be edited directly
-     as plain files after setup, not reconfigured through the wizard.
+   - Prompt/learnings paths are deterministic rather than configurable:
+     prompts are shared per host/repository and learnings are isolated per
+     host/account/repository.
 
-## Open items for the next session
+## Multi-account operational decisions
 
-1. Write `docs/checklist.md` (openrevuwer's own review checklist — content not
-   yet drafted). `docs/learnings.md` can start empty/absent — it's meant to
-   accumulate over time, not be pre-populated.
-2. Implement `bin/init.mjs` per the Onboarding section — scheduling install
-   (cron/launchd/Task Scheduler) happens there now, not as a separate
-   manual step.
+- One account's auth failure never blocks healthy accounts; account,
+  repository, and candidate failures are logged and make the final exit
+  nonzero after independent work completes.
+- The same PR can be reviewed independently by multiple requested identities.
+- One shared state file uses hostname/username-namespaced keys.
+- One global `reviewBatchSize` is enforced across a round-robin account queue.
+- One process lock prevents overlapping polls and blocks `init` while polling.
+- Removing an account or repository stops polling it but retains its prompt,
+  learnings, and state for safe reactivation.

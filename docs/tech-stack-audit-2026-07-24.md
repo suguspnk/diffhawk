@@ -43,7 +43,7 @@ than the security-critical injection surface.
   starting with `-` could theoretically be misread as a flag by `gh`. Low
   severity here since `repo`/`number` originate from `gh api`'s own JSON
   response, not directly from a PR author, but worth a defensive check if
-  `config.json`'s `pollTargets[].repo` is ever taken from a less trusted
+  `config.json`'s `githubAccounts[].repositories[]` is ever taken from a less trusted
   source.
 
 ## Node.js (ESM + child_process) — ✅ Compliant, one soft gap

@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   authEnvironment,
-  configuredGitHubAccount,
-  legacyGitHubAccount,
   parseAuthStatus,
 } from '../lib/github-auth.mjs';
 
@@ -25,44 +23,6 @@ enterprise.example.com
     { hostname: 'github.com', username: 'octocat-personal', active: false },
     { hostname: 'enterprise.example.com', username: 'octocat', active: true },
   ]);
-});
-
-test('configuredGitHubAccount accepts new and legacy config shapes', () => {
-  assert.deepEqual(
-    configuredGitHubAccount({
-      githubAccount: { hostname: 'GitHub.com', username: 'OctoCat' },
-    }),
-    { hostname: 'github.com', username: 'OctoCat' },
-  );
-
-  assert.deepEqual(
-    configuredGitHubAccount({ githubUsername: 'legacy-user' }),
-    { hostname: 'github.com', username: 'legacy-user' },
-  );
-});
-
-test('configuredGitHubAccount rejects missing account configuration', () => {
-  assert.throws(
-    () => configuredGitHubAccount({}),
-    /missing githubAccount/,
-  );
-});
-
-test('legacyGitHubAccount identifies only the pre-account config shape', () => {
-  assert.deepEqual(
-    legacyGitHubAccount({
-      githubHostname: 'GitHub.com',
-      githubUsername: 'OctoCat',
-    }),
-    { hostname: 'github.com', username: 'OctoCat' },
-  );
-  assert.equal(
-    legacyGitHubAccount({
-      githubAccount: { hostname: 'github.com', username: 'octocat' },
-      githubUsername: 'legacy-user',
-    }),
-    null,
-  );
 });
 
 test('authEnvironment replaces ambient GitHub.com credentials', () => {

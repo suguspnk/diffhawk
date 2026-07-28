@@ -10,13 +10,6 @@ severity-tagged GitHub review.
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
 
-> **Upgrading from a local `diffhawk` clone?** Config, state, and logs used
-> to live in the repo root; they now live under `~/.openrevuwer/` (see
-> [Install](#install)). There's no automatic migration — copy your old
-> `config.json`/`state.json` into `~/.openrevuwer/` yourself, or just rerun
-> `init`. Without either, every currently-open PR you're a reviewer on will
-> be treated as new and re-reviewed on the next poll.
-
 ## Prerequisites
 
 Before running anything, make sure you have:
@@ -29,8 +22,8 @@ Before running anything, make sure you have:
    ```bash
    gh auth status
    ```
-   If this fails, run `gh auth login` first. Multiple authenticated accounts
-   are supported; openrevuwer asks which one should post reviews.
+   If this fails, run `gh auth login` first. Multiple authenticated accounts,
+   including accounts on different GitHub hosts, can run together.
 3. **A reviewer CLI**, already logged in on its own — pick one:
    - [Claude Code](https://claude.com/claude-code): `claude /login`
    - [Codex CLI](https://github.com/openai/codex): `codex login`
@@ -66,31 +59,27 @@ openrevuwer init
 ```
 
 This will:
-1. List the accounts authenticated in `gh` and ask which account should
-   search for review requests and post reviews.
-2. Show every repo that selected account can access — its own, plus any org or
-   collaborator repos — as a type-to-filter, multi-select list (handy if
-   that's hundreds or thousands of repos). Select the ones you want
-   openrevuwer to watch.
-3. Seed a review prompt for each selected repo under
-   `~/.openrevuwer/docs/review-prompts/` (from the bundled default template,
-   only if that repo doesn't already have one) and print where it and the
-   shared learnings file (`~/.openrevuwer/docs/learnings.md`) live — edit
-   either anytime, no need to rerun setup.
+1. List every account authenticated in `gh` and ask which complete set of
+   accounts should search for review requests and post reviews. Existing
+   configured accounts are preselected.
+2. For each account, show every accessible repository as a searchable
+   multi-select. Every account must explicitly watch at least one repository;
+   there is no global-search mode.
+3. Seed one shared prompt per GitHub host/repository and one independent
+   learnings file per host/account/repository. Existing files are never
+   overwritten.
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead.
 5. Ask how many independent review focus categories to run per PR. The
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
-6. Offer to install a schedule (cron, launchd on macOS, or Windows Task
-   Scheduler) — it shows you the **exact** entry before writing anything and
-   asks for confirmation. You can also choose "I'll do it myself" to just get
-   the instructions.
-7. Show you the final config and ask before writing `~/.openrevuwer/config.json`.
+6. Offer one schedule for the complete multi-account poller.
+7. Preview the config, deterministic review-file paths, and schedule, then ask
+   once before applying them.
 
-Nothing is written to your system or to GitHub without an explicit
-confirmation at each step.
+Cancelling before the final confirmation leaves the config and review files
+unchanged.
 
 ### Setting up by hand instead
 
@@ -106,28 +95,19 @@ then copy `<that path>/openrevuwer/config.example.json` to
 
 | Field | Meaning |
 |---|---|
-| `githubAccount` | `{ hostname, username }` for the authenticated `gh` account that searches for review requests and posts reviews. |
-| `searchScope` | `"per-repo"` (default) to only watch `pollTargets`, or `"global"` to search every repo you have access to. |
-| `pollTargets` | Array of `{ repo, reviewPromptPath, learningsPath }` — one entry per watched repo. Ignored when `searchScope` is `"global"`. |
+| `configVersion` | Required schema version; currently `2`. Older/single-account shapes are rejected. |
+| `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each `repositories` value is a non-empty array of explicit `OWNER/REPO` strings. |
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
-| `reviewBatchSize` | Maximum PR reviews to run concurrently (defaults to `5`). This advanced setting is configured by editing the file; the onboarding wizard does not prompt for it. |
+| `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 | `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`; the legacy field name is retained for compatibility). Ownership uses one of a deterministic sequence of kernel-managed loopback listeners, not a filesystem lock file, so distinct keys can bypass port collisions and crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
-With `"searchScope": "global"`, each repository's prompt is created lazily
-under `~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md` the first time a
-matching PR is found. A legacy config-level `reviewPromptPath` or
-`checklistPath` is used only to seed each independent copy.
-
 `~/.openrevuwer/config.json` is local, machine-specific config — it's never
-committed to a repo. It stores only the selected hostname and username, never
-a token. Each poll retrieves that account's token from the GitHub CLI
-credential store and passes it only to its child `gh` processes. Legacy
-configs with `githubUsername` continue to work and are interpreted as an
-account on `github.com`. Rerunning init with that same account migrates its
-existing review state to account-scoped keys; selecting a different account
-leaves the legacy state untouched so the new reviewer starts independently.
+committed to a repo. It stores hostnames and usernames, never tokens. Each poll
+retrieves every selected account's token from the GitHub CLI credential store
+and passes it only to that account's child `gh` processes. It never changes
+the globally active `gh` account.
 
 ## Try it (dry run)
 
@@ -137,6 +117,12 @@ stops short of posting to GitHub:
 
 ```bash
 openrevuwer --dry-run
+```
+
+To exercise only one configured identity:
+
+```bash
+openrevuwer --dry-run --account work-account@github.com
 ```
 
 You should see one block per matching PR with a summary and finding count.
@@ -152,18 +138,25 @@ openrevuwer
 ```
 
 This posts an actual GitHub PR review (inline comments + summary) for every
-PR where you're the requested reviewer and the head commit hasn't been
-reviewed yet. Reviews run concurrently in batches of five by default; set
-`reviewBatchSize` in `~/.openrevuwer/config.json` to change that limit. On
+PR where any configured identity is the requested reviewer and the head commit
+hasn't been reviewed by that identity yet. The queue is round-robin across
+accounts and uses one global concurrency limit. Set `reviewBatchSize` in
+`~/.openrevuwer/config.json` to change that limit. On
 success, it records the reviewed SHA in
 `~/.openrevuwer/state.json` so the same commit isn't re-reviewed next run.
 State keys include the selected GitHub account, so two accounts can review
-the same PR independently.
+the same PR independently. Reviews also carry an opaque hidden marker; if a
+post succeeds but the local state write fails, the next poll reconciles the
+existing review instead of posting a duplicate.
 
-If anything fails partway (reviewer CLI errors, GitHub API rejects the post,
-etc.), openrevuwer logs the failure to `~/.openrevuwer/poll.log` and skips
-posting for that PR — it never posts a broken or empty review, and leaves
-state untouched so the next run retries automatically.
+If one account, repository, or PR fails, openrevuwer logs the account-prefixed
+failure, continues all independent work, and exits nonzero after the poll. It
+never posts a broken or empty review, and leaves failed PR state untouched so
+the next run retries automatically. A global operation lock prevents
+overlapping polls from duplicating reviews; a second poll logs that one is
+already active and exits successfully. Fatal startup failures are also written
+to `~/.openrevuwer/poll.log`, including on Windows where the scheduler does not
+redirect process output.
 
 ## Scheduling
 
@@ -183,8 +176,8 @@ it up manually:
 
 ## Customizing reviews
 
-- **`~/.openrevuwer/docs/review-prompts/<owner>/<repo>.md`** — the actual
-  prompt sent to the reviewer CLI for that specific repo: framing, review
+- **`~/.openrevuwer/docs/review-prompts/<host>/<owner>/<repo>.md`** — the
+  prompt shared by every configured reviewer of that host/repository: framing, review
   criteria, and where the PR title/body/diff and past learnings get
   inserted (via `{{pr_title}}`, `{{pr_number}}`, `{{pr_body}}`, `{{diff}}`,
   and `{{learnings_section}}` placeholders). `init` seeds one copy per
@@ -196,10 +189,10 @@ it up manually:
   the review-posting logic depends on to anchor inline comments is always
   appended automatically and isn't part of this file, so an edit here can't
   break that regardless of what you change.
-- **`~/.openrevuwer/docs/learnings.md`** — durable notes to stop openrevuwer repeating a bad
-  suggestion (e.g. "don't flag X, it's intentional because Y"). Doesn't exist
-  by default — create it whenever you have a correction to record. It's
-  loaded into every prompt automatically if present.
+- **`~/.openrevuwer/docs/learnings/<host>/<username>/<owner>/<repo>.md`** —
+  corrections isolated to one reviewer identity and repository (for example,
+  "don't flag X, it's intentional because Y"). `init` creates each selected
+  target's file and never overwrites its contents.
 
 ## Troubleshooting
 

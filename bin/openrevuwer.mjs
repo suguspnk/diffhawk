@@ -15,8 +15,8 @@ const parsed = parseArgs(process.argv.slice(2));
 
 if (parsed.error) {
   console.error(`openrevuwer: ${parsed.error}`);
-  console.error('Usage: openrevuwer [--dry-run]   Run a poll');
-  console.error('       openrevuwer init          Run the setup wizard');
+  console.error('Usage: openrevuwer [--dry-run] [--account USERNAME@HOSTNAME]');
+  console.error('       openrevuwer init');
   process.exit(1);
 }
 
