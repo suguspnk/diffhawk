@@ -117,10 +117,11 @@ poller as a `pnpm` script / bin.
      distinct, concrete, high-confidence issue you can substantiate. Do not
      stop after the first issue or impose an arbitrary findings limit.
 
-     Use the authenticated GitHub CLI to inspect the complete cumulative PR
-     diff and surrounding source. On a re-review, inspect every non-generated
-     file and hunk — including code from earlier commits — as if it has not
-     been reviewed before. For large PRs, inspect incrementally and maintain a
+     Use the structured OpenMergeLens inspection tool, backed by constrained
+     host-side GitHub CLI reads, to inspect the complete cumulative PR diff and
+     surrounding source. On a re-review, inspect every non-generated file and
+     hunk — including code from earlier commits — as if it has not been
+     reviewed before. For large PRs, inspect incrementally and maintain a
      coverage ledger instead of relying on one terminal rendering.
 
      Positively identify generated artifacts using repository evidence such as
