@@ -4,47 +4,47 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import { userHome, userPath, resolveUserPath } from '../lib/paths.mjs';
 
-test('userHome defaults to ~/.openrevuwer when OPENREVUWER_HOME is unset', (t) => {
-  const original = process.env.OPENREVUWER_HOME;
-  delete process.env.OPENREVUWER_HOME;
+test('userHome defaults to ~/.openmergelens when OPENMERGELENS_HOME is unset', (t) => {
+  const original = process.env.OPENMERGELENS_HOME;
+  delete process.env.OPENMERGELENS_HOME;
   t.after(() => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
   });
 
-  assert.equal(userHome(), path.join(homedir(), '.openrevuwer'));
+  assert.equal(userHome(), path.join(homedir(), '.openmergelens'));
 });
 
-test('userHome respects OPENREVUWER_HOME override', (t) => {
-  const original = process.env.OPENREVUWER_HOME;
-  process.env.OPENREVUWER_HOME = '/tmp/custom-openrevuwer-home';
+test('userHome respects OPENMERGELENS_HOME override', (t) => {
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = '/tmp/custom-openmergelens-home';
   t.after(() => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
   });
 
-  assert.equal(userHome(), '/tmp/custom-openrevuwer-home');
+  assert.equal(userHome(), '/tmp/custom-openmergelens-home');
 });
 
 test('userPath joins segments onto the user home', (t) => {
-  const original = process.env.OPENREVUWER_HOME;
-  process.env.OPENREVUWER_HOME = '/tmp/custom-openrevuwer-home';
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = '/tmp/custom-openmergelens-home';
   t.after(() => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
   });
 
-  assert.equal(userPath('config.json'), '/tmp/custom-openrevuwer-home/config.json');
-  assert.equal(userPath('docs', 'checklist.md'), '/tmp/custom-openrevuwer-home/docs/checklist.md');
-  assert.equal(userPath(), '/tmp/custom-openrevuwer-home');
+  assert.equal(userPath('config.json'), '/tmp/custom-openmergelens-home/config.json');
+  assert.equal(userPath('docs', 'checklist.md'), '/tmp/custom-openmergelens-home/docs/checklist.md');
+  assert.equal(userPath(), '/tmp/custom-openmergelens-home');
 });
 
 test('resolveUserPath leaves an absolute path untouched', (t) => {
-  const original = process.env.OPENREVUWER_HOME;
-  process.env.OPENREVUWER_HOME = '/tmp/custom-openrevuwer-home';
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = '/tmp/custom-openmergelens-home';
   t.after(() => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
   });
 
   // The bug this guards against: path.join(userHome(), absPath) does NOT
@@ -54,13 +54,13 @@ test('resolveUserPath leaves an absolute path untouched', (t) => {
 });
 
 test('resolveUserPath resolves a relative path against the user home', (t) => {
-  const original = process.env.OPENREVUWER_HOME;
-  process.env.OPENREVUWER_HOME = '/tmp/custom-openrevuwer-home';
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = '/tmp/custom-openmergelens-home';
   t.after(() => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
   });
 
-  assert.equal(resolveUserPath('./state.json'), '/tmp/custom-openrevuwer-home/state.json');
-  assert.equal(resolveUserPath('docs/checklist.md'), '/tmp/custom-openrevuwer-home/docs/checklist.md');
+  assert.equal(resolveUserPath('./state.json'), '/tmp/custom-openmergelens-home/state.json');
+  assert.equal(resolveUserPath('docs/checklist.md'), '/tmp/custom-openmergelens-home/docs/checklist.md');
 });

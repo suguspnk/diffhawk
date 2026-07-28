@@ -42,6 +42,7 @@ test('authEnvironment replaces ambient GitHub.com credentials', () => {
   assert.equal(environment.GH_TOKEN, 'selected-token');
   assert.equal(environment.GH_HOST, 'github.com');
   assert.equal(environment.GH_PROMPT_DISABLED, '1');
+  assert.equal(environment.OPENMERGELENS_GITHUB_ACCOUNT, 'octocat@github.com');
   assert.equal(environment.KEEP_ME, 'yes');
   assert.equal('GITHUB_TOKEN' in environment, false);
   assert.equal('GH_ENTERPRISE_TOKEN' in environment, false);

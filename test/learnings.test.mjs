@@ -10,12 +10,12 @@ import {
 } from '../lib/learnings.mjs';
 
 test('learnings are isolated by host, account, and repository', async (t) => {
-  const home = await mkdtemp(path.join(tmpdir(), 'openrevuwer-learnings-'));
-  const original = process.env.OPENREVUWER_HOME;
-  process.env.OPENREVUWER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), 'openmergelens-learnings-'));
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = home;
   t.after(async () => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
     await rm(home, { recursive: true, force: true });
   });
 

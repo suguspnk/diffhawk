@@ -15,7 +15,7 @@ import {
 function lockKey(label) {
   return path.join(
     tmpdir(),
-    `openrevuwer-lock-test-${label}-${process.pid}-${randomUUID()}.lock`,
+    `openmergelens-lock-test-${label}-${process.pid}-${randomUUID()}.lock`,
   );
 }
 
@@ -192,7 +192,7 @@ test('different keys with the same first port remain independent', async () => {
 
 test('an unrelated service on the first port is skipped safely', async (t) => {
   const key = lockKey('unrelated-service');
-  const server = createServer((socket) => socket.end('not-openrevuwer\n'));
+  const server = createServer((socket) => socket.end('not-openmergelens\n'));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -229,7 +229,7 @@ test('a silent connected service is treated as ambiguous', async (t) => {
 
 test('contention behind an unrelated first-port service still has one winner', async (t) => {
   const key = lockKey('fallback-contention');
-  const server = createServer((socket) => socket.end('not-openrevuwer\n'));
+  const server = createServer((socket) => socket.end('not-openmergelens\n'));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve, reject) => {
     server.once('error', reject);

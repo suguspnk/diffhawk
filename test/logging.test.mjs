@@ -14,7 +14,7 @@ test('sanitizeDiagnostic redacts supported GitHub and labeled secret formats', (
 });
 
 test('a poll.log write failure is reported without replacing the original failure', async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'openrevuwer-logging-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-logging-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const blockingFile = path.join(root, 'not-a-directory');
   await writeFile(blockingFile, '');

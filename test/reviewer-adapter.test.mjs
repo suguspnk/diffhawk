@@ -143,7 +143,7 @@ test('invokeReviewer rejects a stdin failure when the reviewer otherwise exits s
 });
 
 test('invokeReviewer preserves launch errors when stdin also cannot accept the prompt', async () => {
-  const reviewerCommand = `openrevuwer-missing-reviewer-${process.pid}-${Date.now()}`;
+  const reviewerCommand = `openmergelens-missing-reviewer-${process.pid}-${Date.now()}`;
 
   await assert.rejects(
     invokeReviewer({

@@ -33,7 +33,7 @@ test('formats successful, re-review, recovery, and dry-run outcomes', () => {
       outcomes: [entry('reviewed', 'owner/repo', 12, 'Fix notifications')],
     }),
     {
-      title: 'OpenRevuwer review complete',
+      title: 'OpenMergeLens review complete',
       message: 'Reviewed: owner/repo#12 — Fix notifications',
       attention: false,
     },
@@ -64,7 +64,7 @@ test('partial failures take attention priority while retaining a success', () =>
     ],
   });
 
-  assert.equal(notification.title, 'OpenRevuwer needs attention');
+  assert.equal(notification.title, 'OpenMergeLens needs attention');
   assert.equal(notification.attention, true);
   assert.match(notification.message, /Posted, tracking failed: owner\/tracked#3/);
   assert.match(notification.message, /Failed: owner\/failed#4/);
@@ -131,7 +131,7 @@ test('sanitizes control characters and truncates long PR titles', () => {
 test('macOS delivery uses the bundled app notifier with safe arguments and sound', async () => {
   let invocation;
   const notification = {
-    title: 'OpenRevuwer review complete',
+    title: 'OpenMergeLens review complete',
     message: 'Reviewed: owner/repo#1 — `"; display dialog "unsafe',
     attention: false,
   };
@@ -161,7 +161,7 @@ test('macOS delivery uses the bundled app notifier with safe arguments and sound
 test('macOS attention notifications use a distinct failure sound', async () => {
   let invocation;
   await deliverDesktopNotification(
-    { title: 'OpenRevuwer needs attention', message: 'Failed', attention: true },
+    { title: 'OpenMergeLens needs attention', message: 'Failed', attention: true },
     {
       platform: 'darwin',
       macNotifierPath: '/bundled/terminal-notifier',
@@ -181,7 +181,7 @@ test('macOS attention notifications use a distinct failure sound', async () => {
 test('macOS delivery rejects when the notifier process does not complete', async () => {
   await assert.rejects(
     deliverDesktopNotification(
-      { title: 'OpenRevuwer', message: 'Failed', attention: true },
+      { title: 'OpenMergeLens', message: 'Failed', attention: true },
       {
         platform: 'darwin',
         macNotifierPath: '/bundled/terminal-notifier',
@@ -206,7 +206,7 @@ test('macOS delivery hard-kills a notifier that ignores its timeout', async () =
 
   await assert.rejects(
     deliverDesktopNotification(
-      { title: 'OpenRevuwer', message: 'Failed', attention: true },
+      { title: 'OpenMergeLens', message: 'Failed', attention: true },
       {
         platform: 'darwin',
         macNotifierPath: '/bundled/terminal-notifier',
@@ -241,7 +241,7 @@ test('Windows delivery encodes notification data instead of interpolating PowerS
     callback(null);
   };
   const notification = {
-    title: 'OpenRevuwer',
+    title: 'OpenMergeLens',
     message: 'PR title with $env:SECRET and </text>',
     attention: false,
   };
@@ -255,7 +255,7 @@ test('Windows delivery encodes notification data instead of interpolating PowerS
   assert.doesNotMatch(invocation.args.join(' '), /PR title with/);
   const decoded = JSON.parse(
     Buffer.from(
-      invocation.options.env.OPENREVUWER_NOTIFICATION,
+      invocation.options.env.OPENMERGELENS_NOTIFICATION,
       'base64',
     ).toString('utf8'),
   );
@@ -293,7 +293,7 @@ test('configuration defaults on with config and environment opt-outs', () => {
   assert.equal(
     desktopNotificationsEnabled(
       { desktopNotifications: true },
-      { OPENREVUWER_DESKTOP_NOTIFICATIONS: '0' },
+      { OPENMERGELENS_DESKTOP_NOTIFICATIONS: '0' },
     ),
     false,
   );

@@ -14,13 +14,13 @@ import {
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('scheduled environment restores only PATH and OPENREVUWER_HOME', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-scheduled-env-'));
+test('scheduled environment restores only PATH and OPENMERGELENS_HOME', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-env-'));
   const filePath = path.join(directory, 'scheduler-environment.json');
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(filePath, JSON.stringify({
     PATH: '/custom/bin',
-    OPENREVUWER_HOME: '/custom/state',
+    OPENMERGELENS_HOME: '/custom/state',
   }));
 
   const target = { UNRELATED: 'preserved' };
@@ -28,13 +28,13 @@ test('scheduled environment restores only PATH and OPENREVUWER_HOME', async (t) 
 
   assert.deepEqual(target, {
     PATH: '/custom/bin',
-    OPENREVUWER_HOME: '/custom/state',
+    OPENMERGELENS_HOME: '/custom/state',
     UNRELATED: 'preserved',
   });
 });
 
 test('scheduled environment rejects extra keys and non-string values', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-scheduled-env-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-env-'));
   const filePath = path.join(directory, 'scheduler-environment.json');
   t.after(() => rm(directory, { recursive: true, force: true }));
 
@@ -46,12 +46,12 @@ test('scheduled environment rejects extra keys and non-string values', async (t)
 });
 
 test('scheduled runner consumes its environment argument before poll argument parsing', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-scheduled-runner-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-runner-'));
   const environmentPath = path.join(directory, 'scheduler-environment.json');
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(environmentPath, JSON.stringify({
     PATH: process.env.PATH,
-    OPENREVUWER_HOME: directory,
+    OPENMERGELENS_HOME: directory,
   }));
 
   await assert.rejects(
@@ -62,7 +62,7 @@ test('scheduled runner consumes its environment argument before poll argument pa
         cwd: projectRoot,
         env: {
           PATH: '/usr/bin:/bin',
-          OPENREVUWER_DESKTOP_NOTIFICATIONS: '0',
+          OPENMERGELENS_DESKTOP_NOTIFICATIONS: '0',
         },
       },
     ),

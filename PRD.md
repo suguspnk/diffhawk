@@ -43,7 +43,7 @@ a fresh session with: "implement the PR review bot per PRD.md".
 ## Architecture
 
 ```
-openrevuwer/
+openmergelens/
 ├── PRD.md                  (this file)
 ├── package.json            (pnpm, type: module, bin entry)
 ├── pnpm-lock.yaml
@@ -98,7 +98,7 @@ poller as a `pnpm` script / bin.
      last review, needs re-review.
    - If key present and SHA matches → skip, already reviewed this exact head.
    - If local state is missing, check the PR's submitted reviews for
-     openrevuwer's opaque account/repo/commit marker. If found, repair local
+     OpenMergeLens's opaque account/repo/commit marker. If found, repair local
      state and skip generation/posting. This closes the crash window between a
      successful GitHub POST and the following state write.
 
@@ -195,7 +195,7 @@ poller as a `pnpm` script / bin.
 
 Prior-art research (CodeRabbit, Greptile, Bito, etc.) shows inline,
 severity-tagged comments are the near-universal pattern — a single summary
-comment (openrevuwer's original design) is lower-value than line-anchored
+comment (OpenMergeLens's original design) is lower-value than line-anchored
 feedback. **Decided: adopt this.**
 
 The reviewer adapter must return findings as JSON, not freeform prose, e.g.:
@@ -232,7 +232,7 @@ false positives. **Decided: adopt a lightweight local equivalent.**
   file of durable notes ("don't flag X, it's intentional because Y"). The
   deterministic path prevents corrections learned for one reviewer identity
   or repository from contaminating another.
-- Not auto-written by openrevuwer itself in v1 — the user manually appends
+- Not auto-written by OpenMergeLens itself in v1 — the user manually appends
   entries after noticing the bot repeat a bad suggestion. (Auto-capturing
   "user reacted 👎 to this comment" would require polling PR comment
   reactions, which is a reasonable future enhancement but out of scope for
@@ -285,7 +285,7 @@ stdin, since that matches how the user already works — but keep it swappable.
 }
 ```
 
-**Decided: repo name is `suguspnk/openrevuwer`** for this bot's own repo (not
+**Decided: repo name is `suguspnk/openmergelens`** for this bot's own repo (not
 to be confused with `socialpostai-v2`, which is what it watches/reviews).
 Repository targets are always explicit `OWNER/REPO` strings.
 
@@ -303,7 +303,7 @@ Repository targets are always explicit `OWNER/REPO` strings.
 ## Scheduling
 
 `node bin/poll.mjs` remains a one-shot script — no built-in daemon/loop
-mode. **Decided: the `openrevuwer init` wizard installs the schedule**, not a
+mode. **Decided: the `openmergelens init` wizard installs the schedule**, not a
 manual next-session step — see **Onboarding** below for the exact flow
 (cron / launchd / Task Scheduler, each with a confirm-before-write, or
 "I'll do it myself" which only prints instructions). This section covers
@@ -324,7 +324,7 @@ what each option actually installs:
   wizard (below) checks this at setup time so auth problems surface before
   the first poll, not silently as a failed/skipped review later.
 
-## Onboarding (`openrevuwer init`)
+## Onboarding (`openmergelens init`)
 
 **Decided: an interactive setup wizard**, not a hand-edited config file.
 Modeled on well-known CLI onboarding flows (`gh auth login`, `npm init`,
@@ -335,7 +335,7 @@ inline validation, ends in a real test run rather than a wall of docs.
 mid-flow without leaving a half-written config), good default look
 (rounded borders/spinners) without needing custom styling work.
 
-Command: `pnpm dlx openrevuwer init` (or `node bin/init.mjs` if run from a
+Command: `pnpm dlx openmergelens init` (or `node bin/init.mjs` if run from a
 cloned checkout). Steps, in order:
 
 1. **Welcome banner.** One line — name + one-sentence purpose. No ASCII art.
@@ -354,7 +354,7 @@ cloned checkout). Steps, in order:
      `gh auth token --hostname ... --user ...` and pass the token only to
      child `gh` processes. Do not use
      `gh auth switch`, because it mutates global CLI state and races with
-     other scheduled Openrevuwer instances.
+     other scheduled OpenMergeLens instances.
 
 3. **Repository selection — explicit per account.** No global mode:
    - For each selected account, fetch every accessible repository:
@@ -414,7 +414,7 @@ cloned checkout). Steps, in order:
    - "I'll do it myself" — prints the equivalent manual snippet/steps for
      whichever platform the user is on and does nothing further.
 
-   **Decided: for the first three, openrevuwer installs the entry itself**
+   **Decided: for the first three, OpenMergeLens installs the entry itself**
    (writes the crontab line / launchd plist + `launchctl load` / Task
    Scheduler entry) — not just instructions. But because this is a
    standing OS-level configuration change made on the user's behalf, the
@@ -447,7 +447,7 @@ All open items from spec drafting are now resolved:
 1. **Language: Node, managed with pnpm.** Bash was ruled out — it doesn't run
    natively on Windows, and cross-OS support (no WSL/Git Bash requirement) is
    a hard requirement. Node runs identically on all three OSes.
-2. **Bot repo name: `suguspnk/openrevuwer`.** Still need the actual
+2. **Bot repo name: `suguspnk/openmergelens`.** Still need the actual
    `OWNER/socialpostai-v2` slug for the *watched* repo — check `git remote -v`
    there at implementation time.
 3. **Search scope: explicit per account.** Global search is unsupported.
@@ -458,19 +458,19 @@ All open items from spec drafting are now resolved:
    research:** inline, severity-tagged comments (via the REST API's
    `comments[]`, since `gh pr review` CLI can't anchor per-line), not a
    single review body — see **Structured output format** above.
-6. **Prompt source: openrevuwer's own bundled template**, seeded into a
+6. **Prompt source: OpenMergeLens's own bundled template**, seeded into a
    directly editable host/repository prompt path.
 7. **Prior-art research done** (competitive scan of CodeRabbit, Qodo/PR-Agent,
    Sourcery, DeepSource, Greptile, Hermes Agent, etc. — see conversation
    history). Confirmed no existing product does local-polling +
-   no-GitHub-App + BYO-LLM the way openrevuwer does; two design patterns
+   no-GitHub-App + BYO-LLM the way OpenMergeLens does; two design patterns
    adopted from the scan:
    - **Inline, severity-tagged comments** instead of a single summary
      comment (near-universal pattern across commercial tools).
    - **Account/repository learning files** are inlined only into that
      identity's prompt, so corrections compound without cross-account
      contamination.
-8. **Onboarding UX designed** (`openrevuwer init`, see full section above):
+8. **Onboarding UX designed** (`openmergelens init`, see full section above):
    interactive wizard using `@clack/prompts`. Key resolved sub-decisions:
    - GitHub account selection is a multi-select; every selected identity owns
      an independent explicit repository list.

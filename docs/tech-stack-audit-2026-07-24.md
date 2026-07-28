@@ -54,7 +54,7 @@ than the security-critical injection surface.
   `exec`, `execSync`, or `shell: true` found anywhere in `bin/` or `lib/`.
 - **Gap:** `engines` is declared but not enforced (`engineStrict` is not set
   anywhere — no `.npmrc` exists in the repo). Per the standard, this means
-  the field is advisory only; someone running openrevuwer under Node 16 gets a
+  the field is advisory only; someone running OpenMergeLens under Node 16 gets a
   warning, not a hard failure, and could hit subtle runtime issues
   (`node:child_process` `timeout` option behavior, ESM interop) without a
   clear error pointing at the real cause.
@@ -132,7 +132,7 @@ than the security-critical injection surface.
 
 - `pnpm-lock.yaml` is committed at the repo root, matching the standard.
 - No use of global tool installs anywhere in scripts/docs; the standard's
-  `dlx` guidance isn't directly applicable since openrevuwer itself is the
+  `dlx` guidance isn't directly applicable since OpenMergeLens itself is the
   installed tool, not a consumer of ad-hoc CLI tools.
 - **Gap:** no `.npmrc` with `engine-strict=true`, and no `pnpm.onlyBuiltDependencies`
   field in `package.json`. Given the single runtime dependency
@@ -161,7 +161,7 @@ than the security-critical injection surface.
 - **Gap — no overlap protection.** Nothing in `poll.mjs`, `installCron`,
   `installLaunchd`, or `installSchtasks` uses a lock file (`flock` or
   equivalent) to prevent two overlapping poll runs. This is the standard's
-  most concrete, openrevuwer-specific pitfall: `state.json` is read at the top
+  most concrete, OpenMergeLens-specific pitfall: `state.json` is read at the top
   of `main()` and written at the end of each successful review
   ([`bin/poll.mjs:44`](../bin/poll.mjs), `142`), so two overlapping runs
   (e.g. a slow reviewer-CLI invocation causing one run to still be in flight
@@ -183,7 +183,7 @@ than the security-critical injection surface.
 1. **Add a lock file around `poll.mjs`'s `main()`** (e.g. an
    `flock`-equivalent using `proper-lockfile` or a simple PID-file check at
    the top of `bin/poll.mjs`) — this is the one gap that can cause silent,
-   hard-to-diagnose state corruption, and it's specific to openrevuwer's actual
+   hard-to-diagnose state corruption, and it's specific to OpenMergeLens's actual
    read-then-write pattern, not a generic hardening suggestion.
 2. **Add `--paginate` to `searchReviewRequestedPRs`** for consistency with
    `listAccessibleRepos` and correctness if a user is ever requested-reviewer
