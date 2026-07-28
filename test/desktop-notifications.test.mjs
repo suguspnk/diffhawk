@@ -118,7 +118,7 @@ test('sanitizes control characters and truncates long PR titles', () => {
   assert.ok(notification.message.length < 100);
 });
 
-test('macOS delivery passes untrusted content as arguments with a timeout', async () => {
+test('macOS delivery uses the bundled app notifier with safe arguments and sound', async () => {
   let invocation;
   const execFileImpl = (command, args, options, callback) => {
     invocation = { command, args, options };
@@ -133,11 +133,39 @@ test('macOS delivery passes untrusted content as arguments with a timeout', asyn
   await deliverDesktopNotification(notification, {
     platform: 'darwin',
     execFileImpl,
+    macNotifierAppPath: '/bundled/terminal-notifier.app',
   });
 
-  assert.equal(invocation.command, 'osascript');
-  assert.equal(invocation.args.at(-1), notification.message);
+  assert.equal(invocation.command, '/usr/bin/open');
+  assert.deepEqual(invocation.args, [
+    '-n',
+    '/bundled/terminal-notifier.app',
+    '--args',
+    '-title',
+    notification.title,
+    '-message',
+    notification.message,
+    '-sound',
+    'Glass',
+  ]);
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
+});
+
+test('macOS attention notifications use a distinct failure sound', async () => {
+  let invocation;
+  await deliverDesktopNotification(
+    { title: 'OpenRevuwer needs attention', message: 'Failed', attention: true },
+    {
+      platform: 'darwin',
+      macNotifierAppPath: '/bundled/terminal-notifier.app',
+      execFileImpl: (command, args, options, callback) => {
+        invocation = { command, args, options };
+        callback(null);
+      },
+    },
+  );
+
+  assert.equal(invocation.args.at(-1), 'Basso');
 });
 
 test('Linux delivery requests urgency and sound through notify-send', async () => {

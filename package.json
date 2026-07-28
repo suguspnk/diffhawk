@@ -38,6 +38,12 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@clack/prompts": "^1.7.0"
+    "@clack/prompts": "^1.7.0",
+    "node-notifier": "^10.0.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "node-notifier>uuid": "^11.1.1"
+    }
   }
 }
