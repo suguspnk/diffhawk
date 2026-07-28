@@ -13,6 +13,10 @@ behavior changes.
 - Raised the supported runtime to maintained Node.js releases.
 - Made reviewer-command safety validation fail at configuration load time.
 - Corrected the bundled manual configuration example.
+- Added visible AI attribution to every posted pull-request review.
+- Added repository-scoped consent before third-party AI processing, with
+  re-consent when the reviewer backend changes.
+- Serialized GitHub review mutations and added rate-limit-aware backoff.
 
 ## [0.1.0-beta.0] - Unreleased
 

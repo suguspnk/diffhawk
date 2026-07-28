@@ -31,11 +31,13 @@ const validConfig = {
       hostname: 'github.com',
       username: 'work-user',
       repositories: ['Company/API', 'Company/web'],
+      aiProcessingConsent: ['Company/API', 'Company/web'],
     },
     {
       hostname: 'enterprise.example.com',
       username: 'personal',
       repositories: ['owner/repo'],
+      aiProcessingConsent: ['owner/repo'],
     },
   ],
   reviewerCommand: 'codex exec',
@@ -278,6 +280,55 @@ test('requires explicit, unique repositories for every account', () => {
       /valid OWNER\/REPO/,
     );
   }
+});
+
+test('AI-processing consent is explicit, repository-scoped, and unique', () => {
+  const withoutConsent = validateConfig({
+    ...validConfig,
+    githubAccounts: [{
+      hostname: 'github.com',
+      username: 'octocat',
+      repositories: ['owner/repo'],
+    }],
+  });
+  assert.deepEqual(withoutConsent.githubAccounts[0].aiProcessingConsent, []);
+
+  assert.throws(
+    () => validateConfig({
+      ...validConfig,
+      githubAccounts: [{
+        hostname: 'github.com',
+        username: 'octocat',
+        repositories: ['owner/repo'],
+        aiProcessingConsent: ['other/repo'],
+      }],
+    }),
+    /consent for unselected repository/,
+  );
+  assert.throws(
+    () => validateConfig({
+      ...validConfig,
+      githubAccounts: [{
+        hostname: 'github.com',
+        username: 'octocat',
+        repositories: ['Owner/Repo'],
+        aiProcessingConsent: ['Owner/Repo', 'owner/repo'],
+      }],
+    }),
+    /duplicate AI-processing consent/,
+  );
+  assert.throws(
+    () => validateConfig({
+      ...validConfig,
+      githubAccounts: [{
+        hostname: 'github.com',
+        username: 'octocat',
+        repositories: ['owner/repo'],
+        aiProcessingConsent: true,
+      }],
+    }),
+    /aiProcessingConsent must be an array/,
+  );
 });
 
 test('desktop notifications default on and require a boolean opt-out', () => {

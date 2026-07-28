@@ -176,6 +176,11 @@ poller as a `pnpm` script / bin.
    auto-`REQUEST_CHANGES` without the user explicitly opting into that
    later — this is a review-comment bot, not an auto-approval bot). No
    confirmation gate — auto-approved per user's decision for this flow.
+   Every review body carries a visible AI-generated attribution naming
+   OpenMergeLens and the authenticated reviewer. The opaque marker remains
+   only for idempotent reconciliation, not as the disclosure mechanism.
+   Review POSTs are globally serialized with at least one second between
+   mutations and pause according to GitHub rate-limit signals.
    Findings the adapter couldn't anchor to a specific file/line fall back
    into the top-level review `body` (the summary), so nothing silently
    drops just because a line reference was missing. Include a deterministic,
@@ -201,6 +206,14 @@ poller as a `pnpm` script / bin.
    prioritize failures in mixed results. Notification delivery is
    best-effort, limited to five seconds, and can never change review state or
    the poll exit status.
+
+10. **Repository AI-processing consent.** Repository selection alone is not
+    authorization to send source code or PR data to a third-party reviewer.
+    Configuration records an explicit `aiProcessingConsent` repository list
+    for each account. The setup wizard explains provider retention, training,
+    confidentiality, data-residency, and DPA considerations and requires a
+    repository-by-repository confirmation. Polling fails closed before search
+    or reviewer invocation for repositories without consent.
 
 ## Structured output format (adopted design suggestion #1)
 
@@ -281,12 +294,14 @@ stdin, since that matches how the user already works — but keep it swappable.
     {
       "hostname": "github.com",
       "username": "work-account",
-      "repositories": ["OWNER/socialpostai-v2"]
+      "repositories": ["OWNER/socialpostai-v2"],
+      "aiProcessingConsent": ["OWNER/socialpostai-v2"]
     },
     {
       "hostname": "github.com",
       "username": "personal-account",
-      "repositories": ["OWNER/personal-project"]
+      "repositories": ["OWNER/personal-project"],
+      "aiProcessingConsent": ["OWNER/personal-project"]
     }
   ],
   "reviewerCommand": "claude -p",

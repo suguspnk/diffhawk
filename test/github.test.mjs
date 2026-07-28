@@ -5,6 +5,7 @@ import childProcess from 'node:child_process';
 import {
   createReviewMarker,
   postReview,
+  retryMetadataFromDiagnostic,
   reviewAlreadyPosted,
   searchReviewRequestedPRs,
 } from '../lib/github.mjs';
@@ -30,6 +31,8 @@ test('any normalized review fits the posting body when all findings are unanchor
     comments: normalized.findings,
     diff: '',
     marker: '<!-- openmergelens:test -->',
+    auth: { hostname: 'github.com', username: 'octocat', token: 'test-token' },
+    scheduleMutation: (operation) => operation(),
     request: async (_args, { input }) => {
       postedBody = JSON.parse(input).body;
     },
@@ -104,6 +107,20 @@ test('gh subprocess output is bounded before parsing', async (t) => {
   );
 });
 
+test('GitHub response headers expose Retry-After and rate-reset timing', () => {
+  assert.deepEqual(
+    retryMetadataFromDiagnostic(
+      'HTTP/2.0 429 Too Many Requests\r\n' +
+      'retry-after: 7\r\n' +
+      'x-ratelimit-reset: 2000000000\r\n',
+    ),
+    {
+      retryAfterMs: 7_000,
+      rateLimitResetAtMs: 2_000_000_000_000,
+    },
+  );
+});
+
 const account = {
   hostname: 'github.com',
   username: 'octocat',
@@ -129,9 +146,18 @@ function reviewOptions(overrides = {}) {
       commitId: 'sha-1',
     }),
     auth: { ...account, token: 'test-token' },
+    scheduleMutation: (operation) => operation(),
     ...overrides,
   };
 }
+
+test('postReview requires mutation scheduling at its GitHub write boundary', async () => {
+  const { scheduleMutation: _scheduleMutation, ...options } = reviewOptions();
+  await assert.rejects(
+    postReview(options),
+    /requires a GitHub mutation scheduler/,
+  );
+});
 
 test('review markers are stable across GitHub identifier casing and scoped to a commit', () => {
   const lower = createReviewMarker({
@@ -212,6 +238,45 @@ test('postReview does not retry a non-validation failure', async () => {
   assert.deepEqual(calls, ['POST', 'GET']);
 });
 
+test('postReview stops immediately when GitHub rate-limits the mutation', async () => {
+  const calls = [];
+  const request = async (args) => {
+    const method = args[args.indexOf('--method') + 1];
+    calls.push(method);
+    throw Object.assign(new Error('secondary rate limit'), {
+      status: 403,
+      retryAfterMs: 60_000,
+    });
+  };
+
+  await assert.rejects(
+    postReview({ ...reviewOptions(), request }),
+    /secondary rate limit/,
+  );
+  assert.deepEqual(calls, ['POST']);
+});
+
+test('postReview fallback stops without reconciliation when GitHub rate-limits it', async () => {
+  const calls = [];
+  let postCount = 0;
+  const request = async (args) => {
+    const method = args[args.indexOf('--method') + 1];
+    calls.push(method);
+    if (method === 'GET') return '';
+    postCount += 1;
+    if (postCount === 1) {
+      throw Object.assign(new Error('Validation Failed'), { status: 422 });
+    }
+    throw Object.assign(new Error('secondary rate limit'), { status: 429 });
+  };
+
+  await assert.rejects(
+    postReview({ ...reviewOptions(), request }),
+    /secondary rate limit/,
+  );
+  assert.deepEqual(calls, ['POST', 'GET', 'POST']);
+});
+
 test('postReview treats an ambiguously successful request as complete after reconciliation', async () => {
   const options = reviewOptions();
   const calls = [];
@@ -234,6 +299,10 @@ test('postReview treats an ambiguously successful request as complete after reco
   await postReview({ ...options, request });
   assert.deepEqual(calls, ['POST', 'GET']);
   assert.match(submitted.body, new RegExp(options.marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(
+    submitted.body,
+    /AI-generated review:.*OpenMergeLens.*on behalf of @octocat/,
+  );
 });
 
 test('postReview retries without inline comments only for an unreconciled 422', async () => {

@@ -5,6 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
 import {
+  repositoriesNeedingAiProcessingConsent,
+  retainedAiProcessingConsent,
+  scopeConsentToReviewerCommand,
+} from '../lib/ai-processing-consent.mjs';
+import {
   accountKey,
   accountLabel,
   CONFIG_VERSION,
@@ -105,7 +110,7 @@ async function main() {
     });
     if (p.isCancel(selectedAccountKeys)) exitCancelled();
 
-    const githubAccounts = [];
+    let githubAccounts = [];
     for (const selectedKey of selectedAccountKeys) {
       const selected = availableByKey.get(selectedKey);
       const auth = await resolveGitHubAuth(selected);
@@ -139,7 +144,14 @@ async function main() {
         required: true,
       });
       if (p.isCancel(repositories)) exitCancelled();
-      githubAccounts.push({ ...account, repositories });
+      githubAccounts.push({
+        ...account,
+        repositories,
+        aiProcessingConsent: retainedAiProcessingConsent(
+          existingByKey.get(selectedKey),
+          repositories,
+        ),
+      });
     }
 
     const agentSpinner = p.spinner();
@@ -198,6 +210,34 @@ async function main() {
         exitCancelled();
       }
       reviewerCommand = agent.reviewerCommand;
+    }
+
+    // Consent is granted after the user evaluates one specific reviewer
+    // backend. A backend change can change the external processor and its
+    // retention/training terms, so require fresh repository confirmations.
+    githubAccounts = scopeConsentToReviewerCommand(
+      githubAccounts,
+      existingConfig?.reviewerCommand,
+      reviewerCommand,
+    );
+    const repositoriesNeedingConsent =
+      repositoriesNeedingAiProcessingConsent(githubAccounts);
+    if (repositoriesNeedingConsent.length > 0) {
+      p.log.warn(
+        'The selected reviewer backend may send private source code, pull-request ' +
+        'content, and personal data to its provider. Confirm that the repository ' +
+        'owner permits this and that provider retention, training, confidentiality, ' +
+        'data-residency, and DPA terms are acceptable.',
+      );
+      for (const { account, repository } of repositoriesNeedingConsent) {
+        const consent = await p.confirm({
+          message:
+            `Authorize third-party AI processing for ${repository} as ${accountLabel(account)}?`,
+          initialValue: false,
+        });
+        if (p.isCancel(consent) || !consent) exitCancelled();
+        account.aiProcessingConsent.push(repository);
+      }
     }
 
     const reviewFocusCount = await p.select({
