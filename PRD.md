@@ -376,7 +376,12 @@ cloned checkout). Steps, in order:
        --output-format text` or equivalent lightweight ping) rather than
        assuming presence-on-PATH means ready.
      - **Codex CLI** (`codex`): detect via `which codex`; verify similarly
-       (`codex exec "ok"` or its equivalent minimal check).
+       with a prompt-only-safe check (`codex exec --skip-git-repo-check
+       --ephemeral --sandbox read-only "ok"` or its equivalent). The
+       generated reviewer command uses the same flags so scheduled execution
+       does not depend on a Git working directory, does not retain five
+       sessions per reviewed PR, and prevents model-generated commands from
+       modifying local files.
    - Multi-select-style list showing each detected CLI with a status
      badge: `✓ ready`, `✗ found but not authenticated`, or not listed at
      all if not found on PATH. An entry marked "found but not
@@ -389,6 +394,9 @@ cloned checkout). Steps, in order:
      results — free-text entry for `reviewerCommand` (any other CLI/script
      the adapter can shell out to).
    - Selection sets `reviewerCommand` (and `reviewerInputMode`) in config.
+   - Config loading upgrades only the exact former generated default
+     `codex exec` to the safe command above. Commands already customized by
+     the user are never rewritten.
 
 6. **Review focus coverage.** Ask how many independent review focus
    categories to run before synthesis:

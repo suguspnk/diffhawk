@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { detectAgents } from '../lib/agent-detect.mjs';
+import { detectAgents, KNOWN_AGENTS } from '../lib/agent-detect.mjs';
+import {
+  CODEX_REVIEWER_CHECK_ARGS,
+  CODEX_REVIEWER_COMMAND,
+} from '../lib/reviewer-command-defaults.mjs';
+
+test('Codex uses a safe command for prompt-only scheduled reviews', () => {
+  const codex = KNOWN_AGENTS.find((agent) => agent.id === 'codex');
+  assert.equal(codex.reviewerCommand, CODEX_REVIEWER_COMMAND);
+  assert.deepEqual(codex.checkArgs, CODEX_REVIEWER_CHECK_ARGS);
+  assert.match(codex.reviewerCommand, /--skip-git-repo-check/);
+  assert.match(codex.reviewerCommand, /--ephemeral/);
+  assert.match(codex.reviewerCommand, /--sandbox read-only/);
+});
 
 test('detectAgents executes Windows npm shims through ComSpec', async () => {
   const executions = [];

@@ -70,7 +70,8 @@ This will:
    overwritten.
 4. Detect Claude Code / Codex on your `PATH` and check whether each is
    actually authenticated (not just installed). You can also enter a custom
-   reviewer command instead.
+   reviewer command instead. Codex runs in ephemeral, read-only mode and
+   accepts the prompt-only review workspace without requiring a Git checkout.
 5. Ask how many independent review focus categories to run per PR. The
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
@@ -99,7 +100,7 @@ then copy `<that path>/openrevuwer/config.example.json` to
 |---|---|
 | `configVersion` | Required schema version; currently `2`. Older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each `repositories` value is a non-empty array of explicit `OWNER/REPO` strings. |
-| `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
+| `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. The former generated default `"codex exec"` is upgraded in memory to the safe scheduled-review command automatically; other custom commands are preserved unchanged apart from existing whitespace normalization. |
 | `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
@@ -234,6 +235,11 @@ paths only, never GitHub or reviewer credentials.
   account. Polling does not depend on whichever account is globally active.
 - **Reviewer CLI "found but not authenticated"** during `init` — run the
   login command it prints (e.g. `claude /login`), then continue.
+- **Codex reports "Not inside a trusted directory"** — current versions
+  automatically upgrade the old generated `"codex exec"` command to
+  `"codex exec --skip-git-repo-check --ephemeral --sandbox read-only"`.
+  Upgrade openrevuwer or rerun `openrevuwer init`; custom Codex commands are
+  intentionally not rewritten.
 - **Nothing happens on a poll run** — check `~/.openrevuwer/poll.log` for
   the specific failure (search failed, reviewer adapter failed, post
   rejected, etc.).
