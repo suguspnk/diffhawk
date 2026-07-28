@@ -25,6 +25,7 @@ lib/paths.mjs             resolves the per-user state directory (~/.openrevuwer,
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
 lib/github-auth.mjs       resolves + scopes GitHub credentials (multi-account aware)
 lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
+lib/desktop-notifications.mjs  formats + delivers native macOS/Windows/Linux notifications
 lib/reviewer-adapter.mjs  abstraction over the configured reviewer command + prompt templating
 lib/review-prompts.mjs    seeds/locates each watched repo's review-prompt file under the user's openrevuwer home
 lib/agent-detect.mjs      detects Claude Code / Codex on PATH + auth status

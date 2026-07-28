@@ -181,6 +181,16 @@ poller as a `pnpm` script / bin.
 8. **Update state.json** with the new `headRefOid` for that PR key, so the
    same commit doesn't get re-reviewed next poll.
 
+9. **Notify after the complete poll settles.** Desktop notifications are
+   default-on with a config opt-out and use native macOS, Windows, and Linux
+   facilities. Emit one audible, informational-only notification when review
+   work occurred or a failure needs attention; no-op and lock-contention runs
+   stay silent. Identify up to three PRs by repository, number, and title,
+   distinguish reviews/re-reviews/dry-runs/recoveries/tracking failures, and
+   prioritize failures in mixed results. Notification delivery is
+   best-effort, limited to five seconds, and can never change review state or
+   the poll exit status.
+
 ## Structured output format (adopted design suggestion #1)
 
 Prior-art research (CodeRabbit, Greptile, Bito, etc.) shows inline,

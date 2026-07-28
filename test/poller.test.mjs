@@ -77,7 +77,16 @@ test('two requested accounts independently review and persist the same PR', asyn
     dependencies: successfulDependencies(events),
   });
 
-  assert.deepEqual(result, { failed: false, reviewed: 2 });
+  assert.equal(result.failed, false);
+  assert.equal(result.reviewed, 2);
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(
+    result.outcomes.map(({ status, repo, number }) => ({ status, repo, number })),
+    [
+      { status: 'reviewed', repo: 'owner/repo', number: 7 },
+      { status: 'reviewed', repo: 'owner/repo', number: 7 },
+    ],
+  );
   assert.deepEqual(events.filter((event) => event.startsWith('post:')).sort(), [
     'post:personal',
     'post:work',
@@ -110,6 +119,7 @@ test('one unavailable account does not block healthy account work and marks fail
   });
 
   assert.equal(result.failed, true);
+  assert.equal(result.failures[0].note, 'authentication failed');
   assert.equal(events.includes('post:personal'), true);
   assert.equal(events.includes('post:work'), false);
   assert.match(await readFile(files.logPath, 'utf8'), /\[work@github\.com\].*account unavailable/);
@@ -146,7 +156,10 @@ test('account-filtered dry runs invoke only that reviewer and never write state'
     dependencies: successfulDependencies(events),
   });
 
-  assert.deepEqual(result, { failed: false, reviewed: 1 });
+  assert.equal(result.failed, false);
+  assert.equal(result.reviewed, 1);
+  assert.equal(result.outcomes[0].status, 'dry-run');
+  assert.deepEqual(result.failures, []);
   assert.deepEqual(events.filter((event) => event.startsWith('search:')), [
     'search:personal:owner/repo',
   ]);
@@ -179,6 +192,9 @@ test('a posted review is reconciled after state persistence fails without repost
     dependencies,
   });
   assert.equal(first.failed, true);
+  assert.equal(first.reviewed, 0);
+  assert.equal(first.failures[0].status, 'tracking-failed');
+  assert.equal(first.failures[0].note, 'will reconcile');
   assert.deepEqual(events.filter((event) => event === 'post'), ['post']);
   await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
 
@@ -187,7 +203,10 @@ test('a posted review is reconciled after state persistence fails without repost
     ...files,
     dependencies,
   });
-  assert.deepEqual(second, { failed: false, reviewed: 1 });
+  assert.equal(second.failed, false);
+  assert.equal(second.reviewed, 1);
+  assert.equal(second.outcomes[0].status, 'recovered');
+  assert.deepEqual(second.failures, []);
   assert.deepEqual(events.filter((event) => event === 'post'), ['post']);
   assert.equal(events.filter((event) => event.startsWith('review:')).length, 1);
 
@@ -195,5 +214,41 @@ test('a posted review is reconciled after state persistence fails without repost
   assert.equal(
     state['github.com@work::owner/repo#7'].lastReviewedSha,
     'sha-1',
+  );
+});
+
+test('new commits are reported as a re-review while an unchanged head is a no-op', async (t) => {
+  const files = await fixture(t);
+  const key = 'github.com@work::owner/repo#7';
+  await saveState(files.stateFile, {
+    [key]: {
+      lastReviewedSha: 'old-sha',
+      lastReviewedAt: '2026-01-01T00:00:00.000Z',
+    },
+  });
+
+  const firstEvents = [];
+  const first = await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies: successfulDependencies(firstEvents),
+  });
+  assert.equal(first.outcomes[0].status, 're-reviewed');
+
+  const secondEvents = [];
+  const second = await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies: successfulDependencies(secondEvents),
+  });
+  assert.deepEqual(second, {
+    failed: false,
+    reviewed: 0,
+    outcomes: [],
+    failures: [],
+  });
+  assert.deepEqual(
+    secondEvents.filter((event) => event.startsWith('review:')),
+    [],
   );
 });

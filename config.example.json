@@ -21,5 +21,6 @@
   "reviewerInputMode": "stdin",
   "reviewBatchSize": 5,
   "reviewFocusCount": 4,
+  "desktopNotifications": true,
   "stateFile": "./state.json"
 }
