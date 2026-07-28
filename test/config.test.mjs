@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   accountKey,
   accountLabel,
@@ -12,12 +13,15 @@ import {
   validateConfig,
 } from '../lib/config.mjs';
 import {
+  CLAUDE_REVIEWER_COMMAND,
   CODEX_REVIEWER_COMMAND,
   PREVIOUS_CODEX_REVIEWER_COMMAND,
   PR_LINK_CODEX_REVIEWER_COMMAND,
   reviewerCommandForGitHubGateway,
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const validConfig = {
   configVersion: 2,
@@ -68,16 +72,35 @@ test('upgrades only the legacy Codex default command', () => {
     }).reviewerCommand,
     CODEX_REVIEWER_COMMAND,
   );
+  assert.throws(
+    () => validateConfig({
+      ...validConfig,
+      reviewerCommand: 'codex exec --model custom',
+    }),
+    /reviewerCommand cannot inspect linked PRs safely/,
+  );
   assert.equal(
     validateConfig({
       ...validConfig,
-      reviewerCommand: 'codex exec --model custom',
+      reviewerCommand:
+        'custom-reviewer --mcp {{mcp_config}} --allowed-tool {{mcp_tool}}',
     }).reviewerCommand,
-    'codex exec --model custom',
+    'custom-reviewer --mcp {{mcp_config}} --allowed-tool {{mcp_tool}}',
   );
-  assert.equal(
-    validateConfig({ ...validConfig, reviewerCommand: 'custom-reviewer' }).reviewerCommand,
-    'custom-reviewer',
+});
+
+test('the bundled manual config has a usable reviewer command', async () => {
+  const example = JSON.parse(
+    await readFile(path.join(projectRoot, 'config.example.json'), 'utf8'),
+  );
+  const config = validateConfig(example);
+  assert.equal(config.reviewerCommand, CLAUDE_REVIEWER_COMMAND);
+  assert.match(
+    reviewerCommandForGitHubGateway(config.reviewerCommand, {
+      mcpConfigPath: '/tmp/review/mcp.json',
+      mcpServerPath: '/tmp/review/server.mjs',
+    }),
+    /--mcp-config "\/tmp\/review\/mcp\.json".*mcp__openmergelens__inspect_github_pr/,
   );
 });
 
@@ -250,7 +273,7 @@ test('config saves atomically and reloads through the same validation boundary',
   assert.deepEqual(await loadConfig(configPath), normalized);
   const replaced = await saveConfig(configPath, {
     ...validConfig,
-    reviewerCommand: 'claude -p',
+    reviewerCommand: CLAUDE_REVIEWER_COMMAND,
   });
   assert.deepEqual(await loadConfig(configPath), replaced);
   assert.deepEqual(await readdir(path.dirname(configPath)), ['config.json']);

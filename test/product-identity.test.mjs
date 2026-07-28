@@ -61,3 +61,22 @@ test('published CLI errors and usage use the OpenMergeLens command', async () =>
     },
   );
 });
+
+test('published CLI exposes help and version without starting a poll', async () => {
+  const help = await execFileAsync(
+    process.execPath,
+    ['bin/openmergelens.mjs', '--help'],
+    { cwd: projectRoot },
+  );
+  assert.match(help.stdout, /^Usage: openmergelens /);
+
+  const packageJson = JSON.parse(
+    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+  );
+  const version = await execFileAsync(
+    process.execPath,
+    ['bin/openmergelens.mjs', '--version'],
+    { cwd: projectRoot },
+  );
+  assert.equal(version.stdout.trim(), packageJson.version);
+});

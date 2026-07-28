@@ -16,8 +16,9 @@ All changes land through a pull request, including changes made by a
 maintainer. This keeps history and diffs reviewable even when no second
 person is available to review.
 
-- With a single maintainer, PRs are self-reviewed: check that the change
-  matches the design constraints in [CLAUDE.md](CLAUDE.md) /
+- With a single maintainer, PRs are self-reviewed and may use the maintainer
+  bypass for the approval requirement after required CI checks pass: check
+  that the change matches the design constraints in [CLAUDE.md](CLAUDE.md) /
   [PRD.md](PRD.md), that any relevant tests/dry-run checks pass, and
   that docs (README, PRD, checklist) are updated if behavior changed.
 - If a second maintainer joins, PRs opened by one maintainer should be
@@ -43,6 +44,9 @@ Instead, use GitHub's private vulnerability reporting flow on this
 repository (the "Report a vulnerability" option under the repo's Security
 tab). This lets the maintainer(s) triage and fix the issue before any public
 disclosure.
+
+Response expectations and the supported-version policy are documented in
+[SECURITY.md](SECURITY.md).
 
 ## License
 

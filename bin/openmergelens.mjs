@@ -5,19 +5,38 @@
 // import time, so they're re-executed as child processes rather than
 // imported, and stdio is inherited so their interactive prompts still work.
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from '../lib/dispatch.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const usage = [
+  'Usage: openmergelens [--dry-run] [--account USERNAME@HOSTNAME]',
+  '       openmergelens init',
+  '       openmergelens --help',
+  '       openmergelens --version',
+].join('\n');
 
 const parsed = parseArgs(process.argv.slice(2));
 
 if (parsed.error) {
   console.error(`openmergelens: ${parsed.error}`);
-  console.error('Usage: openmergelens [--dry-run] [--account USERNAME@HOSTNAME]');
-  console.error('       openmergelens init');
+  console.error(usage);
   process.exit(1);
+}
+
+if (parsed.subcommand === 'help') {
+  console.log(usage);
+  process.exit(0);
+}
+
+if (parsed.subcommand === 'version') {
+  const packageJson = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  );
+  console.log(packageJson.version);
+  process.exit(0);
 }
 
 const targetScript = path.join(__dirname, `${parsed.subcommand}.mjs`);
