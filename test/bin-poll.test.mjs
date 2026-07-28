@@ -17,7 +17,11 @@ test('fatal poll startup errors are persisted to poll.log', async (t) => {
   await assert.rejects(
     execFileAsync(process.execPath, ['bin/poll.mjs', '--invalid'], {
       cwd: projectRoot,
-      env: { ...process.env, OPENREVUWER_HOME: userHome },
+      env: {
+        ...process.env,
+        OPENREVUWER_HOME: userHome,
+        OPENREVUWER_DESKTOP_NOTIFICATIONS: '0',
+      },
     }),
   );
 

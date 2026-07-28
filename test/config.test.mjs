@@ -37,6 +37,7 @@ test('validates and normalizes a version 2 multi-account config', () => {
     ...validConfig,
     githubAccounts: validConfig.githubAccounts,
     reviewerInputMode: 'stdin',
+    desktopNotifications: true,
   });
 });
 
@@ -129,6 +130,18 @@ test('requires explicit, unique repositories for every account', () => {
       /valid OWNER\/REPO/,
     );
   }
+});
+
+test('desktop notifications default on and require a boolean opt-out', () => {
+  assert.equal(validateConfig(validConfig).desktopNotifications, true);
+  assert.equal(
+    validateConfig({ ...validConfig, desktopNotifications: false }).desktopNotifications,
+    false,
+  );
+  assert.throws(
+    () => validateConfig({ ...validConfig, desktopNotifications: 'false' }),
+    /desktopNotifications must be true or false/,
+  );
 });
 
 test('account keys are host-aware while labels and selectors are user-facing', () => {

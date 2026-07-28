@@ -74,8 +74,10 @@ This will:
 5. Ask how many independent review focus categories to run per PR. The
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
-6. Offer one schedule for the complete multi-account poller.
-7. Preview the config, deterministic review-file paths, and schedule, then ask
+6. Ask whether completed polls should show desktop notifications (enabled by
+   default).
+7. Offer one schedule for the complete multi-account poller.
+8. Preview the config, deterministic review-file paths, and schedule, then ask
    once before applying them.
 
 Cancelling before the final confirmation leaves the config and review files
@@ -100,6 +102,7 @@ then copy `<that path>/openrevuwer/config.example.json` to
 | `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. |
 | `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
+| `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openrevuwer/`). |
 | `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openrevuwer/`; the legacy field name is retained for compatibility). Ownership uses one of a deterministic sequence of kernel-managed loopback listeners, not a filesystem lock file, so distinct keys can bypass port collisions and crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
@@ -158,6 +161,28 @@ already active and exits successfully. Fatal startup failures are also written
 to `~/.openrevuwer/poll.log`, including on Windows where the scheduler does not
 redirect process output.
 
+## Desktop notifications
+
+When a poll reviews, re-reviews, dry-runs, or recovers one or more PRs,
+openrevuwer sends one audible desktop notification after the complete batch
+and all state writes finish. The notification lists up to three
+`OWNER/REPO#N — title` entries and summarizes any remaining entries. Mixed
+results are presented as an attention notification, with failed PRs
+prioritized and successful PRs still represented.
+
+No notification is sent when there is no work or when another poll owns the
+operation lock. Notification delivery is best-effort: it has a five-second
+timeout, logs failures to `~/.openrevuwer/poll.log`, and never changes a review
+or state outcome. The native implementations use Notification Center on
+macOS, PowerShell toasts on Windows, and `notify-send` on Linux. A logged-in
+graphical desktop session is required; headless and logged-out scheduler
+sessions cannot display a toast. Linux systems must provide `notify-send`.
+
+Set `"desktopNotifications": false` in the config to opt out. For temporary or
+headless execution, `OPENREVUWER_DESKTOP_NOTIFICATIONS=0` also suppresses
+notifications, including fatal startup notifications that happen before the
+config can be loaded.
+
 ## Scheduling
 
 If you skipped scheduling during `init`, or want to change it later, rerun
@@ -212,6 +237,10 @@ paths only, never GitHub or reviewer credentials.
 - **Nothing happens on a poll run** — check `~/.openrevuwer/poll.log` for
   the specific failure (search failed, reviewer adapter failed, post
   rejected, etc.).
+- **Reviews work but notifications do not** — make sure the poll runs while
+  you are logged into a graphical desktop session. On Linux, install
+  `notify-send`; then check `~/.openrevuwer/poll.log` for a
+  `[notification]` warning.
 - **A review didn't fully post** — openrevuwer validates finding line numbers
   against the actual diff before posting; anything it can't anchor to a real
   line gets folded into the review's summary text instead of being dropped

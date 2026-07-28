@@ -8,6 +8,10 @@ import { acquireLock } from '../lib/lock.mjs';
 import { appendFailure } from '../lib/logging.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
 import { pollOnce } from '../lib/poller.mjs';
+import {
+  attemptDesktopNotification,
+  buildPollNotification,
+} from '../lib/desktop-notifications.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
@@ -16,6 +20,14 @@ const defaultReviewPromptPath = path.join(
   'docs',
   'review-prompt.default.md',
 );
+let activeConfig;
+
+function notify(notification) {
+  return attemptDesktopNotification(notification, {
+    config: activeConfig,
+    logPath: userPath('poll.log'),
+  });
+}
 
 async function main() {
   const parsed = parsePollArgs(process.argv.slice(2));
@@ -30,6 +42,7 @@ async function main() {
 
   try {
     const config = await loadConfig(userPath('config.json'));
+    activeConfig = config;
     const accountSelector = parsed.accountSelector
       ? parseAccountSelector(parsed.accountSelector)
       : undefined;
@@ -41,6 +54,7 @@ async function main() {
       dryRun: parsed.dryRun,
       accountSelector,
     });
+    await notify(buildPollNotification(result));
     if (result.failed) process.exitCode = 1;
   } finally {
     await releaseLock();
@@ -49,5 +63,12 @@ async function main() {
 
 main().catch(async (err) => {
   await appendFailure(userPath('poll.log'), 'fatal', `openrevuwer: ${err.message}`);
+  await notify(buildPollNotification({
+    failures: [{
+      status: 'failed',
+      subject: 'OpenRevuwer',
+      note: 'startup failed; see poll.log',
+    }],
+  }));
   process.exitCode = 1;
 });

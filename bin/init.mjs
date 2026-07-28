@@ -201,6 +201,12 @@ async function main() {
     });
     if (p.isCancel(reviewFocusCount)) exitCancelled();
 
+    const desktopNotifications = await p.confirm({
+      message: 'Show a desktop notification when a poll finishes with results?',
+      initialValue: existingConfig?.desktopNotifications !== false,
+    });
+    if (p.isCancel(desktopNotifications)) exitCancelled();
+
     const scheduleChoice = await p.select({
       message: 'How should the shared multi-account poller run?',
       options: schedulerChoices(),
@@ -231,6 +237,7 @@ async function main() {
         ? existingConfig.reviewBatchSize
         : 5,
       reviewFocusCount,
+      desktopNotifications,
       stateFile: existingConfig?.stateFile || './state.json',
     });
 
