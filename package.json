@@ -26,6 +26,7 @@
   "files": [
     "bin",
     "lib",
+    "vendor",
     "docs/review-prompt.default.md",
     "config.example.json"
   ],
