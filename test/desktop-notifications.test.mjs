@@ -198,6 +198,29 @@ test('macOS delivery rejects when the notifier process does not complete', async
   );
 });
 
+test('macOS delivery hard-kills a notifier that ignores its timeout', async () => {
+  const child = new EventEmitter();
+  let receivedSignal;
+  child.kill = (signal) => {
+    receivedSignal = signal;
+    return true;
+  };
+
+  await assert.rejects(
+    deliverDesktopNotification(
+      { title: 'OpenRevuwer', message: 'Failed', attention: true },
+      {
+        platform: 'darwin',
+        macNotifierPath: '/bundled/terminal-notifier',
+        spawnImpl: () => child,
+        timeoutMs: 10,
+      },
+    ),
+    /terminal-notifier timed out after 10ms/,
+  );
+  assert.equal(receivedSignal, 'SIGKILL');
+});
+
 test('Linux delivery requests urgency and sound through notify-send', async () => {
   let invocation;
   const execFileImpl = (command, args, options, callback) => {
