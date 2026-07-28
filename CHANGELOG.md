@@ -1,10 +1,13 @@
 # Changelog
 
-OpenMergeLens follows [Semantic Versioning](https://semver.org/). While the
-project is below 1.0, minor releases may contain documented configuration or
-behavior changes.
+OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-07-28
+
+Initial stable release of local, scheduled, agent-agnostic GitHub pull-request
+reviews.
 
 - Added cross-platform CI and installed-package smoke testing.
 - Added staged npm publishing with trusted-publisher provenance.
@@ -17,8 +20,3 @@ behavior changes.
 - Added repository-scoped consent before third-party AI processing, with
   re-consent when the reviewer backend changes.
 - Serialized GitHub review mutations and added rate-limit-aware backoff.
-
-## [0.1.0-beta.0] - Unreleased
-
-Initial public beta of local, scheduled, agent-agnostic GitHub pull-request
-reviews.
