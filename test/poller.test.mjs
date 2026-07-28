@@ -51,6 +51,7 @@ function successfulDependencies(events) {
       headRefOid: 'sha-1',
       number: 7,
       title: 'PR',
+      url: 'https://github.com/owner/repo/pull/7',
       body: '',
     }),
     getPullRequestDiff: async () => '@@ -0,0 +1 @@\n+line\n',
@@ -143,6 +144,88 @@ test('a PR failure leaves its state untouched while another account completes', 
   assert.equal(result.failed, true);
   const state = JSON.parse(await readFile(files.stateFile, 'utf8'));
   assert.deepEqual(Object.keys(state), ['github.com@personal::owner/repo#7']);
+});
+
+test('the reviewer receives only the selected account credential environment', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  let reviewerEnvironment;
+  dependencies.invokeMultiPassReview = async ({ environment }) => {
+    reviewerEnvironment = environment;
+    return { summary: 'reviewed', findings: [] };
+  };
+
+  await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(reviewerEnvironment.GH_TOKEN, 'work-token');
+  assert.equal(reviewerEnvironment.GH_HOST, 'github.com');
+  assert.equal(reviewerEnvironment.GH_PROMPT_DISABLED, '1');
+  assert.equal(
+    reviewerEnvironment.OPENMERGELENS_GITHUB_ACCOUNT,
+    'work@github.com',
+  );
+});
+
+test('a diff larger than two MiB still reaches the reviewer and posting anchor flow', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  dependencies.getPullRequestDiff = async () =>
+    `@@ -0,0 +1 @@\n+${'x'.repeat(2 * 1024 * 1024)}\n`;
+  let reviewed = false;
+  let postedDiffBytes = 0;
+  dependencies.invokeMultiPassReview = async () => {
+    reviewed = true;
+    return { summary: 'reviewed', findings: [] };
+  };
+  dependencies.postReview = async ({ diff }) => {
+    postedDiffBytes = Buffer.byteLength(diff, 'utf8');
+  };
+
+  const result = await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(result.failed, false);
+  assert.equal(result.reviewed, 1);
+  assert.equal(reviewed, true);
+  assert.ok(postedDiffBytes > 2 * 1024 * 1024);
+});
+
+test('new commits arriving during review prevent a stale review from posting', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  let metadataCalls = 0;
+  dependencies.getPullRequest = async () => {
+    metadataCalls += 1;
+    return {
+      headRefOid: metadataCalls === 1 ? 'sha-1' : 'sha-2',
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/owner/repo/pull/7',
+      body: '',
+    };
+  };
+
+  const result = await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(result.failed, true);
+  assert.equal(result.reviewed, 0);
+  assert.equal(result.failures[0].note, 'new commits during review');
+  assert.deepEqual(events.filter((event) => event.startsWith('post:')), []);
+  await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
 });
 
 test('account-filtered dry runs invoke only that reviewer and never write state', async (t) => {

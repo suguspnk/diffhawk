@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -55,6 +55,9 @@ test('state saves atomically without leaving temporary files', async (t) => {
 
   await saveState(stateFile, state);
   assert.deepEqual(await loadState(stateFile), state);
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(stateFile)).mode & 0o777, 0o600);
+  }
   const replacement = {
     ...state,
     [prKey('owner/repo', 2, reviewer)]: {
@@ -65,4 +68,18 @@ test('state saves atomically without leaving temporary files', async (t) => {
   await saveState(stateFile, replacement);
   assert.deepEqual(await loadState(stateFile), replacement);
   assert.deepEqual(await readdir(path.dirname(stateFile)), ['state.json']);
+});
+
+test('saving an absolute state path does not tighten its existing parent', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-shared-state-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await chmod(root, 0o755);
+
+  const stateFile = path.join(root, 'state.json');
+  await saveState(stateFile, {});
+
+  assert.equal((await stat(root)).mode & 0o777, 0o755);
+  assert.equal((await stat(stateFile)).mode & 0o777, 0o600);
 });

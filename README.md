@@ -101,7 +101,7 @@ then copy `<that path>/openmergelens/config.example.json` to
 |---|---|
 | `configVersion` | Required schema version; currently `2`. Older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each `repositories` value is a non-empty array of explicit `OWNER/REPO` strings. |
-| `reviewerCommand` | Shell command that reads a prompt on stdin and prints review text/JSON on stdout, e.g. `"claude -p --output-format text"`. The former generated default `"codex exec"` is upgraded in memory to the safe scheduled-review command automatically; other custom commands are preserved unchanged apart from existing whitespace normalization. |
+| `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |
 | `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
@@ -110,14 +110,18 @@ then copy `<that path>/openmergelens/config.example.json` to
 
 `~/.openmergelens/config.json` is local, machine-specific config — it's never
 committed to a repo. It stores hostnames and usernames, never tokens. Each poll
-retrieves every selected account's token from the GitHub CLI credential store
-and passes it only to that account's child `gh` processes. It never changes
-the globally active `gh` account.
+retrieves every selected account's token from the GitHub CLI credential store.
+The reviewer never receives that token. Instead, OpenMergeLens exposes one
+temporary structured inspection tool backed by a per-review local gateway
+that permits only GET operations for the fixed PR and its repository. The
+generated Codex command denies host-file reads outside its isolated workspace,
+has no direct network access, and fails closed on unknown configuration.
 
 ## Try it (dry run)
 
 Before trusting OpenMergeLens to post anything, run it in dry-run mode. This does
-everything — search, diff fetch, prompt build, invoke the reviewer CLI — but
+everything — search, diff fetch, invoke the reviewer agent against the linked
+PR, and validate findings against the fetched diff — but
 stops short of posting to GitHub:
 
 ```bash
@@ -132,7 +136,8 @@ openmergelens --dry-run --account work-account@github.com
 
 You should see one block per matching PR with a summary and finding count.
 Each review runs four independent focused passes plus a final synthesis pass by
-default, so a dry run can take longer than a single reviewer invocation.
+default. Every pass uses `gh` to inspect the PR independently, so a dry run can
+take longer than a single reviewer invocation.
 If a PR is already up to date in `~/.openmergelens/state.json`, it's skipped and
 logged as such.
 
@@ -215,9 +220,13 @@ paths only, never GitHub or reviewer credentials.
 
 - **`~/.openmergelens/docs/review-prompts/<host>/<owner>/<repo>.md`** — the
   prompt shared by every configured reviewer of that host/repository: framing, review
-  criteria, and where the PR title/body/diff and past learnings get
-  inserted (via `{{pr_title}}`, `{{pr_number}}`, `{{pr_body}}`, `{{diff}}`,
-  and `{{learnings_section}}` placeholders). `init` seeds one copy per
+  criteria, and where the PR URL and past learnings get inserted (via
+  `{{pr_url}}`, `{{pr_number}}`, and `{{learnings_section}}` placeholders).
+  Existing templates using `{{diff}}` remain compatible: that placeholder now
+  expands to the fixed instructions for inspecting the linked PR with `gh`,
+  rather than embedding the diff. `{{pr_title}}` and `{{pr_body}}` are retained
+  for compatibility but direct the agent to retrieve current metadata.
+  `init` seeds one copy per
   watched repo from the bundled default the first time you add that repo;
   edit a repo's copy directly any time — reorder sections, change the
   criteria, adjust the framing, no code change or wizard rerun needed — and

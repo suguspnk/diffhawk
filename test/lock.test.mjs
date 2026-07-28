@@ -59,7 +59,7 @@ test('simultaneous acquires have exactly one winner', async () => {
       // The candidate range can contain an unrelated, intentionally silent
       // local service. Ambiguous ownership is tested separately below; choose
       // another randomized namespace so this test isolates same-key callers.
-      if (/unable to identify a silent listener/.test(err.message)) continue;
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
       throw err;
     }
     const winners = results.filter(Boolean);
@@ -82,13 +82,25 @@ test('same-key contenders elect the lowest candidate rank', () => {
 });
 
 test('different lock keys can be held concurrently', async () => {
-  const firstKey = lockKey('independent-one');
-  const secondKey = lockKey('independent-two');
-  const first = await acquireLock(firstKey);
-  const second = await acquireLock(secondKey);
-  assert.ok(first);
-  assert.ok(second);
-  await Promise.all([first(), second()]);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const firstKey = lockKey(`independent-one-${attempt}`);
+    const secondKey = lockKey(`independent-two-${attempt}`);
+    let first;
+    let second;
+    try {
+      first = await acquireLock(firstKey);
+      second = await acquireLock(secondKey);
+    } catch (err) {
+      if (first) await first();
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+    assert.ok(first);
+    assert.ok(second);
+    await Promise.all([first(), second()]);
+    return;
+  }
+  assert.fail('could not find two unoccupied lock namespaces');
 });
 
 test('a crashed holder is released by the operating system', async (t) => {
@@ -134,21 +146,45 @@ test('a crashed holder is released by the operating system', async (t) => {
 });
 
 test('acquisition and release leave no filesystem artifacts', async () => {
-  const key = lockKey('no-artifacts');
-  const directory = path.dirname(key);
-  const prefix = path.basename(key);
-  const release = await acquireLock(key);
-  await release();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`no-artifacts-${attempt}`);
+    const directory = path.dirname(key);
+    const prefix = path.basename(key);
+    let release;
+    try {
+      release = await acquireLock(key);
+    } catch (err) {
+      // A randomly selected candidate can coincide with an intentionally
+      // silent local service. That fail-closed behavior is covered below;
+      // retry another namespace so this test remains about filesystem state.
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+    assert.ok(release);
+    await release();
 
-  const leftovers = (await readdir(directory))
-    .filter((entry) => entry.startsWith(prefix));
-  assert.deepEqual(leftovers, []);
+    const leftovers = (await readdir(directory))
+      .filter((entry) => entry.startsWith(prefix));
+    assert.deepEqual(leftovers, []);
+    return;
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
 
 test('release destroys accepted probing sockets before closing', async (t) => {
-  const key = lockKey('half-open-probe');
-  const release = await acquireLock(key);
-  assert.ok(release);
+  let key;
+  let release;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    key = lockKey(`half-open-probe-${attempt}`);
+    try {
+      release = await acquireLock(key);
+      break;
+    } catch (err) {
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.ok(release, 'could not find an unoccupied lock namespace');
 
   const client = createConnection({
     host: '127.0.0.1',
@@ -183,23 +219,37 @@ async function findFirstPortCollision() {
 }
 
 test('different keys with the same first port remain independent', async () => {
-  const [firstKey, secondKey] = await findFirstPortCollision();
-  assert.equal(lockPortFor(firstKey), lockPortFor(secondKey));
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const [firstKey, secondKey] = await findFirstPortCollision();
+    assert.equal(lockPortFor(firstKey), lockPortFor(secondKey));
 
-  const firstRelease = await acquireLock(firstKey);
-  const secondRelease = await acquireLock(secondKey);
-  assert.ok(firstRelease);
-  assert.ok(secondRelease);
-  assert.equal(await acquireLock(firstKey), null);
-  assert.equal(await acquireLock(secondKey), null);
+    let firstRelease;
+    let secondRelease;
+    try {
+      firstRelease = await acquireLock(firstKey);
+      secondRelease = await acquireLock(secondKey);
+      assert.ok(firstRelease);
+      assert.ok(secondRelease);
+      assert.equal(await acquireLock(firstKey), null);
+      assert.equal(await acquireLock(secondKey), null);
 
-  await firstRelease();
-  assert.equal(
-    await acquireLock(secondKey),
-    null,
-    'the fallback owner remains discoverable after the colliding owner exits',
-  );
-  await secondRelease();
+      await firstRelease();
+      firstRelease = null;
+      assert.equal(
+        await acquireLock(secondKey),
+        null,
+        'the fallback owner remains discoverable after the colliding owner exits',
+      );
+      await secondRelease();
+      return;
+    } catch (err) {
+      if (firstRelease) await firstRelease();
+      if (secondRelease) await secondRelease();
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied colliding lock namespace');
 });
 
 test('an unrelated service on the first port is skipped safely', async (t) => {
@@ -239,25 +289,34 @@ test('a silent connected service is treated as ambiguous', async (t) => {
   );
 });
 
-test('contention behind an unrelated first-port service still has one winner', async (t) => {
-  const key = lockKey('fallback-contention');
-  const server = createServer((socket) => socket.end('not-openmergelens\n'));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen({
-      host: '127.0.0.1',
-      port: lockPortFor(key),
-      exclusive: true,
-    }, resolve);
-  });
+test('contention behind an unrelated first-port service still has one winner', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`fallback-contention-${attempt}`);
+    const server = createServer((socket) => socket.end('not-openmergelens\n'));
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen({
+        host: '127.0.0.1',
+        port: lockPortFor(key),
+        exclusive: true,
+      }, resolve);
+    });
 
-  const results = await Promise.all(
-    Array.from({ length: 16 }, () => acquireLock(key)),
-  );
-  const winners = results.filter(Boolean);
-  assert.equal(winners.length, 1);
-  await winners[0]();
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 16 }, () => acquireLock(key)),
+      );
+      const winners = results.filter(Boolean);
+      assert.equal(winners.length, 1);
+      await winners[0]();
+      return;
+    } catch (err) {
+      if (err.code !== 'ELOCKAMBIGUOUS') throw err;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+  assert.fail('could not find an unoccupied fallback lock namespace');
 });
 
 test('invalid probe settings fail before attempting acquisition', async () => {

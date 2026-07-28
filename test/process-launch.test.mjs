@@ -4,7 +4,9 @@ import {
   prepareCommand,
   prepareResolvedCommand,
   resolveExecutable,
+  terminateProcessTree,
 } from '../lib/process-launch.mjs';
+import { EventEmitter } from 'node:events';
 
 test('resolveExecutable uses the platform lookup and first concrete result', async () => {
   const calls = [];
@@ -107,4 +109,38 @@ test('prepareResolvedCommand does not double-escape ordinary cmd scripts', () =>
     prepared.args[3],
     `"${executable} ${expectedArgument}"`,
   );
+});
+
+test('terminateProcessTree uses a process group on POSIX', async (t) => {
+  const signals = [];
+  t.mock.method(process, 'kill', (pid, signal) => {
+    signals.push({ pid, signal });
+  });
+
+  await terminateProcessTree({ pid: 4321 }, {
+    platform: 'linux',
+    force: true,
+  });
+
+  assert.deepEqual(signals, [{ pid: -4321, signal: 'SIGKILL' }]);
+});
+
+test('terminateProcessTree uses taskkill for a forced Windows tree stop', async () => {
+  let invocation;
+  const spawnProcess = (command, args, options) => {
+    invocation = { command, args, options };
+    const child = new EventEmitter();
+    process.nextTick(() => child.emit('close', 0));
+    return child;
+  };
+
+  await terminateProcessTree({ pid: 4321 }, {
+    platform: 'win32',
+    force: true,
+    spawnProcess,
+  });
+
+  assert.equal(invocation.command, 'taskkill.exe');
+  assert.deepEqual(invocation.args, ['/pid', '4321', '/t', '/f']);
+  assert.equal(invocation.options.shell, false);
 });

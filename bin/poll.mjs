@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, parseAccountSelector } from '../lib/config.mjs';
 import { parsePollArgs } from '../lib/dispatch.mjs';
+import { ensurePrivateDirectory } from '../lib/file-security.mjs';
 import { acquireLock } from '../lib/lock.mjs';
 import { appendFailure } from '../lib/logging.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
@@ -33,7 +33,7 @@ async function main() {
   const parsed = parsePollArgs(process.argv.slice(2));
   if (parsed.error) throw new Error(parsed.error);
 
-  await mkdir(userPath(), { recursive: true });
+  await ensurePrivateDirectory(userPath());
   const releaseLock = await acquireLock(userPath('operation.lock'));
   if (!releaseLock) {
     console.log('poll skipped: another operation is already active');

@@ -12,24 +12,24 @@ test('review batch size defaults to five when omitted', () => {
   assert.equal(DEFAULT_REVIEW_BATCH_SIZE, 5);
 });
 
-test('review batch size accepts positive whole numbers', () => {
+test('review batch size accepts bounded positive whole numbers', () => {
   assert.equal(resolveReviewBatchSize(1), 1);
-  assert.equal(resolveReviewBatchSize(12), 12);
+  assert.equal(resolveReviewBatchSize(10), 10);
 });
 
 test('review batch size validity can be reused when preserving init config', () => {
   assert.equal(isValidReviewBatchSize(1), true);
-  assert.equal(isValidReviewBatchSize(12), true);
-  for (const value of [undefined, null, 0, -1, 1.5, '5']) {
+  assert.equal(isValidReviewBatchSize(10), true);
+  for (const value of [undefined, null, 0, -1, 1.5, 11, '5']) {
     assert.equal(isValidReviewBatchSize(value), false);
   }
 });
 
 test('review batch size rejects malformed config values', () => {
-  for (const value of [null, 0, -1, 1.5, '5']) {
+  for (const value of [null, 0, -1, 1.5, 11, '5']) {
     assert.throws(
       () => resolveReviewBatchSize(value),
-      /reviewBatchSize must be a positive whole number/,
+      /reviewBatchSize must be a whole number from 1 to 10/,
     );
   }
 });
@@ -68,7 +68,7 @@ test('items run concurrently within a batch and the next batch waits', async () 
 test('batch processing rejects an invalid size instead of stalling', async () => {
   await assert.rejects(
     processInBatches([1], 0, async (item) => item),
-    /reviewBatchSize must be a positive whole number/,
+    /reviewBatchSize must be a whole number from 1 to 10/,
   );
 });
 

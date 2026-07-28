@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as p from '@clack/prompts';
-import { access, mkdir, readFile, rm } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
@@ -16,6 +16,7 @@ import {
   resolveGitHubAuth,
 } from '../lib/github-auth.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
+import { ensurePrivateDirectory } from '../lib/file-security.mjs';
 import { ensureLearningsFile, learningsPathFor } from '../lib/learnings.mjs';
 import { acquireLock } from '../lib/lock.mjs';
 import { isValidReviewBatchSize } from '../lib/poll-batching.mjs';
@@ -68,7 +69,7 @@ async function main() {
   console.clear();
   p.intro('OpenMergeLens — configure independent GitHub reviewer accounts');
 
-  await mkdir(userHome(), { recursive: true });
+  await ensurePrivateDirectory(userHome());
   const releaseOperationLock = await acquireLock(userPath('operation.lock'));
   if (!releaseOperationLock) {
     p.log.error('another operation is active');
