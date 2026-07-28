@@ -144,7 +144,7 @@ test('invokeReviewer rejects a stdin failure when the reviewer otherwise exits s
       reviewerCommand,
       prompt: 'x'.repeat(800_000),
     }),
-    /failed to send prompt.*write EPIPE/,
+    /failed to send prompt.*write (?:EPIPE|EOF)/,
   );
 });
 
