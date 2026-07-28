@@ -1,6 +1,6 @@
 {
   "name": "openmergelens",
-  "version": "0.1.0-beta.0",
+  "version": "1.0.0",
   "description": "Local, agent-agnostic AI code reviews for GitHub pull requests.",
   "author": "Antonio Telimban Jr.",
   "license": "MIT",
