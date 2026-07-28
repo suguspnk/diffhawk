@@ -20,30 +20,59 @@ function lockKey(label) {
 }
 
 test('fresh acquire succeeds, blocks overlap, and release allows reacquire', async () => {
-  const key = lockKey('basic');
-  const release = await acquireLock(key);
-  assert.ok(release);
-  assert.equal(await acquireLock(key), null);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`basic-${attempt}`);
+    let release;
+    let again;
+    try {
+      release = await acquireLock(key);
+      assert.ok(release);
+      assert.equal(await acquireLock(key), null);
 
-  await release();
-  const again = await acquireLock(key);
-  assert.ok(again);
-  await again();
+      await release();
+      release = null;
+      again = await acquireLock(key);
+      assert.ok(again);
+      await again();
+      return;
+    } catch (err) {
+      if (release) await release();
+      if (again) await again();
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
 
 test('release is idempotent and cannot release a newer owner', async () => {
-  const key = lockKey('release-generation');
-  const firstRelease = await acquireLock(key);
-  await firstRelease();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`release-generation-${attempt}`);
+    let firstRelease;
+    let secondRelease;
+    try {
+      firstRelease = await acquireLock(key);
+      assert.ok(firstRelease);
+      await firstRelease();
 
-  const secondRelease = await acquireLock(key);
-  await firstRelease();
-  assert.equal(
-    await acquireLock(key),
-    null,
-    'an old release callback must not close the newer owner server',
-  );
-  await secondRelease();
+      secondRelease = await acquireLock(key);
+      assert.ok(secondRelease);
+      await firstRelease();
+      assert.equal(
+        await acquireLock(key),
+        null,
+        'an old release callback must not close the newer owner server',
+      );
+      await secondRelease();
+      return;
+    } catch (err) {
+      if (secondRelease) await secondRelease();
+      else if (firstRelease) await firstRelease();
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
 
 test('simultaneous acquires have exactly one winner', async () => {
