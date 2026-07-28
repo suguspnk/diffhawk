@@ -30,7 +30,7 @@ function config(accounts = [work, personal]) {
 }
 
 async function fixture(t) {
-  const root = await mkdtemp(path.join(tmpdir(), 'openrevuwer-poller-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-poller-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   return {
     stateFile: path.join(root, 'state.json'),

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Single published entrypoint: `openrevuwer init` runs the setup wizard,
-// `openrevuwer` (with no subcommand, or --dry-run) runs a poll. Kept as a thin
+// Single published entrypoint: `openmergelens init` runs the setup wizard,
+// `openmergelens` (with no subcommand, or --dry-run) runs a poll. Kept as a thin
 // dispatcher over poll.mjs/init.mjs — both of those still run main() at
 // import time, so they're re-executed as child processes rather than
 // imported, and stdio is inherited so their interactive prompts still work.
@@ -14,9 +14,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const parsed = parseArgs(process.argv.slice(2));
 
 if (parsed.error) {
-  console.error(`openrevuwer: ${parsed.error}`);
-  console.error('Usage: openrevuwer [--dry-run] [--account USERNAME@HOSTNAME]');
-  console.error('       openrevuwer init');
+  console.error(`openmergelens: ${parsed.error}`);
+  console.error('Usage: openmergelens [--dry-run] [--account USERNAME@HOSTNAME]');
+  console.error('       openmergelens init');
   process.exit(1);
 }
 

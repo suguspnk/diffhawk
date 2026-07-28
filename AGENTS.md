@@ -1,11 +1,9 @@
-# openrevuwer
+# OpenMergeLens
 
-Local, agent-agnostic poller that auto-reviews GitHub PRs whenever you're the
-requested reviewer. Runs on your own machine on a schedule (cron / launchd /
-Windows Task Scheduler) — no GitHub App, no webhook, no server. It shells out
-to `gh` to find PRs and to a reviewer CLI of your choice (Claude Code, Codex,
-or any other command) to generate the review, then posts it back as an
-inline, severity-tagged GitHub review.
+Local, agent-agnostic AI code reviews for GitHub pull requests. OpenMergeLens
+runs on the user's machine on a schedule — no GitHub App, webhook, or server.
+It uses `gh` to find requested reviews and a reviewer CLI of the user's choice
+to generate inline, severity-tagged GitHub reviews.
 
 Setup and usage: [README.md](README.md). Full design rationale and history:
 [PRD.md](PRD.md). Coding standards for this repo:
@@ -16,19 +14,19 @@ rules) and [docs/tech-stack-standards.md](docs/tech-stack-standards.md)
 ## Layout
 
 ```
-bin/openrevuwer.mjs       published CLI entrypoint: dispatches to init.mjs or poll.mjs
+bin/openmergelens.mjs       published CLI entrypoint: dispatches to init.mjs or poll.mjs
 bin/init.mjs              interactive setup wizard (repo picker, reviewer CLI detect, scheduling)
 bin/poll.mjs              one-shot poll entrypoint (--dry-run supported)
 bin/scheduled.mjs         restores the setup-time PATH/home before scheduled polling
 lib/dispatch.mjs          parses CLI arguments and dispatches init or poll commands
-lib/paths.mjs             resolves the per-user state directory (~/.openrevuwer, or $OPENREVUWER_HOME)
+lib/paths.mjs             resolves the per-user state directory (~/.openmergelens, or $OPENMERGELENS_HOME)
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
 lib/github-auth.mjs       resolves + scopes GitHub credentials (multi-account aware)
 lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
 lib/desktop-notifications.mjs  formats + delivers native macOS/Windows/Linux notifications
 lib/reviewer-command-defaults.mjs  safe known-backend commands + exact legacy upgrades
 lib/reviewer-adapter.mjs  abstraction over the configured reviewer command + prompt templating
-lib/review-prompts.mjs    seeds/locates each watched repo's review-prompt file under the user's openrevuwer home
+lib/review-prompts.mjs    seeds/locates each watched repo's review-prompt file under the user's OpenMergeLens home
 lib/agent-detect.mjs      detects Claude Code / Codex on PATH + auth status
 lib/process-launch.mjs    resolves executables + safely launches Windows .cmd/.bat shims
 lib/scheduler.mjs         cron/launchd/Task Scheduler installers
@@ -40,7 +38,7 @@ docs/learnings.md         optional, gitignored — durable corrections fed into 
 
 All per-user state — `config.json`, `state.json`, `poll.log`, and the
 editable `docs/review-prompts/<owner>/<repo>.md` files / `docs/learnings.md`
-— lives under `~/.openrevuwer/` (override with `OPENREVUWER_HOME`), not in
+— lives under `~/.openmergelens/` (override with `OPENMERGELENS_HOME`), not in
 this repo. See `lib/paths.mjs`. `config.example.json` here is just the
 config template; `docs/review-prompt.default.md` is the review-prompt
 template `init` seeds each repo's copy from on first use.
@@ -75,13 +73,13 @@ framing instead, so it keeps producing a working prompt.
 ## Running it
 
 ```bash
-openrevuwer --dry-run   # search, diff, prompt, invoke reviewer — no posting
-openrevuwer             # posts real GitHub reviews, updates ~/.openrevuwer/state.json
-openrevuwer init        # setup wizard
+openmergelens --dry-run   # search, diff, prompt, invoke reviewer — no posting
+openmergelens             # posts real GitHub reviews, updates ~/.openmergelens/state.json
+openmergelens init        # setup wizard
 ```
 
 When working in this repo directly (not the published package), the
 equivalent is `node bin/poll.mjs --dry-run` / `node bin/poll.mjs` /
-`node bin/init.mjs` — same behavior, same `~/.openrevuwer` state directory.
+`node bin/init.mjs` — same behavior, same `~/.openmergelens` state directory.
 
-Failures are logged to `~/.openrevuwer/poll.log`.
+Failures are logged to `~/.openmergelens/poll.log`.

@@ -1,30 +1,36 @@
 {
-  "name": "openrevuwer",
+  "name": "openmergelens",
   "version": "0.1.0",
-  "description": "Local, agent-agnostic poller that auto-reviews GitHub PRs when you're the requested reviewer.",
+  "description": "Local, agent-agnostic AI code reviews for GitHub pull requests.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/suguspnk/diffhawk.git"
+    "url": "git+https://github.com/suguspnk/openmergelens.git"
   },
-  "homepage": "https://github.com/suguspnk/diffhawk#readme",
+  "homepage": "https://github.com/suguspnk/openmergelens#readme",
   "bugs": {
-    "url": "https://github.com/suguspnk/diffhawk/issues"
+    "url": "https://github.com/suguspnk/openmergelens/issues"
   },
   "keywords": [
     "github",
     "pull-request",
     "code-review",
+    "ai-code-review",
+    "pull-request-review",
+    "local-first",
     "cli",
     "claude-code",
     "codex"
   ],
   "bin": {
-    "openrevuwer": "./bin/openrevuwer.mjs"
+    "openmergelens": "./bin/openmergelens.mjs"
   },
   "files": [
-    "bin",
+    "bin/init.mjs",
+    "bin/openmergelens.mjs",
+    "bin/poll.mjs",
+    "bin/scheduled.mjs",
     "lib",
     "vendor",
     "docs/review-prompt.default.md",

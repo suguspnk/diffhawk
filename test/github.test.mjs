@@ -100,7 +100,7 @@ test('review markers are stable across GitHub identifier casing and scoped to a 
 
   assert.equal(lower, differentlyCased);
   assert.notEqual(lower, nextCommit);
-  assert.match(lower, /^<!-- openrevuwer-review:[a-f0-9]{64} -->$/);
+  assert.match(lower, /^<!-- openmergelens-review:[a-f0-9]{64} -->$/);
 });
 
 test('reviewAlreadyPosted matches both marker and commit across paginated JSON lines', async () => {

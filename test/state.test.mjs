@@ -43,7 +43,7 @@ test('review state remains independent for two accounts reviewing one PR', () =>
 });
 
 test('state saves atomically without leaving temporary files', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-state-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const stateFile = path.join(directory, 'nested', 'state.json');
   const state = {

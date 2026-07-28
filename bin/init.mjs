@@ -66,13 +66,13 @@ async function readExistingConfig() {
 
 async function main() {
   console.clear();
-  p.intro('openrevuwer — configure independent GitHub reviewer accounts');
+  p.intro('OpenMergeLens — configure independent GitHub reviewer accounts');
 
   await mkdir(userHome(), { recursive: true });
   const releaseOperationLock = await acquireLock(userPath('operation.lock'));
   if (!releaseOperationLock) {
     p.log.error('another operation is active');
-    p.outro('Wait for it to finish, then rerun `openrevuwer init`.');
+    p.outro('Wait for it to finish, then rerun `openmergelens init`.');
     process.exitCode = 1;
     return;
   }
@@ -324,8 +324,8 @@ async function main() {
 
     p.outro(
       'Setup complete. Try:\n\n' +
-      '  openrevuwer --dry-run\n\n' +
-      `Or one account:\n\n  openrevuwer --dry-run --account ${accountLabel(githubAccounts[0])}`,
+      '  openmergelens --dry-run\n\n' +
+      `Or one account:\n\n  openmergelens --dry-run --account ${accountLabel(githubAccounts[0])}`,
     );
   } finally {
     await releaseOperationLock();

@@ -15,7 +15,7 @@ import {
 function lockKey(label) {
   return path.join(
     tmpdir(),
-    `openrevuwer-lock-test-${label}-${process.pid}-${randomUUID()}.lock`,
+    `openmergelens-lock-test-${label}-${process.pid}-${randomUUID()}.lock`,
   );
 }
 
@@ -47,19 +47,31 @@ test('release is idempotent and cannot release a newer owner', async () => {
 });
 
 test('simultaneous acquires have exactly one winner', async () => {
-  for (let iteration = 0; iteration < 50; iteration++) {
-    const key = lockKey(`contention-${iteration}`);
-    const results = await Promise.all(
-      Array.from({ length: 32 }, () => acquireLock(key)),
-    );
+  let completed = 0;
+  for (let attempt = 0; completed < 50 && attempt < 500; attempt++) {
+    const key = lockKey(`contention-${attempt}`);
+    let results;
+    try {
+      results = await Promise.all(
+        Array.from({ length: 32 }, () => acquireLock(key)),
+      );
+    } catch (err) {
+      // The candidate range can contain an unrelated, intentionally silent
+      // local service. Ambiguous ownership is tested separately below; choose
+      // another randomized namespace so this test isolates same-key callers.
+      if (/unable to identify a silent listener/.test(err.message)) continue;
+      throw err;
+    }
     const winners = results.filter(Boolean);
     assert.equal(
       winners.length,
       1,
-      `iteration ${iteration}: expected one winner, got ${winners.length}`,
+      `iteration ${completed}: expected one winner, got ${winners.length}`,
     );
     await winners[0]();
+    completed += 1;
   }
+  assert.equal(completed, 50, 'could not find enough unoccupied lock namespaces');
 });
 
 test('same-key contenders elect the lowest candidate rank', () => {
@@ -192,7 +204,7 @@ test('different keys with the same first port remain independent', async () => {
 
 test('an unrelated service on the first port is skipped safely', async (t) => {
   const key = lockKey('unrelated-service');
-  const server = createServer((socket) => socket.end('not-openrevuwer\n'));
+  const server = createServer((socket) => socket.end('not-openmergelens\n'));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -229,7 +241,7 @@ test('a silent connected service is treated as ambiguous', async (t) => {
 
 test('contention behind an unrelated first-port service still has one winner', async (t) => {
   const key = lockKey('fallback-contention');
-  const server = createServer((socket) => socket.end('not-openrevuwer\n'));
+  const server = createServer((socket) => socket.end('not-openmergelens\n'));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   await new Promise((resolve, reject) => {
     server.once('error', reject);

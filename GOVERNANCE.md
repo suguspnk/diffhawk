@@ -2,7 +2,7 @@
 
 ## Maintainers
 
-openrevuwer currently has a single maintainer, who has final say on scope,
+OpenMergeLens currently has a single maintainer, who has final say on scope,
 design, and what gets merged. There is no formal contributor tier with merge
 rights at this time.
 
@@ -46,5 +46,5 @@ disclosure.
 
 ## License
 
-openrevuwer is released under the [MIT License](LICENSE). Contributions are
+OpenMergeLens is released under the [MIT License](LICENSE). Contributions are
 accepted under the same license.

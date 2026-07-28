@@ -176,7 +176,7 @@ test('account keys are host-aware while labels and selectors are user-facing', (
 });
 
 test('config saves atomically and reloads through the same validation boundary', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-config-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-config-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const configPath = path.join(directory, 'nested', 'config.json');
 

@@ -62,11 +62,11 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  await appendFailure(userPath('poll.log'), 'fatal', `openrevuwer: ${err.message}`);
+  await appendFailure(userPath('poll.log'), 'fatal', `openmergelens: ${err.message}`);
   await notify(buildPollNotification({
     failures: [{
       status: 'failed',
-      subject: 'OpenRevuwer',
+      subject: 'OpenMergeLens',
       note: 'startup failed; see poll.log',
     }],
   }));

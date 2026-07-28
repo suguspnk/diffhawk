@@ -1,6 +1,6 @@
 # Code Quality Guidelines
 
-Project-specific coding standards for diffhawk. This is the reference that
+Project-specific coding standards for OpenMergeLens. This is the reference that
 [`docs/checklist.md`](checklist.md) (the terse prompt injected into every
 automated review) is distilled from — read this for the *why*, use the
 checklist as the quick-scan version. Read alongside
@@ -95,11 +95,11 @@ Applies to all code in this repo: `bin/`, `lib/`, and `test/`.
 
 ## Security: Shelling Out
 
-This is the single highest-stakes area in this codebase — diffhawk
+This is the single highest-stakes area in this codebase — OpenMergeLens
 processes untrusted PR content (titles, bodies, diffs) and shells out to
 both `gh` and a user-configured reviewer command. See
 [`docs/tech-stack-standards.md`](tech-stack-standards.md#shellcommand-injection-avoidance)
-for the general pattern; these are the diffhawk-specific rules.
+for the general pattern; these are the OpenMergeLens-specific rules.
 
 - **Always pass arguments as an array via `execFile`/`spawn`, never as a
   concatenated string, and never with `shell: true`.** No exceptions for
@@ -133,7 +133,7 @@ for the general pattern; these are the diffhawk-specific rules.
 - **Sanitize before logging.** Subprocess stdout/stderr written to
   `poll.log` should never include raw, unfiltered output from a tool that
   might echo a token or credential — this matters especially for
-  `reviewerCommand`, which is an arbitrary external binary diffhawk doesn't
+  `reviewerCommand`, which is an arbitrary external binary OpenMergeLens doesn't
   control.
 
 ## Security: Credentials & Secrets
@@ -142,13 +142,13 @@ for the general pattern; these are the diffhawk-specific rules.
   plain JSON on disk with no encryption. Rely on `gh`'s own keychain-backed
   credential storage (macOS Keychain / Windows Credential Manager / libsecret)
   via `github-auth.mjs`'s `resolveGitHubAuth`, which fetches a token
-  on-demand per run rather than diffhawk storing one itself.
+  on-demand per run rather than OpenMergeLens storing one itself.
   `config.json`/`state.json` stay gitignored for the same reason — never
   remove them from `.gitignore`.
 - **Never log a secret.** No token, even truncated, should reach
   `poll.log`, `console.log`, or an error message. If a future change needs
   to log auth-related diagnostics, log the account identity
-  (`DIFFHAWK_GITHUB_ACCOUNT`-style `user@host`) — never the token itself.
+  (`OPENMERGELENS_GITHUB_ACCOUNT`-style `user@host`) — never the token itself.
 - **Scope credentials to the minimum needed.** When multiple GitHub
   accounts are configured, resolve and use only the account attached to that
   queued operation — don't fall back to a broader or
@@ -159,7 +159,7 @@ for the general pattern; these are the diffhawk-specific rules.
   less safe than `gh`'s keychain-backed resolution. If a code path needs to
   fall back to `GH_TOKEN`/`GITHUB_TOKEN`, that should be an explicit,
   documented exception, not silent default behavior.
-- **Don't encourage broad, long-lived tokens.** diffhawk should never ask a
+- **Don't encourage broad, long-lived tokens.** OpenMergeLens should never ask a
   user to paste a personal access token into a config file — auth setup
   goes through `gh auth login`, keeping token lifecycle and scope under
   GitHub CLI's own management.

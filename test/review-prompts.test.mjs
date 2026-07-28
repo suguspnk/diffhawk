@@ -9,12 +9,12 @@ import {
 } from '../lib/review-prompts.mjs';
 
 async function withHome(t) {
-  const home = await mkdtemp(path.join(tmpdir(), 'openrevuwer-prompts-'));
-  const original = process.env.OPENREVUWER_HOME;
-  process.env.OPENREVUWER_HOME = home;
+  const home = await mkdtemp(path.join(tmpdir(), 'openmergelens-prompts-'));
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = home;
   t.after(async () => {
-    if (original === undefined) delete process.env.OPENREVUWER_HOME;
-    else process.env.OPENREVUWER_HOME = original;
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
     await rm(home, { recursive: true, force: true });
   });
   return home;
@@ -34,7 +34,7 @@ test('prompt paths are shared by repository on one host and isolated across host
 
 test('ensureReviewPrompt seeds once and never overwrites custom content', async (t) => {
   await withHome(t);
-  const templatePath = path.join(process.env.OPENREVUWER_HOME, 'template.md');
+  const templatePath = path.join(process.env.OPENMERGELENS_HOME, 'template.md');
   await writeFile(templatePath, 'template\n');
 
   const destination = await ensureReviewPrompt('github.com', 'owner/repo', {

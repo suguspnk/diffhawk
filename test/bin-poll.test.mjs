@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('fatal poll startup errors are persisted to poll.log', async (t) => {
-  const userHome = await mkdtemp(path.join(tmpdir(), 'openrevuwer-bin-poll-'));
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-poll-'));
   t.after(() => rm(userHome, { recursive: true, force: true }));
 
   await assert.rejects(
@@ -19,12 +19,12 @@ test('fatal poll startup errors are persisted to poll.log', async (t) => {
       cwd: projectRoot,
       env: {
         ...process.env,
-        OPENREVUWER_HOME: userHome,
-        OPENREVUWER_DESKTOP_NOTIFICATIONS: '0',
+        OPENMERGELENS_HOME: userHome,
+        OPENMERGELENS_DESKTOP_NOTIFICATIONS: '0',
       },
     }),
   );
 
   const log = await readFile(path.join(userHome, 'poll.log'), 'utf8');
-  assert.match(log, /\[fatal\] openrevuwer: unrecognized argument "--invalid"/);
+  assert.match(log, /\[fatal\] openmergelens: unrecognized argument "--invalid"/);
 });
