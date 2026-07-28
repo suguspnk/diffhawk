@@ -371,17 +371,28 @@ test('contention behind an unrelated first-port service still has one winner', a
 });
 
 test('invalid probe settings fail before attempting acquisition', async () => {
-  const key = lockKey('invalid-options');
-  await assert.rejects(
-    acquireLock(key, { probeAttempts: 0 }),
-    /probeAttempts must be a positive whole number/,
-  );
-  await assert.rejects(
-    acquireLock(key, { probeTimeoutMs: 0 }),
-    /probeTimeoutMs must be a positive whole number/,
-  );
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`invalid-options-${attempt}`);
+    await assert.rejects(
+      acquireLock(key, { probeAttempts: 0 }),
+      /probeAttempts must be a positive whole number/,
+    );
+    await assert.rejects(
+      acquireLock(key, { probeTimeoutMs: 0 }),
+      /probeTimeoutMs must be a positive whole number/,
+    );
 
-  const release = await acquireLock(key);
-  assert.ok(release, 'a failed acquisition must release its in-process claim');
-  await release();
+    try {
+      const release = await acquireLock(key);
+      assert.ok(
+        release,
+        'a failed acquisition must release its in-process claim',
+      );
+      await release();
+      return;
+    } catch (err) {
+      if (err.code !== 'ELOCKAMBIGUOUS') throw err;
+    }
+  }
+  assert.fail('could not find an unoccupied lock namespace');
 });
