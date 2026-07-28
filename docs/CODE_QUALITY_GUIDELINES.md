@@ -38,10 +38,15 @@ Applies to all code in this repo: `bin/`, `lib/`, and `test/`.
   extended. Only a true top-level/programmer error should escalate past
   `main()`.
 - **Attach context as errors bubble.** `gh()`'s errors already include the
-  failing command; `poll.mjs`'s `logFailure` calls already include which PR
+  failing command; `poller.mjs`'s `appendFailure` calls already include which PR
   and which step (search / pr-view / diff / invoke-reviewer / post-review)
   failed. Keep doing this — a `poll.log` line should be actionable without
   attaching a debugger.
+- **Never blindly retry a review POST.** A timed-out request may have reached
+  GitHub. Every posted review must retain its deterministic hidden marker, and
+  ambiguous failures or missing local state must be reconciled against the
+  submitted-review list before another POST is attempted. The summary-only
+  fallback is limited to confirmed HTTP 422 validation failures.
 - **On reviewer-CLI failure or empty/malformed output: skip posting, leave
   state untouched.** This is a load-bearing invariant (see PRD.md) — never
   post a broken or empty review, and never advance `state.json`'s
@@ -78,12 +83,12 @@ Applies to all code in this repo: `bin/`, `lib/`, and `test/`.
   boundary module.
 - **Validate external config in one place, at load time.** `config.json` is
   user-edited and can be malformed; validate required fields where it's
-  first read (see `configuredGitHubAccount`'s explicit checks) and fail
+  first read (see `validateConfig`'s explicit checks) and fail
   fast with a clear message, rather than surfacing a confusing error deep
   inside unrelated logic three calls later.
 - **No hidden module-level mutable state.** Pass config, auth, and state
-  explicitly as function arguments and return values (as `poll.mjs`'s
-  `pollOnce({ config, stateFile, logPath, githubAccount, githubAuth })`
+  explicitly as function arguments and return values (as
+  `pollOnce({ config, stateFile, logPath, accountSelector })`
   already does) rather than reaching for shared globals — this keeps data
   flow traceable and makes every function's dependencies explicit at the
   call site.
@@ -145,8 +150,8 @@ for the general pattern; these are the diffhawk-specific rules.
   to log auth-related diagnostics, log the account identity
   (`DIFFHAWK_GITHUB_ACCOUNT`-style `user@host`) — never the token itself.
 - **Scope credentials to the minimum needed.** When multiple GitHub
-  accounts are configured, resolve and use only the one pinned for that
-  operation (`configuredGitHubAccount`) — don't fall back to a broader or
+  accounts are configured, resolve and use only the account attached to that
+  queued operation — don't fall back to a broader or
   ambient credential "just in case."
 - **Treat env-var-based auth as a documented fallback, not the default
   path.** An env var is visible to any process that can read
@@ -187,11 +192,11 @@ for the general pattern; these are the diffhawk-specific rules.
 
 - **Unit-test pure logic exhaustively, with zero mocking required.**
   `diffAnchors`, severity formatting, `parseAuthStatus`,
-  `configuredGitHubAccount`, `needsReview`'s SHA comparison, and
+  `validateConfig`, `needsReview`'s SHA comparison, and
   `lock.mjs`'s reclaim logic are the cheapest, highest-value test surface
   in this codebase — see `test/github-auth.test.mjs`,
   `test/state.test.mjs`, and `test/lock.test.mjs` for the level of coverage
-  expected (basic semantics, edge cases like legacy config shapes, and
+  expected (basic semantics, malformed config shapes, and
   concurrency/race scenarios where relevant). Prefer this over mocking
   wherever the logic in question doesn't actually need a subprocess or
   filesystem call to be exercised.

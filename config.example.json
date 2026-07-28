@@ -1,14 +1,20 @@
 {
-  "githubAccount": {
-    "hostname": "github.com",
-    "username": "your-github-username"
-  },
-  "searchScope": "per-repo",
-  "pollTargets": [
+  "configVersion": 2,
+  "githubAccounts": [
     {
-      "repo": "OWNER/REPO",
-      "reviewPromptPath": "./docs/review-prompts/OWNER/REPO.md",
-      "learningsPath": "./docs/learnings.md"
+      "hostname": "github.com",
+      "username": "work-account",
+      "repositories": [
+        "COMPANY/API",
+        "COMPANY/WEB"
+      ]
+    },
+    {
+      "hostname": "github.com",
+      "username": "personal-account",
+      "repositories": [
+        "OWNER/PROJECT"
+      ]
     }
   ],
   "reviewerCommand": "claude -p --output-format text",

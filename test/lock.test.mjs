@@ -258,4 +258,8 @@ test('invalid probe settings fail before attempting acquisition', async () => {
     acquireLock(key, { probeTimeoutMs: 0 }),
     /probeTimeoutMs must be a positive whole number/,
   );
+
+  const release = await acquireLock(key);
+  assert.ok(release, 'a failed acquisition must release its in-process claim');
+  await release();
 });

@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
-  migrateLegacyState,
-  migrateLegacyStateForReviewer,
+  loadState,
   needsReview,
   prKey,
   reviewerKey,
-  sameReviewer,
+  saveState,
 } from '../lib/state.mjs';
 
 const reviewer = { hostname: 'github.com', username: 'OctoCat' };
@@ -19,96 +21,48 @@ test('review state keys are scoped to the GitHub reviewer', () => {
   );
 });
 
-test('reviewer identity comparison is case-insensitive and host-aware', () => {
+test('review state remains independent for two accounts reviewing one PR', () => {
+  const state = {
+    [prKey('owner/repo', 42, reviewer)]: {
+      lastReviewedSha: 'abc123',
+      lastReviewedAt: '2026-07-25T00:00:00.000Z',
+    },
+  };
+  assert.equal(needsReview(state, prKey('owner/repo', 42, reviewer), 'abc123'), false);
   assert.equal(
-    sameReviewer(
-      { hostname: 'GitHub.com', username: 'OctoCat' },
-      { hostname: 'github.com', username: 'octocat' },
+    needsReview(
+      state,
+      prKey('owner/repo', 42, {
+        hostname: 'github.com',
+        username: 'another-reviewer',
+      }),
+      'abc123',
     ),
     true,
   );
-  assert.equal(
-    sameReviewer(
-      { hostname: 'github.com', username: 'octocat' },
-      { hostname: 'github.com', username: 'hubot' },
-    ),
-    false,
-  );
 });
 
-test('legacy state entries migrate without changing review metadata', () => {
+test('state saves atomically without leaving temporary files', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openrevuwer-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'nested', 'state.json');
   const state = {
-    'owner/repo#42': {
-      lastReviewedSha: 'abc123',
-      lastReviewedAt: '2026-07-25T00:00:00.000Z',
+    [prKey('owner/repo', 1, reviewer)]: {
+      lastReviewedSha: 'sha-1',
+      lastReviewedAt: '2026-07-28T00:00:00.000Z',
     },
   };
 
-  assert.equal(migrateLegacyState(state, reviewer), true);
-  assert.deepEqual(state, {
-    'github.com@octocat::owner/repo#42': {
-      lastReviewedSha: 'abc123',
-      lastReviewedAt: '2026-07-25T00:00:00.000Z',
-    },
-  });
-  assert.equal(migrateLegacyState(state, reviewer), false);
-});
-
-test('migration preserves an existing account-scoped entry', () => {
-  const scopedKey = prKey('owner/repo', 42, reviewer);
-  const state = {
-    'owner/repo#42': {
-      lastReviewedSha: 'old',
-      lastReviewedAt: '2026-07-24T00:00:00.000Z',
-    },
-    [scopedKey]: {
-      lastReviewedSha: 'new',
-      lastReviewedAt: '2026-07-25T00:00:00.000Z',
+  await saveState(stateFile, state);
+  assert.deepEqual(await loadState(stateFile), state);
+  const replacement = {
+    ...state,
+    [prKey('owner/repo', 2, reviewer)]: {
+      lastReviewedSha: 'sha-2',
+      lastReviewedAt: '2026-07-28T01:00:00.000Z',
     },
   };
-
-  assert.equal(migrateLegacyState(state, reviewer), true);
-  assert.equal(state[scopedKey].lastReviewedSha, 'new');
-  assert.equal('owner/repo#42' in state, false);
-});
-
-test('rerunning init with the same reviewer preserves the last reviewed SHA', () => {
-  const state = {
-    'owner/repo#42': {
-      lastReviewedSha: 'abc123',
-      lastReviewedAt: '2026-07-25T00:00:00.000Z',
-    },
-  };
-  const previousReviewer = { hostname: 'github.com', username: 'octocat' };
-  const selectedReviewer = { hostname: 'GitHub.com', username: 'OctoCat' };
-
-  assert.equal(
-    migrateLegacyStateForReviewer(state, previousReviewer, selectedReviewer),
-    true,
-  );
-  assert.equal(
-    needsReview(state, prKey('owner/repo', 42, selectedReviewer), 'abc123'),
-    false,
-  );
-});
-
-test('rerunning init with a different reviewer leaves legacy state untouched', () => {
-  const state = {
-    'owner/repo#42': {
-      lastReviewedSha: 'abc123',
-      lastReviewedAt: '2026-07-25T00:00:00.000Z',
-    },
-  };
-  const previousReviewer = { hostname: 'github.com', username: 'octocat' };
-  const selectedReviewer = { hostname: 'github.com', username: 'hubot' };
-
-  assert.equal(
-    migrateLegacyStateForReviewer(state, previousReviewer, selectedReviewer),
-    false,
-  );
-  assert.deepEqual(Object.keys(state), ['owner/repo#42']);
-  assert.equal(
-    needsReview(state, prKey('owner/repo', 42, selectedReviewer), 'abc123'),
-    true,
-  );
+  await saveState(stateFile, replacement);
+  assert.deepEqual(await loadState(stateFile), replacement);
+  assert.deepEqual(await readdir(path.dirname(stateFile)), ['state.json']);
 });

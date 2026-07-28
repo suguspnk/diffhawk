@@ -1,331 +1,331 @@
 #!/usr/bin/env node
 import * as p from '@clack/prompts';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { access, mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
 import {
-  legacyGitHubAccount,
+  accountKey,
+  accountLabel,
+  CONFIG_VERSION,
+  saveConfig,
+  validateConfig,
+} from '../lib/config.mjs';
+import {
   listAuthenticatedAccounts,
   resolveGitHubAuth,
 } from '../lib/github-auth.mjs';
-import {
-  loadState,
-  migrateLegacyStateForReviewer,
-  sameReviewer,
-  saveState,
-} from '../lib/state.mjs';
 import { detectAgents } from '../lib/agent-detect.mjs';
-import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
+import { ensureLearningsFile, learningsPathFor } from '../lib/learnings.mjs';
+import { acquireLock } from '../lib/lock.mjs';
+import { isValidReviewBatchSize } from '../lib/poll-batching.mjs';
+import { userHome, userPath } from '../lib/paths.mjs';
 import {
-  configuredReviewPromptPath,
   ensureReviewPrompt,
+  reviewPromptPathFor,
 } from '../lib/review-prompts.mjs';
+import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
 import {
   cronPreview, installCron,
   launchdPreview, installLaunchd,
   schtasksPreview, installSchtasks,
   manualInstructions,
 } from '../lib/scheduler.mjs';
-import { isValidReviewBatchSize } from '../lib/poll-batching.mjs';
-import { userHome, userPath, resolveUserPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
 const pollScriptPath = path.join(packageRootDir, 'bin', 'poll.mjs');
 const configPath = userPath('config.json');
-const reviewPromptTemplatePath = path.join(packageRootDir, 'docs', 'review-prompt.default.md');
+const reviewPromptTemplatePath = path.join(
+  packageRootDir,
+  'docs',
+  'review-prompt.default.md',
+);
 
 function exitCancelled() {
-  p.cancel('Setup cancelled — nothing was written.');
-  process.exit(1);
+  p.cancel('Setup cancelled — configuration and review files were not changed.');
+  throw Object.assign(new Error('setup cancelled'), { code: 'ECANCELLED' });
+}
+
+async function readExistingConfig() {
+  let raw;
+  try {
+    raw = await readFile(configPath, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+  try {
+    return validateConfig(JSON.parse(raw));
+  } catch (err) {
+    p.log.warn(`Existing config will not be imported: ${err.message}`);
+    return null;
+  }
 }
 
 async function main() {
   console.clear();
-  p.intro('openrevuwer — auto-review PRs where you\'re the requested reviewer');
+  p.intro('openrevuwer — configure independent GitHub reviewer accounts');
 
   await mkdir(userHome(), { recursive: true });
-  await mkdir(userPath('docs'), { recursive: true });
+  const releaseOperationLock = await acquireLock(userPath('operation.lock'));
+  if (!releaseOperationLock) {
+    p.log.error('another operation is active');
+    p.outro('Wait for it to finish, then rerun `openrevuwer init`.');
+    process.exitCode = 1;
+    return;
+  }
 
-  let existingConfig = null;
   try {
-    existingConfig = JSON.parse(await readFile(configPath, 'utf8'));
-  } catch (err) {
-    if (err.code !== 'ENOENT' && !(err instanceof SyntaxError)) throw err;
-    if (err instanceof SyntaxError) {
-      p.log.warn(
-        'Existing config.json is invalid; its legacy review state cannot be migrated automatically.',
-      );
+    const existingConfig = await readExistingConfig();
+    const authenticatedAccounts = await listAuthenticatedAccounts();
+    if (authenticatedAccounts.length === 0) {
+      throw new Error('GitHub CLI has no authenticated accounts; run `gh auth login`');
     }
-  }
 
-  let accounts;
-  try {
-    accounts = await listAuthenticatedAccounts();
-  } catch (err) {
-    p.log.error('GitHub CLI is not authenticated.');
-    p.outro(`${err.message}, then re-run \`openrevuwer init\`.`);
-    process.exit(1);
-  }
-
-  if (accounts.length === 0) {
-    p.log.error('GitHub CLI has no authenticated accounts.');
-    p.outro('Run `gh auth login`, then re-run `openrevuwer init`.');
-    process.exit(1);
-  }
-
-  const accountChoice = await p.select({
-    message: 'Which GitHub account should review pull requests?',
-    options: accounts.map((account) => ({
-      value: JSON.stringify({
-        hostname: account.hostname,
-        username: account.username,
-      }),
-      label: `${account.username} (${account.hostname})`,
-      hint: account.active ? 'currently active in gh' : undefined,
-    })),
-  });
-  if (p.isCancel(accountChoice)) exitCancelled();
-
-  const githubAccount = JSON.parse(accountChoice);
-  const githubAuth = await resolveGitHubAuth(githubAccount);
-  const username = await currentUsername({ auth: githubAuth });
-  if (username.toLowerCase() !== githubAccount.username.toLowerCase()) {
-    p.log.error(
-      `Selected ${githubAccount.username}, but its credential belongs to ${username}.`,
+    const existingByKey = new Map(
+      (existingConfig?.githubAccounts || []).map((account) => [accountKey(account), account]),
     );
-    process.exit(1);
-  }
-  p.log.success(`GitHub reviews will be posted as ${username}`);
-
-  const s = p.spinner();
-  s.start('Fetching repos you have access to');
-  const repos = await listAccessibleRepos({ auth: githubAuth });
-  s.stop(`Found ${repos.length} repo(s)`);
-
-  if (repos.length === 0) {
-    p.log.error('No accessible repos found — nothing to watch.');
-    process.exit(1);
-  }
-
-  // autocompleteMultiselect (not plain multiselect) since accounts with
-  // many orgs/collaborations can easily have 1000+ accessible repos —
-  // a static scrollable checklist is unusable at that scale, this adds
-  // type-to-filter.
-  const selectedRepos = await p.autocompleteMultiselect({
-    message: `Which repos should openrevuwer auto-review PRs for? (${repos.length} available — type to filter)`,
-    options: repos.map((r) => ({ value: r.nameWithOwner, label: r.nameWithOwner })),
-    required: true,
-  });
-  if (p.isCancel(selectedRepos)) exitCancelled();
-
-  const reviewPromptPaths = {};
-  for (const repo of selectedRepos) {
-    const configuredPath = configuredReviewPromptPath(existingConfig, repo);
-    reviewPromptPaths[repo] = await ensureReviewPrompt(repo, {
-      templatePath: reviewPromptTemplatePath,
-      seedPath: configuredPath ? resolveUserPath(configuredPath) : undefined,
+    const availableByKey = new Map(
+      authenticatedAccounts.map((account) => [accountKey(account), account]),
+    );
+    const selectedAccountKeys = await p.autocompleteMultiselect({
+      message: 'Which GitHub accounts should auto-review pull requests?',
+      options: authenticatedAccounts.map((account) => ({
+        value: accountKey(account),
+        label: accountLabel(account),
+        hint: account.active ? 'currently active in gh' : undefined,
+      })),
+      initialValues: authenticatedAccounts
+        .filter((account) => existingByKey.has(accountKey(account)))
+        .map(accountKey),
+      required: true,
     });
-  }
-  p.log.info(
-    `Review prompt: one copy per repo under ${userPath('docs', 'review-prompts')} ` +
-    `(seeded from the bundled default) — edit a repo's copy anytime to change what ` +
-    `openrevuwer looks for and how it frames the review there, no need to rerun ` +
-    `setup. Existing copies were left untouched.`,
-  );
-  p.log.info(`Learnings file: ${userPath('docs', 'learnings.md')} — append notes here when openrevuwer repeats a bad suggestion.`);
+    if (p.isCancel(selectedAccountKeys)) exitCancelled();
 
-  const s2 = p.spinner();
-  s2.start('Checking for known reviewer CLIs (Claude Code, Codex)');
-  const agents = await detectAgents();
-  s2.stop('Done checking reviewer CLIs');
+    const githubAccounts = [];
+    for (const selectedKey of selectedAccountKeys) {
+      const selected = availableByKey.get(selectedKey);
+      const auth = await resolveGitHubAuth(selected);
+      const username = await currentUsername({ auth });
+      if (username.toLowerCase() !== selected.username.toLowerCase()) {
+        throw new Error(
+          `Selected ${selected.username}, but its credential belongs to ${username}`,
+        );
+      }
+      const account = { hostname: selected.hostname, username };
+      p.log.success(`Authenticated ${accountLabel(account)}`);
 
-  const agentOptions = agents.map((a) => {
-    const badge = a.status === 'ready' ? '✓ ready'
-      : a.status === 'unauthenticated' ? '✗ found, not authenticated'
-      : 'not found';
-    return {
-      value: a.id,
-      label: `${a.label} (${badge})`,
-      hint: a.status === 'unauthenticated' ? `run: ${a.loginCommand}` : undefined,
-    };
-  });
-  agentOptions.push({ value: 'custom', label: 'Custom command...' });
+      const spinner = p.spinner();
+      spinner.start(`Fetching repositories for ${accountLabel(account)}`);
+      const repos = await listAccessibleRepos({ auth });
+      spinner.stop(`Found ${repos.length} repository(s) for ${accountLabel(account)}`);
+      if (repos.length === 0) {
+        throw new Error(`${accountLabel(account)} has no accessible repositories`);
+      }
 
-  let reviewerCommand;
-  let reviewerInputMode = 'stdin';
-
-  const backendChoice = await p.select({
-    message: 'Which reviewer backend should openrevuwer use?',
-    options: agentOptions,
-  });
-  if (p.isCancel(backendChoice)) exitCancelled();
-
-  if (backendChoice === 'custom') {
-    const custom = await p.text({
-      message: 'Reviewer command (reads the prompt from stdin, prints review text/JSON to stdout):',
-      placeholder: 'claude -p --output-format text',
-      validate: (v) => (v.trim() ? undefined : 'Required'),
-    });
-    if (p.isCancel(custom)) exitCancelled();
-    reviewerCommand = custom;
-  } else {
-    const agent = agents.find((a) => a.id === backendChoice);
-    if (agent.status === 'unauthenticated') {
-      p.log.warn(`${agent.label} is installed but not authenticated.`);
-      p.log.info(`Run \`${agent.loginCommand}\` in another terminal, then continue.`);
-      const proceed = await p.confirm({ message: 'Continue anyway?', initialValue: false });
-      if (p.isCancel(proceed) || !proceed) exitCancelled();
+      const accessible = new Set(repos.map((repo) => repo.nameWithOwner.toLowerCase()));
+      const existingRepositories = existingByKey.get(selectedKey)?.repositories || [];
+      const repositories = await p.autocompleteMultiselect({
+        message: `Which repositories should ${accountLabel(account)} review?`,
+        options: repos.map((repo) => ({
+          value: repo.nameWithOwner,
+          label: repo.nameWithOwner,
+          hint: repo.isPrivate ? 'private' : undefined,
+        })),
+        initialValues: existingRepositories.filter((repo) => accessible.has(repo.toLowerCase())),
+        required: true,
+      });
+      if (p.isCancel(repositories)) exitCancelled();
+      githubAccounts.push({ ...account, repositories });
     }
-    reviewerCommand = agent.reviewerCommand;
-  }
 
-  const reviewFocusCountChoice = await p.select({
-    message: 'How many review focus categories should each PR use?',
-    initialValue: isValidReviewFocusCount(existingConfig?.reviewFocusCount)
-      ? existingConfig.reviewFocusCount
-      : 4,
-    options: [
-      {
-        value: 4,
-        label: 'All 4 categories + synthesis (recommended)',
-        hint: 'best coverage; 5 reviewer calls per PR',
-      },
-      {
-        value: 3,
-        label: '3 categories + synthesis',
-        hint: 'skips tests/adversarial review; 4 calls per PR',
-      },
-      {
-        value: 2,
-        label: '2 categories + synthesis',
-        hint: 'behavior and security; 3 calls per PR',
-      },
-      {
-        value: 1,
-        label: '1 category + synthesis',
-        hint: 'behavior/correctness only; 2 calls per PR',
-      },
-    ],
-  });
-  if (p.isCancel(reviewFocusCountChoice)) exitCancelled();
+    const agentSpinner = p.spinner();
+    agentSpinner.start('Checking known reviewer CLIs');
+    const agents = await detectAgents();
+    agentSpinner.stop('Done checking reviewer CLIs');
 
-  const scheduleChoice = await p.select({
-    message: 'How should openrevuwer be scheduled to run?',
-    options: [
-      { value: 'cron', label: 'cron (macOS/Linux)' },
-      { value: 'launchd', label: 'launchd (macOS, survives reboots)' },
-      { value: 'schtasks', label: 'Windows Task Scheduler' },
-      { value: 'manual', label: "I'll do it myself" },
-    ],
-  });
-  if (p.isCancel(scheduleChoice)) exitCancelled();
-
-  let intervalMinutes = 15;
-  if (scheduleChoice !== 'manual') {
-    const interval = await p.text({
-      message: 'How often should it poll (minutes)?',
-      initialValue: '15',
-      validate: (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? undefined : 'Enter a positive whole number'),
+    const agentOptions = agents.map((agent) => {
+      const badge = agent.status === 'ready' ? '✓ ready'
+        : agent.status === 'unauthenticated' ? '✗ found, not authenticated'
+        : 'not found';
+      return {
+        value: agent.id,
+        label: `${agent.label} (${badge})`,
+        hint: agent.status === 'unauthenticated' ? `run: ${agent.loginCommand}` : undefined,
+      };
     });
-    if (p.isCancel(interval)) exitCancelled();
-    intervalMinutes = Number(interval);
-  }
+    agentOptions.push({ value: 'custom', label: 'Custom command...' });
 
-  let scheduleResult = { installed: false, choice: scheduleChoice };
+    const backendChoice = await p.select({
+      message: 'Which shared reviewer backend should all accounts use?',
+      options: agentOptions,
+    });
+    if (p.isCancel(backendChoice)) exitCancelled();
 
-  if (scheduleChoice === 'manual') {
-    const instructions = manualInstructions({ pollScriptPath, intervalMinutes });
-    p.note(instructions, 'Set this up yourself');
-  } else {
-    const previewFns = { cron: cronPreview, launchd: launchdPreview, schtasks: schtasksPreview };
-    const installFns = { cron: installCron, launchd: installLaunchd, schtasks: installSchtasks };
-    const { preview, description } = previewFns[scheduleChoice]({ pollScriptPath, intervalMinutes });
+    let reviewerCommand;
+    if (backendChoice === 'custom') {
+      const custom = await p.text({
+        message: 'Reviewer command (reads stdin and writes JSON to stdout):',
+        initialValue: existingConfig?.reviewerCommand,
+        placeholder: 'claude -p --output-format text',
+        validate: (value) => value?.trim() ? undefined : 'Required',
+      });
+      if (p.isCancel(custom)) exitCancelled();
+      reviewerCommand = custom.trim();
+    } else {
+      const agent = agents.find((candidate) => candidate.id === backendChoice);
+      if (agent.status === 'unauthenticated') {
+        p.log.warn(`${agent.label} is installed but not authenticated.`);
+        const proceed = await p.confirm({
+          message: 'Continue with this backend anyway?',
+          initialValue: false,
+        });
+        if (p.isCancel(proceed) || !proceed) exitCancelled();
+      }
+      reviewerCommand = agent.reviewerCommand;
+    }
 
-    p.note(preview, description);
-    const confirmInstall = await p.confirm({
-      message: `Write this ${scheduleChoice} entry now?`,
+    const reviewFocusCount = await p.select({
+      message: 'How many shared review focus categories should each PR use?',
+      initialValue: isValidReviewFocusCount(existingConfig?.reviewFocusCount)
+        ? existingConfig.reviewFocusCount
+        : 4,
+      options: [
+        { value: 4, label: 'All 4 + synthesis (recommended)', hint: '5 reviewer calls per PR' },
+        { value: 3, label: '3 + synthesis', hint: '4 reviewer calls per PR' },
+        { value: 2, label: '2 + synthesis', hint: '3 reviewer calls per PR' },
+        { value: 1, label: '1 + synthesis', hint: '2 reviewer calls per PR' },
+      ],
+    });
+    if (p.isCancel(reviewFocusCount)) exitCancelled();
+
+    const scheduleChoice = await p.select({
+      message: 'How should the shared multi-account poller run?',
+      options: [
+        { value: 'cron', label: 'cron (macOS/Linux)' },
+        { value: 'launchd', label: 'launchd (macOS, survives reboots)' },
+        { value: 'schtasks', label: 'Windows Task Scheduler' },
+        { value: 'manual', label: "I'll run it myself" },
+      ],
+    });
+    if (p.isCancel(scheduleChoice)) exitCancelled();
+
+    let intervalMinutes = 15;
+    if (scheduleChoice !== 'manual') {
+      const interval = await p.text({
+        message: 'How often should it poll (minutes)?',
+        initialValue: '15',
+        validate: (value) => (
+          Number.isInteger(Number(value)) && Number(value) > 0
+            ? undefined
+            : 'Enter a positive whole number'
+        ),
+      });
+      if (p.isCancel(interval)) exitCancelled();
+      intervalMinutes = Number(interval);
+    }
+
+    const config = validateConfig({
+      configVersion: CONFIG_VERSION,
+      githubAccounts,
+      reviewerCommand,
+      reviewerInputMode: 'stdin',
+      reviewBatchSize: isValidReviewBatchSize(existingConfig?.reviewBatchSize)
+        ? existingConfig.reviewBatchSize
+        : 5,
+      reviewFocusCount,
+      stateFile: existingConfig?.stateFile || './state.json',
+    });
+
+    const filePreview = githubAccounts.flatMap((account) =>
+      account.repositories.map((repo) => ({
+        account: accountLabel(account),
+        repo,
+        prompt: reviewPromptPathFor(account.hostname, repo),
+        learnings: learningsPathFor(account, repo),
+      })),
+    );
+    p.note(JSON.stringify(config, null, 2), `Config to write (${configPath})`);
+    p.note(
+      filePreview
+        .map((entry) =>
+          `${entry.account} • ${entry.repo}\n  prompt: ${entry.prompt}\n  learnings: ${entry.learnings}`,
+        )
+        .join('\n'),
+      'Review files',
+    );
+
+    let schedulePreview;
+    if (scheduleChoice === 'manual') {
+      schedulePreview = manualInstructions({ pollScriptPath, intervalMinutes });
+    } else {
+      const previewFns = { cron: cronPreview, launchd: launchdPreview, schtasks: schtasksPreview };
+      schedulePreview = previewFns[scheduleChoice]({ pollScriptPath, intervalMinutes }).preview;
+    }
+    p.note(schedulePreview, 'Schedule');
+
+    const confirmWrite = await p.confirm({
+      message: 'Apply this complete configuration?',
       initialValue: true,
     });
-    if (p.isCancel(confirmInstall)) exitCancelled();
+    if (p.isCancel(confirmWrite) || !confirmWrite) exitCancelled();
 
-    if (confirmInstall) {
-      const s3 = p.spinner();
-      s3.start(`Installing ${scheduleChoice} entry`);
+    const createdFiles = [];
+    let configCommitted = false;
+    try {
+      for (const account of githubAccounts) {
+        for (const repo of account.repositories) {
+          const promptPath = reviewPromptPathFor(account.hostname, repo);
+          const learningsPath = learningsPathFor(account, repo);
+          for (const filePath of [promptPath, learningsPath]) {
+            try {
+              await access(filePath);
+            } catch (err) {
+              if (err.code !== 'ENOENT') throw err;
+              createdFiles.push(filePath);
+            }
+          }
+          await ensureReviewPrompt(account.hostname, repo, {
+            templatePath: reviewPromptTemplatePath,
+          });
+          await ensureLearningsFile(account, repo);
+        }
+      }
+      await saveConfig(configPath, config);
+      configCommitted = true;
+    } finally {
+      if (!configCommitted) {
+        await Promise.all(
+          createdFiles.map((filePath) => rm(filePath, { force: true })),
+        );
+      }
+    }
+
+    if (scheduleChoice !== 'manual') {
+      const installFns = { cron: installCron, launchd: installLaunchd, schtasks: installSchtasks };
+      const scheduleSpinner = p.spinner();
+      scheduleSpinner.start(`Installing ${scheduleChoice} entry`);
       try {
         await installFns[scheduleChoice]({ pollScriptPath, intervalMinutes });
-        s3.stop(`${scheduleChoice} entry installed`);
-        scheduleResult.installed = true;
+        scheduleSpinner.stop(`${scheduleChoice} entry installed`);
       } catch (err) {
-        s3.stop(`Failed to install ${scheduleChoice} entry: ${err.message}`);
+        scheduleSpinner.stop(`Configuration saved, but schedule installation failed: ${err.message}`);
+        process.exitCode = 1;
       }
-    } else {
-      p.log.info('Skipped. You can run the same command yourself later.');
     }
-  }
 
-  const stateFile = typeof existingConfig?.stateFile === 'string' &&
-    existingConfig.stateFile.trim()
-    ? existingConfig.stateFile
-    : './state.json';
-
-  const config = {
-    githubAccount: {
-      hostname: githubAccount.hostname,
-      username,
-    },
-    searchScope: 'per-repo',
-    pollTargets: selectedRepos.map((repo) => ({
-      repo,
-      reviewPromptPath: reviewPromptPaths[repo],
-      learningsPath: './docs/learnings.md',
-    })),
-    reviewerCommand,
-    reviewerInputMode,
-    reviewFocusCount: reviewFocusCountChoice,
-    stateFile,
-  };
-  if (isValidReviewBatchSize(existingConfig?.reviewBatchSize)) {
-    // This advanced setting is intentionally configured by hand rather than
-    // prompted for. Preserve it when the setup wizard rewrites config.json.
-    config.reviewBatchSize = existingConfig.reviewBatchSize;
-  }
-
-  p.log.info(
-    `Review coverage: ${reviewFocusCountChoice} focus categor${reviewFocusCountChoice === 1 ? 'y' : 'ies'} + ` +
-    `1 synthesis pass = ${reviewFocusCountChoice + 1} reviewer calls per PR.`,
-  );
-  p.note(JSON.stringify(config, null, 2), `Config to write (${configPath})`);
-  const confirmWrite = await p.confirm({ message: 'Write config.json?', initialValue: true });
-  if (p.isCancel(confirmWrite) || !confirmWrite) exitCancelled();
-
-  let previousAccount = null;
-  try {
-    previousAccount = legacyGitHubAccount(existingConfig);
-  } catch {
-    p.log.warn(
-      'Existing legacy GitHub account is invalid; review state was not migrated.',
+    p.outro(
+      'Setup complete. Try:\n\n' +
+      '  openrevuwer --dry-run\n\n' +
+      `Or one account:\n\n  openrevuwer --dry-run --account ${accountLabel(githubAccounts[0])}`,
     );
+  } finally {
+    await releaseOperationLock();
   }
-
-  if (sameReviewer(previousAccount, config.githubAccount)) {
-    const statePath = resolveUserPath(config.stateFile);
-    const state = await loadState(statePath);
-    if (migrateLegacyStateForReviewer(state, previousAccount, config.githubAccount)) {
-      // Write state first. If the later config write fails, the old config can
-      // still read these scoped keys, so the upgrade remains retry-safe.
-      await saveState(statePath, state);
-      p.log.success(`Migrated legacy review state for ${username}`);
-    }
-  }
-
-  await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
-
-  p.outro('Setup complete. Try a real dry run:\n\n  openrevuwer --dry-run');
 }
 
 main().catch((err) => {
-  console.error(err.stack || err.message);
-  process.exit(1);
+  if (err.code !== 'ECANCELLED') p.log.error(err.message);
+  process.exitCode = 1;
 });
