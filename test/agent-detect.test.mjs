@@ -35,11 +35,16 @@ test('detectAgents executes Windows npm shims through ComSpec', async () => {
       ComSpec: 'C:\\Windows\\System32\\cmd.exe',
     },
     resolve: async (binary) => `C:\\npm\\${binary}.cmd`,
-    execute: async (...args) => executions.push(args),
+    execute: async (...args) => {
+      executions.push(args);
+      return {
+        stdout: '--setting-sources --tools dontAsk',
+      };
+    },
   });
 
   assert.deepEqual(agents.map(({ status }) => status), ['ready', 'ready']);
-  assert.equal(executions.length, 2);
+  assert.equal(executions.length, 3);
   assert.equal(executions[0][0], 'C:\\Windows\\System32\\cmd.exe');
   assert.deepEqual(executions[0][1].slice(0, 3), ['/d', '/s', '/c']);
   assert.equal(executions[0][2].shell, false);
@@ -59,4 +64,23 @@ test('detectAgents distinguishes missing and failed agent checks', async () => {
   });
 
   assert.deepEqual(agents.map(({ status }) => status), ['not-found', 'unauthenticated']);
+});
+
+test('detectAgents rejects Claude versions missing isolation flags', async () => {
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (_command, args) => ({
+      stdout: args.includes('--help')
+        ? '--strict-mcp-config --allowedTools --permission-mode default'
+        : '',
+    }),
+  });
+
+  assert.equal(agents[0].status, 'incompatible');
+  assert.deepEqual(
+    agents[0].missingCapabilities,
+    ['--setting-sources', '--tools', 'dontAsk'],
+  );
+  assert.equal(agents[1].status, 'ready');
 });
