@@ -10,7 +10,8 @@ const projectRoot = path.resolve(
 );
 
 async function readProjectFile(relativePath) {
-  return readFile(path.join(projectRoot, relativePath), 'utf8');
+  const contents = await readFile(path.join(projectRoot, relativePath), 'utf8');
+  return contents.replaceAll('\r\n', '\n');
 }
 
 test('the first stable release metadata is finalized as 1.0.0', async () => {
