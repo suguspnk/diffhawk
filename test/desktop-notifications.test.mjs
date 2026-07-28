@@ -154,8 +154,6 @@ test('macOS delivery uses the bundled app notifier with safe arguments and sound
     notification.message,
     '-sound',
     'Glass',
-    '-timeout',
-    '4',
   ]);
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
