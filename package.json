@@ -34,6 +34,7 @@
     "lib",
     "vendor",
     "docs/review-prompt.default.md",
+    "PRD.md",
     "config.example.json"
   ],
   "scripts": {

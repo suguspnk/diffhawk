@@ -27,6 +27,26 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   );
 });
 
+test('relative links in the installed README target packaged files', async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+  );
+  const readme = await readFile(path.join(projectRoot, 'README.md'), 'utf8');
+  const alwaysIncluded = new Set(['README.md', 'LICENSE', 'package.json']);
+  const relativeTargets = [...readme.matchAll(/\[[^\]]*]\(([^)]+)\)/g)]
+    .map((match) => match[1])
+    .filter((target) => !/^(?:https?:|#)/i.test(target))
+    .map((target) => path.posix.normalize(target.split('#', 1)[0]));
+
+  for (const target of relativeTargets) {
+    const packaged = alwaysIncluded.has(target) ||
+      packageJson.files.some(
+        (entry) => target === entry || target.startsWith(`${entry}/`),
+      );
+    assert.equal(packaged, true, `${target} is linked from README but not packaged`);
+  }
+});
+
 test('published CLI errors and usage use the OpenMergeLens command', async () => {
   await assert.rejects(
     execFileAsync(
