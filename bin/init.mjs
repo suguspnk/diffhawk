@@ -29,6 +29,7 @@ import {
   cronPreview, installCron,
   launchdPreview, installLaunchd,
   schtasksPreview, installSchtasks,
+  schedulerChoices,
   manualInstructions,
 } from '../lib/scheduler.mjs';
 
@@ -202,12 +203,7 @@ async function main() {
 
     const scheduleChoice = await p.select({
       message: 'How should the shared multi-account poller run?',
-      options: [
-        { value: 'cron', label: 'cron (macOS/Linux)' },
-        { value: 'launchd', label: 'launchd (macOS, survives reboots)' },
-        { value: 'schtasks', label: 'Windows Task Scheduler' },
-        { value: 'manual', label: "I'll run it myself" },
-      ],
+      options: schedulerChoices(),
     });
     if (p.isCancel(scheduleChoice)) exitCancelled();
 
@@ -257,13 +253,17 @@ async function main() {
     );
 
     let schedulePreview;
+    let scheduleEnvironmentNote = '';
     if (scheduleChoice === 'manual') {
       schedulePreview = manualInstructions({ pollScriptPath, intervalMinutes });
     } else {
       const previewFns = { cron: cronPreview, launchd: launchdPreview, schtasks: schtasksPreview };
-      schedulePreview = previewFns[scheduleChoice]({ pollScriptPath, intervalMinutes }).preview;
+      const preview = previewFns[scheduleChoice]({ pollScriptPath, intervalMinutes });
+      schedulePreview = preview.preview;
+      scheduleEnvironmentNote =
+        `\n\nEnvironment file (${preview.environmentPath}):\n${preview.environmentPreview}`;
     }
-    p.note(schedulePreview, 'Schedule');
+    p.note(`${schedulePreview}${scheduleEnvironmentNote}`, 'Schedule');
 
     const confirmWrite = await p.confirm({
       message: 'Apply this complete configuration?',
