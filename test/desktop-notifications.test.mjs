@@ -141,10 +141,12 @@ test('macOS delivery uses the bundled app notifier with safe arguments and sound
     spawnImpl: successfulSpawn((value) => {
       invocation = value;
     }),
-    macNotifierPath: '/bundled/terminal-notifier',
   });
 
-  assert.equal(invocation.command, '/bundled/terminal-notifier');
+  assert.match(
+    invocation.command,
+    /vendor[\\/]terminal-notifier\.app[\\/]Contents[\\/]MacOS[\\/]terminal-notifier$/,
+  );
   assert.deepEqual(invocation.args, [
     '-title',
     notification.title,

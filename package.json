@@ -26,6 +26,7 @@
   "files": [
     "bin",
     "lib",
+    "vendor",
     "docs/review-prompt.default.md",
     "config.example.json"
   ],
@@ -38,12 +39,6 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@clack/prompts": "^1.7.0",
-    "node-notifier": "^10.0.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "node-notifier>uuid": "^11.1.1"
-    }
+    "@clack/prompts": "^1.7.0"
   }
 }

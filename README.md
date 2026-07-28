@@ -174,10 +174,11 @@ prioritized and successful PRs still represented.
 No notification is sent when there is no work or when another poll owns the
 operation lock. Notification delivery is best-effort: it has a five-second
 timeout, logs failures to `~/.openrevuwer/poll.log`, and never changes a review
-or state outcome. On macOS, openrevuwer uses the application-bundled
-`terminal-notifier` shipped by `node-notifier`, so scheduled polls have a stable
-Notification Center identity instead of relying on background AppleScript.
-Windows uses PowerShell toasts, and Linux uses `notify-send`. A logged-in
+or state outcome. On macOS, openrevuwer includes an application-bundled,
+ad-hoc-signed universal build of the established `terminal-notifier` project,
+so scheduled polls have a stable Notification Center identity on both Intel
+and Apple Silicon without relying on background AppleScript or Rosetta. Windows
+uses PowerShell toasts, and Linux uses `notify-send`. A logged-in
 graphical desktop session is required; headless and logged-out scheduler
 sessions cannot display a toast. Linux systems must provide `notify-send`.
 
