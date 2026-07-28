@@ -17,7 +17,7 @@
       ]
     }
   ],
-  "reviewerCommand": "claude -p --output-format text",
+  "reviewerCommand": "claude -p --output-format text --setting-sources \"\" --strict-mcp-config --permission-mode dontAsk --max-turns 100 --tools \"\"",
   "reviewerInputMode": "stdin",
   "reviewBatchSize": 5,
   "reviewFocusCount": 4,

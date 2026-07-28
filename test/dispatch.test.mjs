@@ -14,6 +14,14 @@ test('init alone routes to init with no flags', () => {
   assert.deepEqual(parseArgs(['init']), { subcommand: 'init', flags: [] });
 });
 
+test('help and version flags route without starting a poll', () => {
+  assert.deepEqual(parseArgs(['--help']), { subcommand: 'help', flags: [] });
+  assert.deepEqual(parseArgs(['-h']), { subcommand: 'help', flags: [] });
+  assert.deepEqual(parseArgs(['init', '--help']), { subcommand: 'help', flags: [] });
+  assert.deepEqual(parseArgs(['--version']), { subcommand: 'version', flags: [] });
+  assert.deepEqual(parseArgs(['-v']), { subcommand: 'version', flags: [] });
+});
+
 test('init rejects poll-only flags', () => {
   assert.deepEqual(parseArgs(['init', '--dry-run']), {
     error: 'unrecognized argument "--dry-run"',
@@ -25,7 +33,7 @@ test('an unrecognized argument is rejected instead of silently falling through t
 });
 
 test('an unknown flag is rejected the same way', () => {
-  assert.deepEqual(parseArgs(['--help']), { error: 'unrecognized argument "--help"' });
+  assert.deepEqual(parseArgs(['--unknown']), { error: 'unrecognized argument "--unknown"' });
 });
 
 test('--account accepts one explicit USERNAME@HOSTNAME selector', () => {

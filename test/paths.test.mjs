@@ -28,15 +28,16 @@ test('userHome respects OPENMERGELENS_HOME override', (t) => {
 
 test('userPath joins segments onto the user home', (t) => {
   const original = process.env.OPENMERGELENS_HOME;
-  process.env.OPENMERGELENS_HOME = '/tmp/custom-openmergelens-home';
+  const customHome = path.join(path.parse(process.cwd()).root, 'tmp', 'custom-openmergelens-home');
+  process.env.OPENMERGELENS_HOME = customHome;
   t.after(() => {
     if (original === undefined) delete process.env.OPENMERGELENS_HOME;
     else process.env.OPENMERGELENS_HOME = original;
   });
 
-  assert.equal(userPath('config.json'), '/tmp/custom-openmergelens-home/config.json');
-  assert.equal(userPath('docs', 'checklist.md'), '/tmp/custom-openmergelens-home/docs/checklist.md');
-  assert.equal(userPath(), '/tmp/custom-openmergelens-home');
+  assert.equal(userPath('config.json'), path.join(customHome, 'config.json'));
+  assert.equal(userPath('docs', 'checklist.md'), path.join(customHome, 'docs', 'checklist.md'));
+  assert.equal(userPath(), customHome);
 });
 
 test('resolveUserPath leaves an absolute path untouched', (t) => {
@@ -55,12 +56,13 @@ test('resolveUserPath leaves an absolute path untouched', (t) => {
 
 test('resolveUserPath resolves a relative path against the user home', (t) => {
   const original = process.env.OPENMERGELENS_HOME;
-  process.env.OPENMERGELENS_HOME = '/tmp/custom-openmergelens-home';
+  const customHome = path.join(path.parse(process.cwd()).root, 'tmp', 'custom-openmergelens-home');
+  process.env.OPENMERGELENS_HOME = customHome;
   t.after(() => {
     if (original === undefined) delete process.env.OPENMERGELENS_HOME;
     else process.env.OPENMERGELENS_HOME = original;
   });
 
-  assert.equal(resolveUserPath('./state.json'), '/tmp/custom-openmergelens-home/state.json');
-  assert.equal(resolveUserPath('docs/checklist.md'), '/tmp/custom-openmergelens-home/docs/checklist.md');
+  assert.equal(resolveUserPath('./state.json'), path.join(customHome, 'state.json'));
+  assert.equal(resolveUserPath('docs/checklist.md'), path.join(customHome, 'docs', 'checklist.md'));
 });

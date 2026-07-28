@@ -1,9 +1,11 @@
 {
   "name": "openmergelens",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.0",
   "description": "Local, agent-agnostic AI code reviews for GitHub pull requests.",
+  "author": "Antonio Telimban Jr.",
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@11.17.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/suguspnk/openmergelens.git"
@@ -24,7 +26,7 @@
     "codex"
   ],
   "bin": {
-    "openmergelens": "./bin/openmergelens.mjs"
+    "openmergelens": "bin/openmergelens.mjs"
   },
   "files": [
     "bin/init.mjs",
@@ -34,16 +36,23 @@
     "lib",
     "vendor",
     "docs/review-prompt.default.md",
+    "CHANGELOG.md",
     "PRD.md",
     "config.example.json"
   ],
   "scripts": {
     "poll": "node bin/poll.mjs",
     "init": "node bin/init.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "pack:check": "npm pack --dry-run",
+    "release:check": "pnpm test && pnpm audit --prod --audit-level low && pnpm run pack:check",
+    "prepublishOnly": "pnpm release:check"
   },
   "engines": {
-    "node": ">=18"
+    "node": "^22.14.0 || ^24.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0"

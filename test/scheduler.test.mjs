@@ -62,14 +62,6 @@ if (mode === '-l') {
   };
 }
 
-async function fakeCommand(name, source) {
-  const directory = await mkdtemp(path.join(tmpdir(), `openmergelens-${name}-test-`));
-  const command = path.join(directory, name);
-  await writeFile(command, `#!${process.execPath}\n${source}`, 'utf8');
-  await chmod(command, 0o755);
-  return { command, directory };
-}
-
 test('installCron writes stdin, preserves unrelated entries, and replaces its marker', {
   skip: process.platform === 'win32',
   timeout: 6_000,
@@ -178,6 +170,8 @@ test('cronPreview shell-quotes paths containing spaces and metacharacters', () =
     },
     homeDirectory: '/unused',
     nodeExecutable: '/opt/Node & Tools/node',
+    platform: 'linux',
+    pathImplementation: path.posix,
   });
 
   assert.match(preview.preview, /'\/opt\/Node & Tools\/node'/);
@@ -210,6 +204,8 @@ test('launchdPreview escapes XML and persists the scheduled environment', () => 
     },
     homeDirectory: '/Users/Test & User',
     nodeExecutable: '/Applications/Node & Co/node',
+    platform: 'darwin',
+    pathImplementation: path.posix,
   });
 
   assert.match(preview.preview, /Open &amp; Review\/bin\/scheduled\.mjs/);
@@ -248,23 +244,22 @@ test('schtasksPreview uses the environment-restoring runner and quotes Windows p
 });
 
 test('installLaunchd writes the environment file and uses an injectable launchctl', async (t) => {
-  const callsFile = path.join(tmpdir(), `openmergelens-launchctl-calls-${process.pid}`);
-  const fake = await fakeCommand(
-    'launchctl',
-    `const fs=require('node:fs');fs.appendFileSync(${JSON.stringify(callsFile)}, process.argv.slice(2).join(' ')+'\\n');`,
-  );
-  const homeDirectory = path.join(fake.directory, 'home');
-  const stateHome = path.join(fake.directory, 'state home');
-  t.after(() => rm(fake.directory, { recursive: true, force: true }));
-  t.after(() => rm(callsFile, { force: true }));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-launchctl-test-'));
+  const homeDirectory = path.join(directory, 'home');
+  const stateHome = path.join(directory, 'state home');
+  const calls = [];
+  t.after(() => rm(directory, { recursive: true, force: true }));
 
   await installLaunchd({
-    pollScriptPath: path.join(fake.directory, 'bin', 'poll.mjs'),
+    pollScriptPath: path.join(directory, 'bin', 'poll.mjs'),
     intervalMinutes: 15,
     environment: { PATH: '/custom/bin', OPENMERGELENS_HOME: stateHome },
     homeDirectory,
     platform: 'darwin',
-    launchctlCommand: fake.command,
+    launchctlCommand: 'launchctl',
+    executeCommand: async (command, args) => {
+      calls.push([command, args]);
+    },
   });
 
   assert.deepEqual(
@@ -277,18 +272,17 @@ test('installLaunchd writes the environment file and uses an injectable launchct
       0o600,
     );
   }
-  assert.match(await readFile(callsFile, 'utf8'), /load .*LaunchAgents/);
+  assert.deepEqual(calls.map(([command]) => command), ['launchctl', 'launchctl']);
+  assert.equal(calls[0][1][0], 'unload');
+  assert.equal(calls[1][1][0], 'load');
+  assert.match(calls[1][1][1], /LaunchAgents/);
 });
 
 test('installSchtasks writes the environment file and invokes Task Scheduler', async (t) => {
-  const callsFile = path.join(tmpdir(), `openmergelens-schtasks-calls-${process.pid}`);
-  const fake = await fakeCommand(
-    'schtasks',
-    `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(callsFile)}, JSON.stringify(process.argv.slice(2)));`,
-  );
-  const stateHome = path.join(fake.directory, 'state home');
-  t.after(() => rm(fake.directory, { recursive: true, force: true }));
-  t.after(() => rm(callsFile, { force: true }));
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-schtasks-test-'));
+  const stateHome = path.join(directory, 'state home');
+  const calls = [];
+  t.after(() => rm(directory, { recursive: true, force: true }));
 
   await installSchtasks({
     pollScriptPath: 'C:\\Program Files\\openmergelens\\bin\\poll.mjs',
@@ -298,14 +292,19 @@ test('installSchtasks writes the environment file and invokes Task Scheduler', a
     nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
     platform: 'win32',
     pathImplementation: path.posix,
-    schtasksCommand: fake.command,
+    schtasksCommand: 'schtasks',
+    executeCommand: async (command, args) => {
+      calls.push([command, args]);
+    },
   });
 
   assert.deepEqual(
     JSON.parse(await readFile(path.join(stateHome, 'scheduler-environment.json'), 'utf8')),
     { PATH: 'C:\\Tools', OPENMERGELENS_HOME: stateHome },
   );
-  assert.match(await readFile(callsFile, 'utf8'), /scheduler-environment\.json/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'schtasks');
+  assert.match(JSON.stringify(calls[0][1]), /scheduler-environment\.json/);
 });
 
 test('scheduler installers reject incompatible platforms before side effects', async () => {

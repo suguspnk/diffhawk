@@ -8,6 +8,9 @@ where you're the requested reviewer and a reviewer CLI of your choice (Claude
 Code, Codex, or any other command) to generate an inline, severity-tagged
 GitHub review.
 
+OpenMergeLens is pre-1.0 software. Start with a dry run, review its output, and
+only then enable posting.
+
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
 
@@ -15,7 +18,7 @@ setup.
 
 Before running anything, make sure you have:
 
-1. **Node.js 18+**
+1. **Node.js 22.14+ or 24+**
    ```bash
    node --version
    ```
@@ -28,8 +31,9 @@ Before running anything, make sure you have:
 3. **A reviewer CLI**, already logged in on its own — pick one:
    - [Claude Code](https://claude.com/claude-code): `claude /login`
    - [Codex CLI](https://github.com/openai/codex): `codex login`
-   - Anything else that can read a prompt from stdin and print text/JSON to
-     stdout.
+   - A custom CLI that can read a prompt from stdin, print text/JSON to
+     stdout, attach a per-run MCP server, and restrict access to the named MCP
+     inspection tool.
 
 ## Install
 
@@ -41,6 +45,13 @@ Or skip the install and run it on demand with `npx`:
 
 ```bash
 npx openmergelens init
+```
+
+Useful command metadata is available without configuration:
+
+```bash
+openmergelens --help
+openmergelens --version
 ```
 
 Config, poll state, logs, and your editable per-repo review prompts/learnings
@@ -106,7 +117,6 @@ then copy `<that path>/openmergelens/config.example.json` to
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openmergelens/`). |
-| `lockFile` | Stable lock namespace used to prevent two overlapping poll runs from racing on `stateFile` (defaults to `<stateFile>.lock`, resolved under `~/.openmergelens/`; the legacy field name is retained for compatibility). Ownership uses one of a deterministic sequence of kernel-managed loopback listeners, not a filesystem lock file, so distinct keys can bypass port collisions and crashes cannot leave stale lock artifacts. If a poll run is still in flight when the next scheduled tick fires, the new run logs a message and exits instead of running concurrently. |
 
 `~/.openmergelens/config.json` is local, machine-specific config — it's never
 committed to a repo. It stores hostnames and usernames, never tokens. Each poll
@@ -216,6 +226,42 @@ keeps `gh` and the selected reviewer CLI discoverable under the restricted
 environments used by cron, launchd, and Task Scheduler. The file contains
 paths only, never GitHub or reviewer credentials.
 
+## Privacy, security, and cost
+
+OpenMergeLens has no server, account system, analytics, or telemetry. It stores
+configuration, review state, logs, prompts, and learnings locally. GitHub data
+is retrieved through your authenticated `gh` installation. GitHub credentials
+are never written to OpenMergeLens config and are not passed to the reviewer;
+the reviewer receives a temporary read-only tool scoped to one repository and
+pull request.
+
+Pull-request content is untrusted input. OpenMergeLens validates tool requests,
+uses shell-free process arguments, bounds subprocess output, rechecks the head
+commit before posting, and sanitizes diagnostics. A custom reviewer remains
+trusted local software and is governed by its provider's privacy, billing, and
+usage terms.
+
+The default four focused review passes plus synthesis make five reviewer
+invocations per PR. Lower `reviewFocusCount` to reduce usage. GitHub and
+reviewer rate limits can still delay or fail work; failures leave review state
+untouched so a later poll retries.
+
+See the
+[security policy](https://github.com/suguspnk/openmergelens/blob/main/SECURITY.md)
+for the security model and private reporting process.
+
+## Known limitations
+
+- The host machine must be awake, online, and able to run `gh` and the reviewer
+  when the schedule fires.
+- Only explicitly selected repositories are searched.
+- Notifications require a logged-in graphical session; Linux also requires
+  `notify-send`.
+- Reviewer quality, latency, context limits, and cost depend on the configured
+  reviewer.
+- OpenMergeLens supports maintained Node.js 22 and 24 releases. EOL Node.js
+  versions are not supported.
+
 ## Customizing reviews
 
 - **`~/.openmergelens/docs/review-prompts/<host>/<owner>/<repo>.md`** — the
@@ -249,10 +295,9 @@ paths only, never GitHub or reviewer credentials.
 - **Reviewer CLI "found but not authenticated"** during `init` — run the
   login command it prints (e.g. `claude /login`), then continue.
 - **Codex reports "Not inside a trusted directory"** — current versions
-  automatically upgrade the old generated `"codex exec"` command to
-  `"codex exec --skip-git-repo-check --ephemeral --sandbox read-only"`.
-  Upgrade OpenMergeLens or rerun `openmergelens init`; custom Codex commands are
-  intentionally not rewritten.
+  automatically upgrade known older generated Codex commands to the current
+  ephemeral, strict, read-only command. Upgrade OpenMergeLens or rerun
+  `openmergelens init`; custom Codex commands are intentionally not rewritten.
 - **Nothing happens on a poll run** — check `~/.openmergelens/poll.log` for
   the specific failure (search failed, reviewer adapter failed, post
   rejected, etc.).
@@ -264,6 +309,31 @@ paths only, never GitHub or reviewer credentials.
   against the actual diff before posting; anything it can't anchor to a real
   line gets folded into the review's summary text instead of being dropped
   silently, so check the summary for an "Additional findings" section.
+
+## Uninstall
+
+Remove the scheduler before uninstalling the package:
+
+- **cron:** run `crontab -e` and remove the line ending in
+  `# openmergelens poll`.
+- **launchd:** run
+  `launchctl unload ~/Library/LaunchAgents/io.github.suguspnk.openmergelens.poll.plist`,
+  then delete that plist.
+- **Windows Task Scheduler:** run
+  `schtasks /delete /f /tn openmergelens-poll`.
+
+Then run `npm uninstall -g openmergelens`. Your local state is intentionally
+preserved. Delete `~/.openmergelens` only if you also want to permanently
+remove config, review history, logs, prompts, and learnings.
+
+## Community and releases
+
+See the
+[contribution guide](https://github.com/suguspnk/openmergelens/blob/main/CONTRIBUTING.md),
+[support policy](https://github.com/suguspnk/openmergelens/blob/main/SUPPORT.md),
+[code of conduct](https://github.com/suguspnk/openmergelens/blob/main/CODE_OF_CONDUCT.md),
+and [changelog](./CHANGELOG.md). Maintainer release steps are documented in
+[docs/RELEASING.md](https://github.com/suguspnk/openmergelens/blob/main/docs/RELEASING.md).
 
 ## License
 

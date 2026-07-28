@@ -19,11 +19,16 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
 
   assert.equal(packageJson.name, 'openmergelens');
   assert.deepEqual(packageJson.bin, {
-    openmergelens: './bin/openmergelens.mjs',
+    openmergelens: 'bin/openmergelens.mjs',
   });
   assert.equal(
     packageJson.repository.url,
     'git+https://github.com/suguspnk/openmergelens.git',
+  );
+  assert.equal(
+    packageJson.scripts.prepublishOnly,
+    'pnpm release:check',
+    'interactive publishes must run the same audit and package gate as CI',
   );
 });
 
@@ -60,4 +65,23 @@ test('published CLI errors and usage use the OpenMergeLens command', async () =>
       return true;
     },
   );
+});
+
+test('published CLI exposes help and version without starting a poll', async () => {
+  const help = await execFileAsync(
+    process.execPath,
+    ['bin/openmergelens.mjs', '--help'],
+    { cwd: projectRoot },
+  );
+  assert.match(help.stdout, /^Usage: openmergelens /);
+
+  const packageJson = JSON.parse(
+    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+  );
+  const version = await execFileAsync(
+    process.execPath,
+    ['bin/openmergelens.mjs', '--version'],
+    { cwd: projectRoot },
+  );
+  assert.equal(version.stdout.trim(), packageJson.version);
 });
