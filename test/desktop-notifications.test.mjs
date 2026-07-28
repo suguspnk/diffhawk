@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import {
   attemptDesktopNotification,
   buildPollNotification,
@@ -10,6 +11,15 @@ import {
 
 function entry(status, repo, number, title, account = 'work@github.com') {
   return { status, repo, number, title, account };
+}
+
+function successfulSpawn(onInvocation) {
+  return (command, args, options) => {
+    onInvocation({ command, args, options });
+    const child = new EventEmitter();
+    queueMicrotask(() => child.emit('close', 0, null));
+    return child;
+  };
 }
 
 test('no work produces no desktop notification', () => {
@@ -120,10 +130,6 @@ test('sanitizes control characters and truncates long PR titles', () => {
 
 test('macOS delivery uses the bundled app notifier with safe arguments and sound', async () => {
   let invocation;
-  const execFileImpl = (command, args, options, callback) => {
-    invocation = { command, args, options };
-    callback(null);
-  };
   const notification = {
     title: 'OpenRevuwer review complete',
     message: 'Reviewed: owner/repo#1 — `"; display dialog "unsafe',
@@ -132,21 +138,22 @@ test('macOS delivery uses the bundled app notifier with safe arguments and sound
 
   await deliverDesktopNotification(notification, {
     platform: 'darwin',
-    execFileImpl,
-    macNotifierAppPath: '/bundled/terminal-notifier.app',
+    spawnImpl: successfulSpawn((value) => {
+      invocation = value;
+    }),
+    macNotifierPath: '/bundled/terminal-notifier',
   });
 
-  assert.equal(invocation.command, '/usr/bin/open');
+  assert.equal(invocation.command, '/bundled/terminal-notifier');
   assert.deepEqual(invocation.args, [
-    '-n',
-    '/bundled/terminal-notifier.app',
-    '--args',
     '-title',
     notification.title,
     '-message',
     notification.message,
     '-sound',
     'Glass',
+    '-timeout',
+    '4',
   ]);
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
@@ -157,15 +164,36 @@ test('macOS attention notifications use a distinct failure sound', async () => {
     { title: 'OpenRevuwer needs attention', message: 'Failed', attention: true },
     {
       platform: 'darwin',
-      macNotifierAppPath: '/bundled/terminal-notifier.app',
-      execFileImpl: (command, args, options, callback) => {
-        invocation = { command, args, options };
-        callback(null);
-      },
+      macNotifierPath: '/bundled/terminal-notifier',
+      spawnImpl: successfulSpawn((value) => {
+        invocation = value;
+      }),
     },
   );
 
-  assert.equal(invocation.args.at(-1), 'Basso');
+  assert.equal(invocation.options.stdio, 'ignore');
+  assert.equal(
+    invocation.args[invocation.args.indexOf('-sound') + 1],
+    'Basso',
+  );
+});
+
+test('macOS delivery rejects when the notifier process does not complete', async () => {
+  await assert.rejects(
+    deliverDesktopNotification(
+      { title: 'OpenRevuwer', message: 'Failed', attention: true },
+      {
+        platform: 'darwin',
+        macNotifierPath: '/bundled/terminal-notifier',
+        spawnImpl: () => {
+          const child = new EventEmitter();
+          queueMicrotask(() => child.emit('close', null, 'SIGTERM'));
+          return child;
+        },
+      },
+    ),
+    /terminal-notifier exited with SIGTERM/,
+  );
 });
 
 test('Linux delivery requests urgency and sound through notify-send', async () => {

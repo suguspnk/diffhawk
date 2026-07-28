@@ -60,7 +60,10 @@ test('scheduled runner consumes its environment argument before poll argument pa
       ['bin/scheduled.mjs', environmentPath, '--invalid'],
       {
         cwd: projectRoot,
-        env: { PATH: '/usr/bin:/bin' },
+        env: {
+          PATH: '/usr/bin:/bin',
+          OPENREVUWER_DESKTOP_NOTIFICATIONS: '0',
+        },
       },
     ),
     (err) => {
