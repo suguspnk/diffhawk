@@ -11,6 +11,7 @@ import {
   saveConfig,
   validateConfig,
 } from '../lib/config.mjs';
+import { CODEX_REVIEWER_COMMAND } from '../lib/reviewer-command-defaults.mjs';
 
 const validConfig = {
   configVersion: 2,
@@ -36,9 +37,28 @@ test('validates and normalizes a version 2 multi-account config', () => {
   assert.deepEqual(validateConfig(validConfig), {
     ...validConfig,
     githubAccounts: validConfig.githubAccounts,
+    reviewerCommand: CODEX_REVIEWER_COMMAND,
     reviewerInputMode: 'stdin',
     desktopNotifications: true,
   });
+});
+
+test('upgrades only the legacy Codex default command', () => {
+  assert.equal(
+    validateConfig({ ...validConfig, reviewerCommand: ' codex exec ' }).reviewerCommand,
+    CODEX_REVIEWER_COMMAND,
+  );
+  assert.equal(
+    validateConfig({
+      ...validConfig,
+      reviewerCommand: 'codex exec --model custom',
+    }).reviewerCommand,
+    'codex exec --model custom',
+  );
+  assert.equal(
+    validateConfig({ ...validConfig, reviewerCommand: 'custom-reviewer' }).reviewerCommand,
+    'custom-reviewer',
+  );
 });
 
 test('rejects legacy, global, empty, and duplicate account shapes', () => {
