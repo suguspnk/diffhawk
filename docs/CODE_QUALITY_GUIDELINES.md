@@ -1,9 +1,9 @@
 # Code Quality Guidelines
 
 Project-specific coding standards for OpenMergeLens. This is the reference that
-[`docs/checklist.md`](checklist.md) (the terse prompt injected into every
-automated review) is distilled from — read this for the *why*, use the
-checklist as the quick-scan version. Read alongside
+[`docs/review-prompt.default.md`](review-prompt.default.md) (the prompt seeded
+for every watched repository) is distilled from — read this for the *why*,
+use the review prompt as the quick-scan version. Read alongside
 [`docs/tech-stack-standards.md`](tech-stack-standards.md) (external
 library/tool best practices) and [`PRD.md`](../PRD.md) (design rationale).
 
@@ -231,7 +231,7 @@ for the general pattern; these are the OpenMergeLens-specific rules.
 - **New or changed logic needs a corresponding test**, especially error
   paths and the "don't post/don't advance state if invalid" invariants —
   not just coverage of the success path. This is checked in review (see
-  [`docs/checklist.md`](checklist.md)'s Tests section).
+  [`docs/review-prompt.default.md`](review-prompt.default.md)'s Tests section).
 
 ## Performance
 
