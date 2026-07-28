@@ -12,7 +12,18 @@ test('Codex uses a safe command for prompt-only scheduled reviews', () => {
   assert.deepEqual(codex.checkArgs, CODEX_REVIEWER_CHECK_ARGS);
   assert.match(codex.reviewerCommand, /--skip-git-repo-check/);
   assert.match(codex.reviewerCommand, /--ephemeral/);
-  assert.match(codex.reviewerCommand, /--sandbox read-only/);
+  assert.match(codex.reviewerCommand, /--strict-config/);
+  assert.match(codex.reviewerCommand, /extends=":read-only"/);
+  assert.doesNotMatch(codex.reviewerCommand, /network\.enabled/);
+  assert.match(codex.reviewerCommand, /":root"="deny"/);
+  assert.doesNotMatch(codex.reviewerCommand, /network\.domains/);
+});
+
+test('Claude starts without Bash or filesystem tools before the per-review MCP tool is attached', () => {
+  const claude = KNOWN_AGENTS.find((agent) => agent.id === 'claude');
+  assert.match(claude.reviewerCommand, /--permission-mode dontAsk/);
+  assert.match(claude.reviewerCommand, /--tools ""/);
+  assert.doesNotMatch(claude.reviewerCommand, /\b(?:Bash|Edit|Read|Write|WebFetch|Task)\b/);
 });
 
 test('detectAgents executes Windows npm shims through ComSpec', async () => {

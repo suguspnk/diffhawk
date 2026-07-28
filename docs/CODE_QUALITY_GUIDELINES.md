@@ -120,16 +120,23 @@ for the general pattern; these are the OpenMergeLens-specific rules.
   output, and sidesteps argument/flag-injection risk from content that
   happens to start with `-`.
 - **A configured command being "trusted" doesn't make its runtime arguments
-  trusted.** `reviewerCommand` is a value the user chose, but the *diff
-  content and PR metadata* passed to it at runtime are still untrusted —
-  don't assume a trusted base command means everything downstream of it is
-  safe.
+  trusted.** `reviewerCommand` is a value the user chose, but the PR content it
+  retrieves with `gh` is still untrusted — don't assume a trusted base command
+  means everything downstream of it is safe. The fixed prompt must forbid
+  commands sourced from PR content and all GitHub mutations.
 - **Never blanket-inherit environment into a subprocess that doesn't need
   it.** Pass through only what's required; `github-auth.mjs`'s
   `authEnvironment` explicitly deletes ambient `GH_TOKEN`/`GITHUB_TOKEN`/etc.
   before setting the one scoped credential that should actually apply, so
   a stray environment variable can never silently override the account
   selected in `init`.
+- **Reviewer GitHub access stays account-scoped and operationally read-only.**
+  Never expose the selected account credential to the reviewer process. Route
+  its structured inspection tool through the per-review gateway, which validates
+  the fixed PR, repository, HTTP method, and endpoint before using the
+  credential in the parent process. The generated Codex command uses a
+  deny-root filesystem profile and has no direct network access. Claude must
+  expose only the same MCP tool, never Bash or general filesystem tools.
 - **Sanitize before logging.** Subprocess stdout/stderr written to
   `poll.log` should never include raw, unfiltered output from a tool that
   might echo a token or credential — this matters especially for

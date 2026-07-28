@@ -11,7 +11,13 @@ import {
   saveConfig,
   validateConfig,
 } from '../lib/config.mjs';
-import { CODEX_REVIEWER_COMMAND } from '../lib/reviewer-command-defaults.mjs';
+import {
+  CODEX_REVIEWER_COMMAND,
+  PREVIOUS_CODEX_REVIEWER_COMMAND,
+  PR_LINK_CODEX_REVIEWER_COMMAND,
+  reviewerCommandForGitHubGateway,
+  reviewerCommandForGitHubHost,
+} from '../lib/reviewer-command-defaults.mjs';
 
 const validConfig = {
   configVersion: 2,
@@ -51,6 +57,20 @@ test('upgrades only the legacy Codex default command', () => {
   assert.equal(
     validateConfig({
       ...validConfig,
+      reviewerCommand: PREVIOUS_CODEX_REVIEWER_COMMAND,
+    }).reviewerCommand,
+    CODEX_REVIEWER_COMMAND,
+  );
+  assert.equal(
+    validateConfig({
+      ...validConfig,
+      reviewerCommand: PR_LINK_CODEX_REVIEWER_COMMAND,
+    }).reviewerCommand,
+    CODEX_REVIEWER_COMMAND,
+  );
+  assert.equal(
+    validateConfig({
+      ...validConfig,
       reviewerCommand: 'codex exec --model custom',
     }).reviewerCommand,
     'codex exec --model custom',
@@ -58,6 +78,52 @@ test('upgrades only the legacy Codex default command', () => {
   assert.equal(
     validateConfig({ ...validConfig, reviewerCommand: 'custom-reviewer' }).reviewerCommand,
     'custom-reviewer',
+  );
+});
+
+test('the generated Codex command grants no direct GitHub network access', () => {
+  assert.equal(
+    reviewerCommandForGitHubHost(CODEX_REVIEWER_COMMAND, 'github.com'),
+    CODEX_REVIEWER_COMMAND,
+  );
+  assert.equal(
+    reviewerCommandForGitHubHost(CODEX_REVIEWER_COMMAND, 'git.example.com'),
+    CODEX_REVIEWER_COMMAND,
+  );
+  assert.doesNotMatch(CODEX_REVIEWER_COMMAND, /network\.domains/);
+  assert.doesNotMatch(CODEX_REVIEWER_COMMAND, /network\.enabled/);
+  assert.match(CODEX_REVIEWER_COMMAND, /":root"="deny"/);
+  assert.match(CODEX_REVIEWER_COMMAND, /":minimal"="read"/);
+  assert.match(CODEX_REVIEWER_COMMAND, /":workspace_roots"=\{"\."="read"\}/);
+  assert.match(
+    reviewerCommandForGitHubGateway(
+      CODEX_REVIEWER_COMMAND,
+      { mcpServerPath: '/tmp/review/github-mcp-server.mjs' },
+    ),
+    /mcp_servers\.openmergelens.*github-mcp-server\.mjs.*enabled_tools=.*inspect_github_pr/,
+  );
+  assert.equal(
+    reviewerCommandForGitHubHost('custom-reviewer', 'git.example.com'),
+    'custom-reviewer',
+  );
+});
+
+test('custom reviewer commands must explicitly consume the per-review MCP contract', () => {
+  const gateway = {
+    mcpConfigPath: '/tmp/review/mcp.json',
+    mcpServerPath: '/tmp/review/server.mjs',
+  };
+  assert.equal(
+    reviewerCommandForGitHubGateway(
+      'agent --mcp-config "{{mcp_config}}" --allowed-tool "{{mcp_tool}}"',
+      gateway,
+    ),
+    'agent --mcp-config "/tmp/review/mcp.json" ' +
+      '--allowed-tool "mcp__openmergelens__inspect_github_pr"',
+  );
+  assert.throws(
+    () => reviewerCommandForGitHubGateway('agent --review', gateway),
+    /custom reviewerCommand cannot inspect linked PRs safely.*mcp_config.*mcp_tool/,
   );
 });
 

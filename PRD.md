@@ -103,7 +103,8 @@ poller as a `pnpm` script / bin.
      successful GitHub POST and the following state write.
 
 4. **For PRs needing review**, build the review prompt:
-   - Fetch diff: `gh pr diff <N> --repo OWNER/REPO`
+   - Fetch diff once for later deterministic finding-anchor validation:
+     `gh pr diff <N> --repo OWNER/REPO`. Do not embed it in the reviewer prompt.
    - Fetch PR metadata (title, description, base/head branch) via `gh pr view`
    - Load the repository's user-editable prompt from
      `docs/review-prompts/<host>/<owner>/<repo>.md`. Accounts on the same host
@@ -112,15 +113,22 @@ poller as a `pnpm` script / bin.
      `docs/learnings/<host>/<username>/<owner>/<repo>.md`.
    - Compose a prompt roughly like:
      ```
-     Perform a complete review of the entire pull request diff. Report every
+     Perform a complete review of the linked pull request. Report every
      distinct, concrete, high-confidence issue you can substantiate. Do not
      stop after the first issue or impose an arbitrary findings limit.
 
-     The supplied diff is cumulative. On a re-review, inspect every file and
+     Use the structured OpenMergeLens inspection tool, backed by constrained
+     host-side GitHub CLI reads, to inspect the complete cumulative PR diff and
+     surrounding source. On a re-review, inspect every non-generated file and
      hunk — including code from earlier commits — as if it has not been
-     reviewed before. Use multiple silent passes for behavior/data flow,
-     correctness/edge cases, security/error handling/compatibility, tests,
-     and a final full-diff rescan. Deduplicate findings by root cause.
+     reviewed before. For large PRs, inspect incrementally and maintain a
+     coverage ledger instead of relying on one terminal rendering.
+
+     Positively identify generated artifacts using repository evidence such as
+     .gitattributes, generated headers, or generator configuration. Do not
+     review confirmed generated output line by line; inspect its source of
+     truth and validate that the tracked output is consistent. Never skip a
+     file based only on its size or name.
 
      For each issue, output a structured entry: file, line, severity
      (critical/major/nit), and the comment text — see "Structured output
@@ -129,22 +137,25 @@ poller as a `pnpm` script / bin.
      ## Past learnings (adjust future reviews accordingly)
      <contents of the account/repository learnings file, if present>
 
-     ## PR: <title> (#<N>)
-     <description>
-
-     ## Diff
-     <diff>
+     ## PR target
+     <GitHub PR URL>
      ```
 
 5. **Run independent reviewer passes** (agent-agnostic — see below) against the
-   same complete prompt and diff. The default pass set covers behavior and
+   same PR URL. The reviewer receives a temporary structured MCP inspection
+   tool, not the selected account credential. A parent-owned gateway validates every request
+   as a GET against the fixed PR and repository before running the real `gh`
+   command with the selected credential.
+   The default pass set covers behavior and
    correctness, security and trust boundaries, integration and reliability,
    and tests plus an adversarial rescan. Each pass returns structured findings.
    A final synthesis invocation receives all candidate findings, independently
-   checks the complete diff, merges duplicate root causes, discards unsupported
-   claims, and returns the one summary/findings result to post. If any pass or
-   synthesis invocation fails or returns malformed output, skip posting and
-   leave state untouched so the next poll retries.
+   checks the linked PR with `gh`, merges duplicate root causes, discards
+   unsupported claims, and returns the one summary/findings result to post.
+   Re-fetch metadata after review and skip posting if the head SHA changed
+   during inspection. If any pass or synthesis invocation fails or returns
+   malformed output, skip posting and leave state untouched so the next poll
+   retries.
 
 6. **Post the review.** **Decided: formal `gh pr review`**, not a plain
    comment — shows up in the PR's review list, not just as a comment.
@@ -252,7 +263,7 @@ Don't hardcode `claude -p ...`. Instead, define a config field like:
 }
 ```
 
-The adapter script pipes the composed prompt to `reviewerCommand` via stdin (or
+The adapter script pipes the composed PR-link prompt to `reviewerCommand` via stdin (or
 substitutes a `{prompt_file}` placeholder if the backend needs a file path
 instead of stdin) and captures stdout as the review text. This way, swapping
 to a different CLI (another agent runtime, a different model wrapper, a local
@@ -378,7 +389,8 @@ cloned checkout). Steps, in order:
      - **Codex CLI** (`codex`): detect via `which codex`; verify similarly
        with a prompt-only-safe check (`codex exec --skip-git-repo-check
        --ephemeral --sandbox read-only "ok"` or its equivalent). The
-       generated reviewer command uses the same flags so scheduled execution
+     generated reviewer command uses the same flags plus access to only the
+     per-review local GitHub gateway, so scheduled execution
        does not depend on a Git working directory, does not retain five
        sessions per reviewed PR, and prevents model-generated commands from
        modifying local files.
@@ -392,11 +404,14 @@ cloned checkout). Steps, in order:
      mystery failure during the first poll.
    - **Custom command** option always shown regardless of detection
      results — free-text entry for `reviewerCommand` (any other CLI/script
-     the adapter can shell out to).
+     the adapter can shell out to). It must expose the per-review MCP server
+     through explicit `{{mcp_config}}` and `{{mcp_tool}}` placeholders;
+     commands without both placeholders fail closed before launch.
    - Selection sets `reviewerCommand` (and `reviewerInputMode`) in config.
-   - Config loading upgrades only the exact former generated default
-     `codex exec` to the safe command above. Commands already customized by
-     the user are never rewritten.
+   - Config loading upgrades the exact former generated defaults (`codex exec`
+     and the earlier read-only/no-network Codex command) to the safe
+     read-only-filesystem, local-gateway command above. Commands already
+     customized by the user are never rewritten.
 
 6. **Review focus coverage.** Ask how many independent review focus
    categories to run before synthesis:

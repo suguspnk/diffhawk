@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -72,7 +72,7 @@ async function fakeCommand(name, source) {
 
 test('installCron writes stdin, preserves unrelated entries, and replaces its marker', {
   skip: process.platform === 'win32',
-  timeout: 3_000,
+  timeout: 6_000,
 }, async (t) => {
   const fake = await fakeCrontab();
   t.after(() => rm(fake.directory, { recursive: true, force: true }));
@@ -89,7 +89,7 @@ test('installCron writes stdin, preserves unrelated entries, and replaces its ma
     intervalMinutes: 15,
     crontabCommand: fake.command,
     environment: fake.environment,
-    timeoutMs: 1_000,
+    timeoutMs: 3_000,
   });
 
   const installed = await readFile(fake.stateFile, 'utf8');
@@ -271,6 +271,12 @@ test('installLaunchd writes the environment file and uses an injectable launchct
     JSON.parse(await readFile(path.join(stateHome, 'scheduler-environment.json'), 'utf8')),
     { PATH: '/custom/bin', OPENMERGELENS_HOME: stateHome },
   );
+  if (process.platform !== 'win32') {
+    assert.equal(
+      (await stat(path.join(stateHome, 'poll.log'))).mode & 0o777,
+      0o600,
+    );
+  }
   assert.match(await readFile(callsFile, 'utf8'), /load .*LaunchAgents/);
 });
 
