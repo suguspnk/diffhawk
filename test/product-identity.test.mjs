@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -70,7 +71,7 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
   );
   assert.match(
     html,
-    /<h1>OpenMergeLens: AI code reviews on your machine\.<\/h1>/,
+    /<h1\b[^>]*>\s*OpenMergeLens: AI code reviews on your machine\.\s*<\/h1>/,
   );
   assert.equal(sitemap.match(/<loc>([^<]+)<\/loc>/)?.[1], canonicalUrl);
   assert.equal(metaContent('property', 'og:url'), canonicalUrl);
@@ -96,6 +97,63 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
   assert.deepEqual(schemaTypes, ['WebSite', 'SoftwareApplication']);
   assert.equal(structuredData['@graph'][0].url, canonicalUrl);
   assert.equal(structuredData['@graph'][1].url, canonicalUrl);
+});
+
+test('GitHub Pages motion is local, pinned, and progressively enhanced', async () => {
+  const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
+  const motionSource = await readFile(
+    path.join(projectRoot, 'docs/site-motion.js'),
+    'utf8',
+  );
+  const motionBundle = await readFile(
+    path.join(
+      projectRoot,
+      'docs/vendor/motion-mini-12.43.0.js',
+    ),
+    'utf8',
+  );
+  const motionLicense = await readFile(
+    path.join(projectRoot, 'docs/vendor/MOTION-LICENSE.md'),
+    'utf8',
+  );
+  const motionProvenance = await readFile(
+    path.join(projectRoot, 'docs/vendor/README.md'),
+    'utf8',
+  );
+  const pageStyles = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+
+  assert.match(
+    html,
+    /<script type="module" src="\.\/site-motion\.js"><\/script>/,
+  );
+  assert.match(
+    html,
+    /href="\.\/vendor\/motion-mini-12\.43\.0\.js"/,
+  );
+  assert.doesNotMatch(html, /cdn\.jsdelivr\.net|unpkg\.com/);
+  assert.match(
+    motionSource,
+    /from '\.\/vendor\/motion-mini-12\.43\.0\.js'/,
+  );
+  assert.match(motionSource, /prefers-reduced-motion: reduce/);
+  assert.match(motionSource, /IntersectionObserver/);
+  assert.match(motionSource, /transform: \['translateY\(8px\)'/);
+  assert.doesNotMatch(pageStyles, /\[data-motion[^}]*opacity:\s*0/);
+  assert.match(
+    pageStyles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.button\s*{\s*transition: none;/,
+  );
+  assert.match(
+    pageStyles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.button:hover,[\s\S]*?transform: none;/,
+  );
+  assert.match(motionBundle, /export\{[^}]*animate/);
+  assert.match(motionLicense, /The MIT License \(MIT\)/);
+  assert.match(motionProvenance, /motion@12\.43\.0/);
+  assert.match(
+    motionProvenance,
+    new RegExp(createHash('sha256').update(motionBundle).digest('hex')),
+  );
 });
 
 test('relative links in the installed README target packaged files', async () => {

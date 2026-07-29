@@ -13,6 +13,10 @@
     <link rel="canonical" href="https://suguspnk.github.io/openmergelens/">
     <link rel="icon" href="./openmergelens-mark.svg" type="image/svg+xml">
     <link rel="sitemap" href="./sitemap.xml" type="application/xml">
+    <link
+      rel="modulepreload"
+      href="./vendor/motion-mini-12.43.0.js"
+    >
 
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="OpenMergeLens">
@@ -95,6 +99,8 @@
         --accent-strong: #a4f1d9;
         --code: #0a0e13;
         --max-width: 1120px;
+        --motion-fast: 160ms;
+        --motion-enter: cubic-bezier(0.16, 1, 0.3, 1);
       }
 
       * {
@@ -256,11 +262,16 @@
         font-size: 14px;
         font-weight: 700;
         text-decoration: none;
+        transition:
+          background-color var(--motion-fast) var(--motion-enter),
+          border-color var(--motion-fast) var(--motion-enter),
+          transform var(--motion-fast) var(--motion-enter);
       }
 
       .button:hover {
         background: var(--surface-raised);
         border-color: #405168;
+        transform: translateY(-1px);
       }
 
       .button.primary {
@@ -275,7 +286,7 @@
       }
 
       .button:active {
-        transform: translateY(1px);
+        transform: translateY(1px) scale(0.98);
       }
 
       .terminal {
@@ -514,6 +525,15 @@
         html {
           scroll-behavior: auto;
         }
+
+        .button {
+          transition: none;
+        }
+
+        .button:hover,
+        .button:active {
+          transform: none;
+        }
       }
     </style>
   </head>
@@ -536,14 +556,18 @@
     <main id="main-content" tabindex="-1">
       <section class="hero shell">
         <div>
-          <p class="eyebrow">LOCAL-FIRST · AGENT-AGNOSTIC · OPEN SOURCE</p>
-          <h1>OpenMergeLens: AI code reviews on your machine.</h1>
-          <p class="hero-copy">
+          <p class="eyebrow" data-motion-hero-item>
+            LOCAL-FIRST · AGENT-AGNOSTIC · OPEN SOURCE
+          </p>
+          <h1 data-motion-hero-item>
+            OpenMergeLens: AI code reviews on your machine.
+          </h1>
+          <p class="hero-copy" data-motion-hero-item>
             OpenMergeLens finds GitHub pull requests waiting for your review,
             runs the reviewer agent you choose, and posts anchored, inline
             feedback—without a GitHub App, webhook, or hosted server.
           </p>
-          <div class="actions">
+          <div class="actions" data-motion-hero-item>
             <a class="button primary" href="https://github.com/suguspnk/openmergelens#install">
               Install OpenMergeLens
             </a>
@@ -553,7 +577,7 @@
           </div>
         </div>
 
-        <figure class="terminal">
+        <figure class="terminal" data-motion-terminal>
           <figcaption class="visually-hidden">
             OpenMergeLens installation and dry-run example
           </figcaption>
@@ -573,7 +597,7 @@ Reviewing acme/api#284...
 
       <section class="section" aria-labelledby="why-heading">
         <div class="shell">
-          <div class="section-heading">
+          <div class="section-heading" data-motion-reveal="rise">
             <h2 id="why-heading">Your reviewer, your machine</h2>
             <p>
               OpenMergeLens is a small local CLI, not another hosted bot. It
@@ -582,7 +606,7 @@ Reviewing acme/api#284...
             </p>
           </div>
 
-          <div class="feature-grid">
+          <div class="feature-grid" data-motion-reveal="stagger-rise">
             <article class="feature">
               <span class="feature-index">01 / LOCAL</span>
               <h3>No hosted service</h3>
@@ -613,7 +637,7 @@ Reviewing acme/api#284...
 
       <section class="section" id="how-it-works" aria-labelledby="workflow-heading">
         <div class="shell">
-          <div class="section-heading">
+          <div class="section-heading" data-motion-reveal="rise">
             <h2 id="workflow-heading">From request to review</h2>
             <p>
               A deterministic polling loop keeps reviews useful and avoids
@@ -621,7 +645,7 @@ Reviewing acme/api#284...
             </p>
           </div>
 
-          <ol class="workflow">
+          <ol class="workflow" data-motion-reveal="stagger-fade">
             <li>
               <strong>Find requests</strong>
               Uses <code>gh</code> to find pull requests assigned to your
@@ -646,7 +670,11 @@ Reviewing acme/api#284...
         </div>
       </section>
 
-      <section class="cta shell" aria-labelledby="start-heading">
+      <section
+        class="cta shell"
+        aria-labelledby="start-heading"
+        data-motion-reveal="stagger-rise"
+      >
         <div>
           <h2 id="start-heading">Start with a dry run.</h2>
           <p>Install the CLI, connect your reviewer, and inspect the output before posting.</p>
@@ -662,5 +690,6 @@ Reviewing acme/api#284...
         OpenMergeLens is open-source software released under the MIT License.
       </div>
     </footer>
+    <script type="module" src="./site-motion.js"></script>
   </body>
 </html>
