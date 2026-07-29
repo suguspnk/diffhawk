@@ -39,7 +39,12 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   ]);
   const checksum = createHash('sha256').update(binary).digest('hex');
   const iconChecksum = createHash('sha256').update(bundleIcon).digest('hex');
-  const siteMarkChecksum = createHash('sha256').update(siteMark).digest('hex');
+  const canonicalSiteMark = siteMark
+    .toString('utf8')
+    .replaceAll('\r\n', '\n');
+  const siteMarkChecksum = createHash('sha256')
+    .update(canonicalSiteMark)
+    .digest('hex');
 
   assert.equal(binary.readUInt32BE(0), 0xcafebabe);
   assert.equal(binary.readUInt32BE(4), 2);

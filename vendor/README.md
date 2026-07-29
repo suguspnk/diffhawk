@@ -17,7 +17,7 @@
 - Minimum macOS deployment target: 13.0
 - Application bundle identifier:
   `io.github.suguspnk.openmergelens.notifier`
-- Official mark source (`docs/openmergelens-mark.svg`) SHA-256:
+- Official mark source (`docs/openmergelens-mark.svg`, LF line endings) SHA-256:
   `f8ee81382daf5b506396c7a0e557a24f3fdb278f7ad7ace272bf8eec73b06221`
 - Generated `OpenMergeLens.icns` SHA-256:
   `2cf31849a3d209cbcd929bdf9e0680b8cfe8eb2f005d395c1b3c6548b91ba36b`
