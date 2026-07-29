@@ -4,6 +4,14 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-07-30
+
+- Fixed scheduled OpenMergeLens runs on Linux so they restore the setup-time
+  session environment needed for desktop notifications.
+- Fixed Windows reviewer command launches so extensionless shims such as
+  Codex's npm executable resolve through `PATHEXT` instead of failing with
+  `ENOENT`.
+
 ## [1.1.1] - 2026-07-29
 
 - Replaced repository-by-repository AI-processing confirmations with one
