@@ -58,24 +58,39 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
   });
   t.after(() => child.kill());
   const responses = [];
-  let resolveResponses;
-  const receivedInitialResponses = new Promise((resolve) => {
-    resolveResponses = resolve;
+  const responseWaiters = new Map();
+  const waitForResponse = (id) => new Promise((resolve) => {
+    responseWaiters.set(id, resolve);
   });
-  let resolveMetadataResponse;
-  const receivedMetadataResponse = new Promise((resolve) => {
-    resolveMetadataResponse = resolve;
-  });
+  const withResponseTimeout = async (promise, label) => {
+    let timeout;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`timed out waiting for ${label}`)),
+            2_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  let stdoutBuffer = '';
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
-    for (const line of chunk.trim().split('\n')) {
-      if (line) responses.push(JSON.parse(line));
-    }
-    if ([0, 1, 2, 3].every((id) => responses.some((response) => response.id === id))) {
-      resolveResponses();
-    }
-    if (responses.some((response) => response.id === 4)) {
-      resolveMetadataResponse();
+    stdoutBuffer += chunk;
+    let newline;
+    while ((newline = stdoutBuffer.indexOf('\n')) !== -1) {
+      const line = stdoutBuffer.slice(0, newline);
+      stdoutBuffer = stdoutBuffer.slice(newline + 1);
+      if (!line) continue;
+      const response = JSON.parse(line);
+      responses.push(response);
+      responseWaiters.get(response.id)?.();
+      responseWaiters.delete(response.id);
     }
   });
   const call = (id, args) => child.stdin.write(`${JSON.stringify({
@@ -84,6 +99,7 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
     method: 'tools/call',
     params: { name: 'inspect_github_pr', arguments: { args } },
   })}\n`);
+  const initialResponses = [0, 1, 2, 3].map(waitForResponse);
   child.stdin.write(`${JSON.stringify({
     jsonrpc: '2.0',
     id: 0,
@@ -92,26 +108,16 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
   call(1, ['pr', 'diff', target.url, '--name-only']);
   call(2, ['api', '--method', 'POST', 'repos/owner/repo/issues']);
   call(3, ['pr', 'diff', target.url]);
-  let responseTimeout;
-  try {
-    await Promise.race([
-      receivedInitialResponses,
-      new Promise((_, reject) => {
-        responseTimeout = setTimeout(
-          () => reject(new Error('timed out waiting for MCP responses')),
-          2_000,
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(responseTimeout);
-  }
+  await withResponseTimeout(
+    Promise.all(initialResponses),
+    'initial MCP responses',
+  );
 
   const tool = responses.find(({ id }) => id === 0).result.tools[0];
   assert.deepEqual(tool.annotations, {
     readOnlyHint: true,
     destructiveHint: false,
-    openWorldHint: false,
+    openWorldHint: true,
     idempotentHint: true,
   });
   assert.equal(responses.find(({ id }) => id === 1).result.content[0].text, 'safe output');
@@ -124,21 +130,20 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
     () => gateway.assertRequiredInspection(),
     /missing PR metadata/,
   );
-  call(4, ['pr', 'view', target.url, '--json', 'files,headRefOid']);
-  let metadataTimeout;
-  try {
-    await Promise.race([
-      receivedMetadataResponse,
-      new Promise((_, reject) => {
-        metadataTimeout = setTimeout(
-          () => reject(new Error('timed out waiting for MCP metadata response')),
-          2_000,
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(metadataTimeout);
-  }
+  const plainViewResponse = waitForResponse(4);
+  call(4, ['pr', 'view', target.url]);
+  await withResponseTimeout(plainViewResponse, 'plain PR metadata response');
+  assert.throws(
+    () => gateway.assertRequiredInspection(),
+    /missing PR metadata/,
+  );
+
+  const verifiedViewResponse = waitForResponse(5);
+  call(5, ['pr', 'view', target.url, '--json', 'files,headRefOid']);
+  await withResponseTimeout(
+    verifiedViewResponse,
+    'verified PR metadata response',
+  );
   assert.doesNotThrow(() => gateway.assertRequiredInspection());
   assert.deepEqual(calls.at(-1), [
     'pr',

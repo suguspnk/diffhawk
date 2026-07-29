@@ -201,6 +201,33 @@ test('invokeReviewer rejects successful-looking output without required GitHub i
   assert.equal(gatewayClosed, true);
 });
 
+test('invokeReviewer rejects a gateway that cannot verify required inspections', async () => {
+  let gatewayClosed = false;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand: 'custom-reviewer {{mcp_config}} {{mcp_tool}}',
+      prompt: '',
+      githubAccess: {
+        repo: 'example/repo',
+        number: pr.number,
+        url: pr.url,
+        headRefOid: pr.headRefOid,
+        environment: {},
+      },
+      startGitHubGateway: async () => ({
+        mcpConfigPath: '/tmp/reviewer-mcp.json',
+        mcpServerPath: '/tmp/reviewer-mcp.mjs',
+        async close() {
+          gatewayClosed = true;
+        },
+      }),
+    }),
+    /gateway cannot verify required inspections/,
+  );
+  assert.equal(gatewayClosed, true);
+});
+
 test('buildPrompt sends a PR link and tool-based inspection contract instead of the diff', () => {
   const template = [
     'Review #{{pr_number}} at {{pr_url}}.',
