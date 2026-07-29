@@ -128,6 +128,13 @@ test('the generated Codex command grants no direct GitHub network access', () =>
     ),
     /mcp_servers\.openmergelens.*github-mcp-server\.mjs.*enabled_tools=.*inspect_github_pr/,
   );
+  assert.match(
+    reviewerCommandForGitHubGateway(
+      CODEX_REVIEWER_COMMAND,
+      { mcpServerPath: '/tmp/review/github-mcp-server.mjs' },
+    ),
+    /tools\.inspect_github_pr\.approval_mode="approve"/,
+  );
   assert.equal(
     reviewerCommandForGitHubHost('custom-reviewer', 'git.example.com'),
     'custom-reviewer',

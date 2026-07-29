@@ -59,16 +59,23 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
   t.after(() => child.kill());
   const responses = [];
   let resolveResponses;
-  const receivedBothResponses = new Promise((resolve) => {
+  const receivedInitialResponses = new Promise((resolve) => {
     resolveResponses = resolve;
+  });
+  let resolveMetadataResponse;
+  const receivedMetadataResponse = new Promise((resolve) => {
+    resolveMetadataResponse = resolve;
   });
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
     for (const line of chunk.trim().split('\n')) {
       if (line) responses.push(JSON.parse(line));
     }
-    if ([1, 2].every((id) => responses.some((response) => response.id === id))) {
+    if ([0, 1, 2, 3].every((id) => responses.some((response) => response.id === id))) {
       resolveResponses();
+    }
+    if (responses.some((response) => response.id === 4)) {
+      resolveMetadataResponse();
     }
   });
   const call = (id, args) => child.stdin.write(`${JSON.stringify({
@@ -77,12 +84,18 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
     method: 'tools/call',
     params: { name: 'inspect_github_pr', arguments: { args } },
   })}\n`);
-  call(1, ['pr', 'diff', target.url]);
+  child.stdin.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 0,
+    method: 'tools/list',
+  })}\n`);
+  call(1, ['pr', 'diff', target.url, '--name-only']);
   call(2, ['api', '--method', 'POST', 'repos/owner/repo/issues']);
+  call(3, ['pr', 'diff', target.url]);
   let responseTimeout;
   try {
     await Promise.race([
-      receivedBothResponses,
+      receivedInitialResponses,
       new Promise((_, reject) => {
         responseTimeout = setTimeout(
           () => reject(new Error('timed out waiting for MCP responses')),
@@ -94,8 +107,44 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
     clearTimeout(responseTimeout);
   }
 
+  const tool = responses.find(({ id }) => id === 0).result.tools[0];
+  assert.deepEqual(tool.annotations, {
+    readOnlyHint: true,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  });
   assert.equal(responses.find(({ id }) => id === 1).result.content[0].text, 'safe output');
   assert.equal(responses.find(({ id }) => id === 2).result.isError, true);
-  assert.deepEqual(calls, [['pr', 'diff', target.url]]);
-  assert.equal(calls.length, 1);
+  assert.deepEqual(calls, [
+    ['pr', 'diff', target.url, '--name-only'],
+    ['pr', 'diff', target.url],
+  ]);
+  assert.throws(
+    () => gateway.assertRequiredInspection(),
+    /missing PR metadata/,
+  );
+  call(4, ['pr', 'view', target.url, '--json', 'files,headRefOid']);
+  let metadataTimeout;
+  try {
+    await Promise.race([
+      receivedMetadataResponse,
+      new Promise((_, reject) => {
+        metadataTimeout = setTimeout(
+          () => reject(new Error('timed out waiting for MCP metadata response')),
+          2_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(metadataTimeout);
+  }
+  assert.doesNotThrow(() => gateway.assertRequiredInspection());
+  assert.deepEqual(calls.at(-1), [
+    'pr',
+    'view',
+    target.url,
+    '--json',
+    'files,headRefOid',
+  ]);
 });
