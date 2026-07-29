@@ -3,6 +3,10 @@
 **A local CLI that automates AI code reviews for GitHub pull requests using
 Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.**
 
+[Website](https://suguspnk.github.io/openmergelens/) ·
+[npm](https://www.npmjs.com/package/openmergelens) ·
+[Documentation](#install)
+
 OpenMergeLens runs on your own machine on a schedule (cron / launchd / Windows
 Task Scheduler) — no GitHub App, webhook, or server. It uses `gh` to find PRs
 where you're the requested reviewer and a compatible reviewer CLI (Codex,
