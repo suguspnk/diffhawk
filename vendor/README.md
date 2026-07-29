@@ -17,13 +17,15 @@
 - Minimum macOS deployment target: 13.0
 - Application bundle identifier:
   `io.github.suguspnk.openmergelens.notifier`
+- Application bundle build version: `2` (refreshes registrations created
+  before the official icon was added)
 - Official mark source (`docs/openmergelens-mark.svg`, LF line endings) SHA-256:
   `f8ee81382daf5b506396c7a0e557a24f3fdb278f7ad7ace272bf8eec73b06221`
 - Generated `OpenMergeLens.icns` SHA-256:
   `2cf31849a3d209cbcd929bdf9e0680b8cfe8eb2f005d395c1b3c6548b91ba36b`
 - Bundled executable SHA-256 after stripping, UUID normalization, and ad-hoc
   bundle signing:
-  `2f8fe06c96236359357838e1d57ff9ccbb6b8b0ad6817cb8c17953f5dff99602`
+  `8c7a0d917a3166ff9e31318fb5734a872677e83737421aaf8cd4ae3328d10594`
 - License: `alerter-LICENSE.md`
 
 The official upstream ZIP is arm64-only, so OpenMergeLens reproducibly builds

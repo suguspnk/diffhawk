@@ -83,6 +83,10 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     bundleInfo,
     /<key>CFBundleIconFile<\/key>\s*<string>OpenMergeLens<\/string>/,
   );
+  assert.match(
+    bundleInfo,
+    /<key>CFBundleVersion<\/key>\s*<string>2<\/string>/,
+  );
   assert.equal(bundleIcon.toString('ascii', 0, 4), 'icns');
   assert.equal(bundleIcon.readUInt32BE(4), bundleIcon.length);
   assert.match(license, /The MIT License \(MIT\)/);
