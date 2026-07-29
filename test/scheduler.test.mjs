@@ -241,7 +241,7 @@ test('schtasksPreview uses a hidden Windows launcher and quotes paths', () => {
 
   assert.equal(
     preview.args.at(-1),
-    '"C:\\Windows\\System32\\wscript.exe" //B //Nologo ' +
+    '"wscript.exe" //B //Nologo ' +
     '"C:\\Program Files\\openmergelens\\bin\\scheduled-win32.vbs" ' +
     '"C:\\Program Files\\nodejs\\node.exe" ' +
     '"C:\\Program Files\\openmergelens\\bin\\scheduled.mjs" ' +
