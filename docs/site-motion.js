@@ -2,6 +2,16 @@ import { animate } from './vendor/motion-mini-12.43.0.js';
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const activeAnimations = new Set();
+const motion = Object.freeze({
+  easeOut: [0.22, 1, 0.36, 1],
+  heroDuration: 0.64,
+  heroStagger: 0.09,
+  terminalDuration: 0.72,
+  terminalDelay: 0.18,
+  revealDuration: 0.56,
+  riseDuration: 0.62,
+  revealStagger: 0.08,
+});
 let revealObserver;
 
 function track(animation) {
@@ -22,12 +32,12 @@ function animateHero() {
       heroItems,
       {
         opacity: [0, 1],
-        transform: ['translateY(8px)', 'translateY(0)'],
+        transform: ['translateY(12px)', 'translateY(0)'],
       },
       {
-        duration: 0.3,
-        delay: (index) => index * 0.04,
-        ease: [0.16, 1, 0.3, 1],
+        duration: motion.heroDuration,
+        delay: (index) => index * motion.heroStagger,
+        ease: motion.easeOut,
       },
     ));
   }
@@ -37,12 +47,12 @@ function animateHero() {
       terminal,
       {
         opacity: [0, 1],
-        transform: ['translateY(12px)', 'translateY(0)'],
+        transform: ['translateY(16px)', 'translateY(0)'],
       },
       {
-        duration: 0.38,
-        delay: 0.12,
-        ease: [0.16, 1, 0.3, 1],
+        duration: motion.terminalDuration,
+        delay: motion.terminalDelay,
+        ease: motion.easeOut,
       },
     ));
   }
@@ -64,11 +74,13 @@ function revealElements(target) {
     elements,
     keyframes,
     {
-      duration: mode === 'rise' ? 0.35 : 0.3,
+      duration: mode === 'rise'
+        ? motion.riseDuration
+        : motion.revealDuration,
       delay: mode.startsWith('stagger')
-        ? (index) => index * 0.04
+        ? (index) => index * motion.revealStagger
         : 0,
-      ease: [0.16, 1, 0.3, 1],
+      ease: motion.easeOut,
     },
   ));
 }
@@ -90,8 +102,8 @@ function observeReveals() {
       }
     },
     {
-      threshold: 0.18,
-      rootMargin: '0px 0px -8% 0px',
+      threshold: 0.12,
+      rootMargin: '0px 0px -4% 0px',
     },
   );
 
