@@ -32,6 +32,9 @@ import {
   ensureReviewPrompt,
   reviewPromptPathFor,
 } from '../lib/review-prompts.mjs';
+import {
+  validateReviewerCommandContract,
+} from '../lib/reviewer-command-defaults.mjs';
 import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
 import {
   cronPreview, installCron,
@@ -230,6 +233,7 @@ async function main() {
       }
       reviewerCommand = agent.reviewerCommand;
     }
+    reviewerCommand = validateReviewerCommandContract(reviewerCommand);
 
     // Consent covers the complete selected repository set only after the user
     // evaluates one specific shared reviewer backend. A backend change can
