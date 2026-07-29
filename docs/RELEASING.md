@@ -57,12 +57,7 @@ stable release only:
    Prerelease versions use the `next` dist-tag; stable versions use `latest`.
 7. Inspect and approve the staged package with 2FA on npmjs.com or through the
    interactive npm CLI.
-8. Verify:
-
-   ```bash
-   npm view openmergelens version dist-tags
-   npx openmergelens@<version> --version
-   ```
+8. Complete the [after-release checks](#after-every-release).
 
 If any check fails, do not move a tag or reuse a published version. Fix the
 problem and release a new version. npm publication is immutable.
@@ -77,8 +72,9 @@ problem and release a new version. npm publication is immutable.
    ```
 
 2. Confirm the published version includes provenance on its npm package page.
-3. Test the complete clean-user path from outside the repository: global
-   install, `init`, a dry run, and—against a disposable pull request—a real
-   review.
+3. From a disposable operating-system account or isolated machine, test the
+   complete clean-user path outside the repository: global install, `init`, a
+   dry run, and—against a disposable pull request—a real review. Do not reuse
+   a maintainer's live OpenMergeLens configuration or scheduler.
 4. Record early-user onboarding and review-quality outcomes. Prioritize
    repeated failures before adding speculative features.
