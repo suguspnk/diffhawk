@@ -209,9 +209,9 @@ poller as a `pnpm` script / bin.
 
 10. **Selected-set AI-processing consent.** Repository selection alone is not
     authorization to send source code or PR data to a third-party reviewer.
-    Configuration records one explicit top-level `aiProcessingConsent` boolean
-    covering the complete repository set selected across all accounts for the
-    shared reviewer backend. The setup wizard explains provider retention,
+    Configuration records one explicit top-level `aiProcessingConsent`
+    attestation scoped to the complete repository set selected across all
+    accounts and the shared reviewer backend. The setup wizard explains provider retention,
     training, confidentiality, data-residency, and DPA considerations and
     requires one bulk confirmation. Polling fails closed before authentication,
     search, or reviewer invocation when consent is absent.
@@ -291,7 +291,10 @@ stdin, since that matches how the user already works — but keep it swappable.
 ```json
 {
   "configVersion": 3,
-  "aiProcessingConsent": true,
+  "aiProcessingConsent": {
+    "granted": true,
+    "scope": "sha256:<reviewer-and-selected-repository-scope>"
+  },
   "githubAccounts": [
     {
       "hostname": "github.com",

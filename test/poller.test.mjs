@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pollOnce } from '../lib/poller.mjs';
 import { saveState } from '../lib/state.mjs';
+import { createAiProcessingConsent } from '../lib/ai-processing-consent.mjs';
 
 const work = {
   hostname: 'github.com',
@@ -21,7 +22,7 @@ function config(accounts = [work, personal]) {
   return {
     configVersion: 3,
     githubAccounts: accounts,
-    aiProcessingConsent: true,
+    aiProcessingConsent: createAiProcessingConsent('reviewer', accounts),
     reviewerCommand: 'reviewer',
     reviewerInputMode: 'stdin',
     reviewBatchSize: 2,
@@ -143,7 +144,7 @@ test('missing config-wide AI-processing consent blocks every account before auth
   const files = await fixture(t);
   const events = [];
   const result = await pollOnce({
-    config: { ...config([work]), aiProcessingConsent: false },
+    config: { ...config([work]), aiProcessingConsent: null },
     ...files,
     dependencies: successfulDependencies(events),
   });

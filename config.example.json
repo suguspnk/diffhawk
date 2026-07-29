@@ -1,6 +1,6 @@
 {
   "configVersion": 3,
-  "aiProcessingConsent": true,
+  "aiProcessingConsent": null,
   "githubAccounts": [
     {
       "hostname": "github.com",

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
 import {
+  createAiProcessingConsent,
   retainAiProcessingConsent,
 } from '../lib/ai-processing-consent.mjs';
 import {
@@ -258,7 +259,10 @@ async function main() {
         initialValue: false,
       });
       if (p.isCancel(consent) || !consent) exitCancelled();
-      aiProcessingConsent = true;
+      aiProcessingConsent = createAiProcessingConsent(
+        reviewerCommand,
+        githubAccounts,
+      );
     }
 
     const reviewFocusCount = await p.select({

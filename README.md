@@ -144,7 +144,7 @@ then copy `<that path>/openmergelens/config.example.json` to
 |---|---|
 | `configVersion` | Required schema version; currently `3`. Version 2 repository-scoped consent is migrated conservatively; older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each repository list contains explicit `OWNER/REPO` strings. |
-| `aiProcessingConsent` | One explicit boolean authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing or `false` consent prevents every repository from reaching the reviewer. Changing the backend in setup requires fresh consent. |
+| `aiProcessingConsent` | A setup-generated scoped authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing, `null`, malformed, or scope-mismatched consent prevents every repository from reaching the reviewer. Changing the backend or selected set requires one fresh bulk confirmation. Leave this `null` in hand-written config, then run `openmergelens init` to record consent. |
 | `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |
 | `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
@@ -301,11 +301,12 @@ requires one confirmation covering the complete selected repository set,
 stating that each repository owner permits the selected provider to process
 source code, PR content, and personal data under acceptable retention,
 training, confidentiality, data-residency, and DPA terms. A missing or false
-top-level `aiProcessingConsent` prevents searches and reviewer invocation for
-every repository. Version 2 configurations migrate to consented only when
-every selected repository already had explicit consent; partial or missing
-legacy consent fails closed until `openmergelens init` records the bulk
-authorization.
+top-level `aiProcessingConsent` is cryptographically scoped to the reviewer,
+accounts, and repositories; a missing, malformed, or mismatched authorization
+prevents searches and reviewer invocation for every repository. Version 2
+configurations migrate to consented only when every selected repository
+already had explicit consent; partial or missing legacy consent fails closed
+until `openmergelens init` records the bulk authorization.
 
 The default four focused review passes plus synthesis make five reviewer
 invocations per PR. Lower `reviewFocusCount` to reduce usage. GitHub and

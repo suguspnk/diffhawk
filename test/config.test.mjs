@@ -21,24 +21,32 @@ import {
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
 import { parseCommand } from '../lib/reviewer-adapter.mjs';
+import {
+  createAiProcessingConsent,
+  hasAiProcessingConsent,
+} from '../lib/ai-processing-consent.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const validAccounts = [
+  {
+    hostname: 'github.com',
+    username: 'work-user',
+    repositories: ['Company/API', 'Company/web'],
+  },
+  {
+    hostname: 'enterprise.example.com',
+    username: 'personal',
+    repositories: ['owner/repo'],
+  },
+];
 const validConfig = {
   configVersion: 3,
-  githubAccounts: [
-    {
-      hostname: 'github.com',
-      username: 'work-user',
-      repositories: ['Company/API', 'Company/web'],
-    },
-    {
-      hostname: 'enterprise.example.com',
-      username: 'personal',
-      repositories: ['owner/repo'],
-    },
-  ],
-  aiProcessingConsent: true,
+  githubAccounts: validAccounts,
+  aiProcessingConsent: createAiProcessingConsent(
+    CODEX_REVIEWER_COMMAND,
+    validAccounts,
+  ),
   reviewerCommand: 'codex exec',
   reviewBatchSize: 5,
   reviewFocusCount: 4,
@@ -293,14 +301,14 @@ test('AI-processing consent is one explicit config-wide boolean', () => {
     ...validConfig,
     aiProcessingConsent: undefined,
   });
-  assert.equal(withoutConsent.aiProcessingConsent, false);
+  assert.equal(withoutConsent.aiProcessingConsent, null);
 
   assert.throws(
     () => validateConfig({
       ...validConfig,
       aiProcessingConsent: ['owner/repo'],
     }),
-    /aiProcessingConsent must be true or false/,
+    /aiProcessingConsent must be a consent object/,
   );
   assert.throws(
     () => validateConfig({
@@ -328,7 +336,7 @@ test('version 2 repository consent migrates fail closed to version 3', () => {
   };
   const fullyConsented = validateConfig(legacyConfig);
   assert.equal(fullyConsented.configVersion, 3);
-  assert.equal(fullyConsented.aiProcessingConsent, true);
+  assert.equal(hasAiProcessingConsent(fullyConsented), true);
   assert.equal(
     Object.hasOwn(fullyConsented.githubAccounts[0], 'aiProcessingConsent'),
     false,
@@ -341,7 +349,7 @@ test('version 2 repository consent migrates fail closed to version 3', () => {
       aiProcessingConsent: index === 0 ? account.repositories.slice(0, 1) : [],
     })),
   });
-  assert.equal(partiallyConsented.aiProcessingConsent, false);
+  assert.equal(partiallyConsented.aiProcessingConsent, null);
 
   const overbroadLegacyConsent = validateConfig({
     ...legacyConfig,
@@ -352,7 +360,7 @@ test('version 2 repository consent migrates fail closed to version 3', () => {
         : account.repositories,
     })),
   });
-  assert.equal(overbroadLegacyConsent.aiProcessingConsent, false);
+  assert.equal(overbroadLegacyConsent.aiProcessingConsent, null);
 
   assert.throws(
     () => validateConfig({
