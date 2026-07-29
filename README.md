@@ -278,7 +278,9 @@ it up manually:
   `~/Library/LaunchAgents/io.github.suguspnk.openmergelens.poll.plist` and loads it with
   `launchctl load`.
 - **Windows Task Scheduler**: the wizard runs
-  `schtasks /create /sc minute /mo <N> /tn openmergelens-poll /tr "node ...\bin\scheduled.mjs ...\scheduler-environment.json"`.
+  `schtasks /create /sc minute /mo <N> /tn openmergelens-poll /tr "wscript.exe //B //Nologo ...\bin\scheduled-win32.vbs node ...\bin\scheduled.mjs ...\scheduler-environment.json"`.
+  The `wscript.exe` launcher keeps scheduled Windows polls hidden instead of
+  flashing a console window while Node runs.
 
 The wizard only offers schedulers supported by the current operating system.
 Installed schedules use an environment file under `~/.openmergelens/` to retain

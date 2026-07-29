@@ -33,6 +33,7 @@
     "bin/openmergelens.mjs",
     "bin/poll.mjs",
     "bin/scheduled.mjs",
+    "bin/scheduled-win32.vbs",
     "lib",
     "vendor",
     "docs/review-prompt.default.md",
