@@ -30,9 +30,36 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
     'git+https://github.com/suguspnk/openmergelens.git',
   );
   assert.equal(
+    packageJson.homepage,
+    'https://suguspnk.github.io/openmergelens/',
+  );
+  assert.equal(
     packageJson.scripts.prepublishOnly,
     'pnpm release:check',
     'interactive publishes must run the same audit and package gate as CI',
+  );
+});
+
+test('GitHub Pages entry point exposes complete search metadata', async () => {
+  const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
+  const sitemap = await readFile(
+    path.join(projectRoot, 'docs/sitemap.xml'),
+    'utf8',
+  );
+
+  assert.match(
+    html,
+    /<title>OpenMergeLens — Local AI Code Review for GitHub Pull Requests<\/title>/,
+  );
+  assert.match(
+    html,
+    /<link rel="canonical" href="https:\/\/suguspnk\.github\.io\/openmergelens\/">/,
+  );
+  assert.match(html, /<script type="application\/ld\+json">/);
+  assert.match(html, /"@type": "SoftwareApplication"/);
+  assert.match(
+    sitemap,
+    /<loc>https:\/\/suguspnk\.github\.io\/openmergelens\/<\/loc>/,
   );
 });
 
