@@ -11,12 +11,13 @@ const projectRoot = path.resolve(
   '..',
 );
 
-test('vendored Alerter is pinned, licensed, normalized, and universal', async () => {
-  const [binary, provenance, license, dependencyLock] = await Promise.all([
+test('vendored Alerter is pinned, patched, licensed, normalized, and universal', async () => {
+  const [binary, provenance, license, dependencyLock, persistentPatch] = await Promise.all([
     readFile(path.join(projectRoot, 'vendor', 'alerter')),
     readFile(path.join(projectRoot, 'vendor', 'README.md'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-LICENSE.md'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-Package.resolved'), 'utf8'),
+    readFile(path.join(projectRoot, 'vendor', 'alerter-persistent.patch'), 'utf8'),
   ]);
   const checksum = createHash('sha256').update(binary).digest('hex');
 
@@ -35,7 +36,10 @@ test('vendored Alerter is pinned, licensed, normalized, and universal', async ()
   assert.match(provenance, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
   assert.match(provenance, /11f63cddc9bb3f8554ed9b762632a120cfa7bee05e3c09d65734823e09d24f10/);
   assert.match(provenance, new RegExp(checksum));
+  assert.match(provenance, /SWIFT_DETERMINISTIC_HASHING=1/);
   assert.match(dependencyLock, /c5d11a805e765f52ba34ec7284bd4fcd6ba68615/);
+  assert.match(persistentPatch, /currentConfig\?\.timeout == 0/);
+  assert.match(persistentPatch, /exit\(0\)/);
   assert.match(license, /The MIT License \(MIT\)/);
   assert.match(license, /Copyright \(c\) 2015 Valere JEANTET/);
 

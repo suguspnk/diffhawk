@@ -1,0 +1,14 @@
+diff --git a/Sources/Alerter/NotificationManager.swift b/Sources/Alerter/NotificationManager.swift
+index 8a616e1..5d94f75 100644
+--- a/Sources/Alerter/NotificationManager.swift
++++ b/Sources/Alerter/NotificationManager.swift
+@@ -158,6 +158,9 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
+     func userNotificationCenter(_ center: NSUserNotificationCenter,
+                                 didDeliver notification: NSUserNotification) {
+         currentNotification = notification
++        if currentConfig?.timeout == 0 {
++            exit(0)
++        }
+         startDismissalPolling(for: notification)
+         startTimeoutIfNeeded(for: notification, center: center)
+     }

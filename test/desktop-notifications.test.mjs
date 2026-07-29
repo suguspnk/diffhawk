@@ -158,7 +158,9 @@ test('current macOS uses the maintained bundled alerter', async () => {
     '--sender',
     'com.apple.Terminal',
     '--timeout',
-    '3',
+    '0',
+    '--group',
+    'io.github.suguspnk.openmergelens',
   ]);
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
@@ -261,7 +263,7 @@ test('macOS delivery rejects when the notifier process does not complete', async
   );
 });
 
-test('macOS delivery hard-kills a notifier that ignores its timeout', async () => {
+test('macOS delivery hard-kills a notifier that never confirms delivery', async () => {
   const child = new EventEmitter();
   let receivedSignal;
   child.kill = (signal) => {

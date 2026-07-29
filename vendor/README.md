@@ -16,24 +16,32 @@
 - Architectures: `x86_64` and `arm64`
 - Minimum macOS deployment target: 13.0
 - Executable SHA-256 after stripping, UUID normalization, and ad-hoc signing:
-  `74d5a0eac6ad4ad07a201e913db079ed514bf02bf78d1cdc88fadbc9e65aeec5`
+  `744c5f4505eb44793a3b0a1205efb7c7d2b5943836491a4058aca88a51e9e458`
 - License: `alerter-LICENSE.md`
 
 The official upstream ZIP is arm64-only, so OpenMergeLens reproducibly builds
 the universal executable from the exact source commit. `alerter-Package.resolved`
-pins the transitive source dependency. Mach-O UUIDs are the only
-per-link nondeterministic bytes after stripping; the normalization step zeros
-those UUID fields before ad-hoc signing.
+pins the transitive source dependency. `alerter-persistent.patch` makes a
+timeout-zero notification exit after macOS confirms delivery without removing
+the delivered notification; this lets Notification Center retain it while the
+poll process exits. Swift deterministic hashing stabilizes compiler ordering,
+and the normalization step zeros per-link Mach-O UUID fields before ad-hoc
+signing.
 
 The executable was built with Xcode 26.3 and Swift 6.1:
 
 ```sh
+openmergelens_root=$(pwd)
 alerter_source_dir=/tmp/openmergelens-alerter-26.5
 git clone https://github.com/vjeantet/alerter.git "$alerter_source_dir"
 git -C "$alerter_source_dir" checkout --detach \
   6070136eb72a0f63a10abfe350c51e0007fd8341
-cp vendor/alerter-Package.resolved "$alerter_source_dir/Package.resolved"
-swift build --package-path "$alerter_source_dir" \
+cp "$openmergelens_root/vendor/alerter-Package.resolved" \
+  "$alerter_source_dir/Package.resolved"
+git -C "$alerter_source_dir" apply \
+  "$openmergelens_root/vendor/alerter-persistent.patch"
+env SWIFT_DETERMINISTIC_HASHING=1 swift build \
+  --package-path "$alerter_source_dir" \
   -c release --arch arm64 --arch x86_64
 cp "$alerter_source_dir/.build/apple/Products/Release/alerter" \
   /tmp/alerter-universal

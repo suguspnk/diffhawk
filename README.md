@@ -202,16 +202,21 @@ results are presented as an attention notification, with failed PRs
 prioritized and successful PRs still represented.
 
 No notification is sent when there is no work or when another poll owns the
-operation lock. Notification delivery is best-effort: it has a five-second
-timeout, logs failures to `~/.openmergelens/poll.log`, and never changes a review
-or state outcome. On macOS 13 and later, OpenMergeLens includes a universal
-build of the maintained `alerter` project and uses the recognized Terminal
-notification identity required by current macOS releases. macOS 12 and earlier
-retain the smaller legacy `terminal-notifier` helper. Both helpers support Intel
-and Apple Silicon without relying on background AppleScript or Rosetta. Windows
-uses PowerShell toasts, and Linux uses `notify-send`. A logged-in graphical
-desktop session is required; headless and logged-out scheduler sessions cannot
-display a toast. Linux systems must provide `notify-send`.
+operation lock. Notification delivery is best-effort: helper launches are
+bounded, failures are logged to `~/.openmergelens/poll.log`, and notification
+delivery never changes a review or state outcome. On macOS 13 and later,
+OpenMergeLens includes a universal build of the maintained `alerter` project
+and uses the recognized Terminal notification identity required by current
+macOS releases. These notifications have no automatic timeout; they remain in
+Notification Center until dismissed, and a newer OpenMergeLens alert replaces
+the previous one. Select **Alerts** rather than **Banners** in Terminal's macOS
+notification settings to keep the alert visible on screen until you close it.
+macOS 12 and earlier retain the smaller legacy `terminal-notifier` helper. Both
+helpers support Intel and Apple Silicon without relying on background
+AppleScript or Rosetta. Windows uses PowerShell toasts, and Linux uses
+`notify-send`. A logged-in graphical desktop session is required; headless and
+logged-out scheduler sessions cannot display a toast. Linux systems must
+provide `notify-send`.
 
 Set `"desktopNotifications": false` in the config to opt out. For temporary or
 headless execution, `OPENMERGELENS_DESKTOP_NOTIFICATIONS=0` also suppresses

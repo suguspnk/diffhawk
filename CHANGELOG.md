@@ -11,6 +11,8 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
   platform-specific recovery guidance when delivery fails or the operating
   system suppresses the alert. The confirmation is displayed while the test
   alert is active, and the setup-only probe bypasses Focus.
+- macOS 13+ notifications now remain until the user dismisses them. A newer
+  OpenMergeLens notification replaces the previous one without blocking polls.
 
 ## [1.0.1] - 2026-07-29
 
