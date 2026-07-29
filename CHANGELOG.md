@@ -4,13 +4,14 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-29
+
 - Replaced repository-by-repository AI-processing confirmations with one
   explicit consent covering the complete selected repository set. Existing
   version 2 configs migrate conservatively, and reviewer or repository-set
   changes require one fresh bulk confirmation.
-
-## [1.1.0] - 2026-07-29
-
+- Skip pull requests that are already closed or merged, and re-check their
+  state before posting so a pull request closed during review is not updated.
 - Added a concise README quick start and a maintainer launch field guide for
   clean-install checks, early-user interviews, privacy-preserving measurements,
   and feedback routing.
