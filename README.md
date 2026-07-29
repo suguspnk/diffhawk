@@ -31,7 +31,7 @@ openmergelens --dry-run
 ```
 
 The wizard selects the GitHub accounts and repositories to watch, confirms
-repository-by-repository AI-processing consent, detects your reviewer, and
+one explicit AI-processing consent for all selected repositories, detects your reviewer, and
 offers an operating-system schedule. The dry run fetches and reviews matching
 pull requests without posting anything to GitHub.
 
@@ -111,9 +111,9 @@ This will:
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead. Codex runs in ephemeral, read-only mode and
    accepts the prompt-only review workspace without requiring a Git checkout.
-5. Require explicit consent for every selected repository before its source
-   code, pull-request content, or personal data can be processed by the
-   selected third-party AI provider. Declining leaves setup unchanged.
+5. Require one explicit consent for the complete selected repository set
+   before source code, pull-request content, or personal data can be processed
+   by the selected third-party AI provider. Declining leaves setup unchanged.
 6. Ask how many independent review focus categories to run per PR. The
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
@@ -142,8 +142,9 @@ then copy `<that path>/openmergelens/config.example.json` to
 
 | Field | Meaning |
 |---|---|
-| `configVersion` | Required schema version; currently `2`. Older/single-account shapes are rejected. |
-| `githubAccounts` | Non-empty array of `{ hostname, username, repositories, aiProcessingConsent }`. Each repository list contains explicit `OWNER/REPO` strings. `aiProcessingConsent` must separately list every selected repository authorized for third-party AI processing; unlisted repositories never reach the reviewer. |
+| `configVersion` | Required schema version; currently `3`. Version 2 repository-scoped consent is migrated conservatively; older/single-account shapes are rejected. |
+| `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each repository list contains explicit `OWNER/REPO` strings. |
+| `aiProcessingConsent` | One explicit boolean authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing or `false` consent prevents every repository from reaching the reviewer. Changing the backend in setup requires fresh consent. |
 | `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |
 | `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
@@ -296,12 +297,15 @@ trusted local software and is governed by its provider's privacy, billing, and
 usage terms.
 
 Repository selection and AI-processing consent are separate controls. Setup
-requires repository-by-repository confirmation that the owner permits the
-selected provider to process source code, PR content, and personal data under
-acceptable retention, training, confidentiality, data-residency, and DPA
-terms. Removing a repository from `aiProcessingConsent` prevents searches and
-reviewer invocation for that repository. Existing configurations without this
-field fail closed until `openmergelens init` records consent.
+requires one confirmation covering the complete selected repository set,
+stating that each repository owner permits the selected provider to process
+source code, PR content, and personal data under acceptable retention,
+training, confidentiality, data-residency, and DPA terms. A missing or false
+top-level `aiProcessingConsent` prevents searches and reviewer invocation for
+every repository. Version 2 configurations migrate to consented only when
+every selected repository already had explicit consent; partial or missing
+legacy consent fails closed until `openmergelens init` records the bulk
+authorization.
 
 The default four focused review passes plus synthesis make five reviewer
 invocations per PR. Lower `reviewFocusCount` to reduce usage. GitHub and

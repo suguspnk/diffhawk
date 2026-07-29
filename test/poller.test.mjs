@@ -10,19 +10,18 @@ const work = {
   hostname: 'github.com',
   username: 'work',
   repositories: ['owner/repo'],
-  aiProcessingConsent: ['owner/repo'],
 };
 const personal = {
   hostname: 'github.com',
   username: 'personal',
   repositories: ['owner/repo'],
-  aiProcessingConsent: ['owner/repo'],
 };
 
 function config(accounts = [work, personal]) {
   return {
-    configVersion: 2,
+    configVersion: 3,
     githubAccounts: accounts,
+    aiProcessingConsent: true,
     reviewerCommand: 'reviewer',
     reviewerInputMode: 'stdin',
     reviewBatchSize: 2,
@@ -140,16 +139,11 @@ test('one unavailable account does not block healthy account work and marks fail
   assert.match(await readFile(files.logPath, 'utf8'), /\[work@github\.com\].*account unavailable/);
 });
 
-test('a repository without AI-processing consent never reaches search or reviewer execution', async (t) => {
+test('missing config-wide AI-processing consent blocks every account before authentication', async (t) => {
   const files = await fixture(t);
   const events = [];
-  const unconsented = {
-    ...work,
-    aiProcessingConsent: [],
-  };
-
   const result = await pollOnce({
-    config: config([unconsented]),
+    config: { ...config([work]), aiProcessingConsent: false },
     ...files,
     dependencies: successfulDependencies(events),
   });

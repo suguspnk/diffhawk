@@ -4,6 +4,11 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Replaced repository-by-repository AI-processing confirmations with one
+  explicit consent covering the complete selected repository set. Existing
+  version 2 configs migrate conservatively, and reviewer or repository-set
+  changes require one fresh bulk confirmation.
+
 ## [1.1.0] - 2026-07-29
 
 - Added a concise README quick start and a maintainer launch field guide for

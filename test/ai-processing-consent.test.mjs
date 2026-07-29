@@ -2,51 +2,76 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   hasAiProcessingConsent,
-  repositoriesNeedingAiProcessingConsent,
-  retainedAiProcessingConsent,
-  scopeConsentToReviewerCommand,
+  retainAiProcessingConsent,
 } from '../lib/ai-processing-consent.mjs';
 
-const account = {
+const accounts = [{
   hostname: 'github.com',
   username: 'octocat',
   repositories: ['Owner/One', 'Owner/Two'],
-  aiProcessingConsent: ['Owner/One'],
-};
+}];
 
-test('consent matching is repository-scoped and case-insensitive', () => {
-  assert.equal(hasAiProcessingConsent(account, 'owner/one'), true);
-  assert.equal(hasAiProcessingConsent(account, 'owner/two'), false);
+test('consent is one explicit config-wide boolean', () => {
+  assert.equal(hasAiProcessingConsent({ aiProcessingConsent: true }), true);
+  assert.equal(hasAiProcessingConsent({ aiProcessingConsent: false }), false);
+  assert.equal(hasAiProcessingConsent({}), false);
 });
 
-test('repository selection retains only consent for still-selected repositories', () => {
-  assert.deepEqual(
-    retainedAiProcessingConsent(account, ['OWNER/ONE', 'Owner/Three']),
-    ['Owner/One'],
+test('reviewer or selected-repository changes invalidate config-wide consent', () => {
+  assert.equal(
+    retainAiProcessingConsent(
+      true,
+      'reviewer-a',
+      'reviewer-b',
+      accounts,
+      accounts,
+    ),
+    false,
   );
-});
-
-test('changing the reviewer command invalidates every repository consent', () => {
-  assert.deepEqual(
-    scopeConsentToReviewerCommand([account], 'reviewer-a', 'reviewer-b')[0]
-      .aiProcessingConsent,
-    [],
+  assert.equal(
+    retainAiProcessingConsent(
+      true,
+      'reviewer-a',
+      'reviewer-a',
+      accounts,
+      [{
+        ...accounts[0],
+        repositories: ['owner/two', 'owner/one'],
+      }],
+    ),
+    true,
   );
-  assert.deepEqual(
-    scopeConsentToReviewerCommand([account], 'reviewer-a', 'reviewer-a')[0]
-      .aiProcessingConsent,
-    ['Owner/One'],
+  assert.equal(
+    retainAiProcessingConsent(
+      true,
+      'reviewer-a',
+      'reviewer-a',
+      accounts,
+      [{
+        ...accounts[0],
+        repositories: [...accounts[0].repositories, 'Owner/Three'],
+      }],
+    ),
+    false,
   );
-  assert.deepEqual(
-    scopeConsentToReviewerCommand([account], undefined, 'reviewer-a')[0]
-      .aiProcessingConsent,
-    [],
+  assert.equal(
+    retainAiProcessingConsent(
+      true,
+      undefined,
+      'reviewer-a',
+      accounts,
+      accounts,
+    ),
+    false,
   );
-});
-
-test('pending consent entries retain their owning account', () => {
-  assert.deepEqual(
-    repositoriesNeedingAiProcessingConsent([account]),
-    [{ account, repository: 'Owner/Two' }],
+  assert.equal(
+    retainAiProcessingConsent(
+      false,
+      'reviewer-a',
+      'reviewer-a',
+      accounts,
+      accounts,
+    ),
+    false,
   );
 });
