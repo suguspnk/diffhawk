@@ -61,6 +61,7 @@ function successfulDependencies(events) {
       title: 'PR',
       url: 'https://github.com/owner/repo/pull/7',
       body: '',
+      state: 'OPEN',
     }),
     getPullRequestDiff: async () => '@@ -0,0 +1 @@\n+line\n',
     reviewAlreadyPosted: async () => false,
@@ -159,6 +160,38 @@ test('a repository without AI-processing consent never reaches search or reviewe
   assert.deepEqual(events, []);
 });
 
+for (const pullRequestState of ['CLOSED', 'MERGED']) {
+  test(`a ${pullRequestState.toLowerCase()} PR returned by search never reaches the reviewer`, async (t) => {
+    const files = await fixture(t);
+    const events = [];
+    const dependencies = successfulDependencies(events);
+    dependencies.getPullRequest = async () => ({
+      headRefOid: 'sha-1',
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/owner/repo/pull/7',
+      body: '',
+      state: pullRequestState,
+    });
+
+    const result = await pollOnce({
+      config: config([work]),
+      ...files,
+      dependencies,
+    });
+
+    assert.deepEqual(result, {
+      failed: false,
+      reviewed: 0,
+      outcomes: [],
+      failures: [],
+    });
+    assert.deepEqual(events.filter((event) => event.startsWith('review:')), []);
+    assert.deepEqual(events.filter((event) => event.startsWith('post:')), []);
+    await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
+  });
+}
+
 test('a PR failure leaves its state untouched while another account completes', async (t) => {
   const files = await fixture(t);
   const events = [];
@@ -245,6 +278,7 @@ test('new commits arriving during review prevent a stale review from posting', a
       title: 'PR',
       url: 'https://github.com/owner/repo/pull/7',
       body: '',
+      state: 'OPEN',
     };
   };
 
@@ -257,6 +291,40 @@ test('new commits arriving during review prevent a stale review from posting', a
   assert.equal(result.failed, true);
   assert.equal(result.reviewed, 0);
   assert.equal(result.failures[0].note, 'new commits during review');
+  assert.deepEqual(events.filter((event) => event.startsWith('post:')), []);
+  await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
+});
+
+test('a PR closed during review is not posted or recorded', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  let metadataCalls = 0;
+  dependencies.getPullRequest = async () => {
+    metadataCalls += 1;
+    return {
+      headRefOid: 'sha-1',
+      number: 7,
+      title: 'PR',
+      url: 'https://github.com/owner/repo/pull/7',
+      body: '',
+      state: metadataCalls === 1 ? 'OPEN' : 'CLOSED',
+    };
+  };
+
+  const result = await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies,
+  });
+
+  assert.deepEqual(result, {
+    failed: false,
+    reviewed: 0,
+    outcomes: [],
+    failures: [],
+  });
+  assert.equal(events.filter((event) => event.startsWith('review:')).length, 1);
   assert.deepEqual(events.filter((event) => event.startsWith('post:')), []);
   await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
 });
