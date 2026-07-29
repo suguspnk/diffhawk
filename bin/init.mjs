@@ -80,7 +80,8 @@ async function verifyConfiguredNotifications() {
         message: 'Did the OpenMergeLens test notification appear?',
         initialValue: true,
       });
-      return !p.isCancel(visible) && visible;
+      if (p.isCancel(visible)) exitCancelled();
+      return visible;
     },
   });
 
