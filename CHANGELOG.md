@@ -4,6 +4,9 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added a concise README quick start and a maintainer launch field guide for
+  clean-install checks, early-user interviews, privacy-preserving measurements,
+  and feedback routing.
 - Replaced deprecated macOS notification delivery on macOS 13 and later with a
   maintained universal helper in a dedicated OpenMergeLens application bundle,
   using the website's official mark while preserving the legacy helper for
@@ -11,8 +14,9 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 - Added a setup-time desktop notification test with confirmation and
   platform-specific recovery guidance when delivery fails or the operating
   system suppresses the alert. The confirmation is displayed while the test
-  alert is active, and every setup-only probe uses a fresh notification
-  identity and bypasses Focus.
+  alert is active, every setup-only probe uses a fresh notification identity,
+  and macOS guidance explains that the locally signed helper cannot override
+  Focus.
 - macOS 13+ notifications now remain until the user dismisses them. A newer
   OpenMergeLens notification replaces the previous one without blocking polls.
 

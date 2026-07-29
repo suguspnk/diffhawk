@@ -5,7 +5,8 @@ Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.**
 
 [Website](https://suguspnk.github.io/openmergelens/) ·
 [npm](https://www.npmjs.com/package/openmergelens) ·
-[Documentation](#install)
+[Quick start](#quick-start) ·
+[Get help](https://github.com/suguspnk/openmergelens/discussions)
 
 OpenMergeLens runs on your own machine on a schedule (cron / launchd / Windows
 Task Scheduler) — no GitHub App, webhook, or server. It uses `gh` to find PRs
@@ -17,6 +18,28 @@ Start with a dry run, review its output, and only then enable posting.
 
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
+
+## Quick start
+
+With [Node.js](#prerequisites), an authenticated GitHub CLI, and an
+authenticated reviewer CLI already available:
+
+```bash
+npm install -g openmergelens
+openmergelens init
+openmergelens --dry-run
+```
+
+The wizard selects the GitHub accounts and repositories to watch, confirms
+repository-by-repository AI-processing consent, detects your reviewer, and
+offers an operating-system schedule. The dry run fetches and reviews matching
+pull requests without posting anything to GitHub.
+
+When the output looks right, run `openmergelens` once to post real reviews.
+For setup questions, use
+[GitHub Discussions](https://github.com/suguspnk/openmergelens/discussions);
+for reproducible defects, use the
+[bug report form](https://github.com/suguspnk/openmergelens/issues/new?template=bug.yml).
 
 ## Prerequisites
 
@@ -212,7 +235,10 @@ the same official mark as the project website. These notifications have no
 automatic timeout; they remain in Notification Center until dismissed, and a
 newer OpenMergeLens alert replaces the previous one. Select **Alerts** rather
 than **Banners** in OpenMergeLens's macOS notification settings to keep the
-alert visible on screen until you close it.
+alert visible on screen until you close it. An active Focus can still delay an
+alert; add OpenMergeLens to that Focus mode's **Allowed Apps** or temporarily
+turn Focus off when testing delivery.
+
 macOS 12 and earlier retain the smaller legacy `terminal-notifier` helper. Both
 helpers support Intel and Apple Silicon without relying on background
 AppleScript or Rosetta. Windows uses PowerShell toasts, and Linux uses

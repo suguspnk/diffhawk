@@ -48,8 +48,9 @@ test('notification setup reports operating-system suppression', async () => {
   assert.match(result.guidance, /System Settings/);
   assert.match(result.guidance, /OpenMergeLens/);
   assert.match(result.guidance, /Alerts instead of Banners/);
+  assert.match(result.guidance, /Allowed Apps/);
+  assert.match(result.guidance, /cannot override Focus/);
   assert.match(result.guidance, /terminal-notifier/);
-  assert.match(result.guidance, /Focus/);
 });
 
 test('notification setup treats post-commit cancellation as unverified', async () => {

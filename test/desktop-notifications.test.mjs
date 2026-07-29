@@ -192,7 +192,7 @@ test('current macOS uses the maintained bundled alerter', async () => {
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
 
-test('the macOS setup probe can bypass Focus without changing normal alerts', async () => {
+test('the macOS setup probe gets a fresh identity without changing normal alerts', async () => {
   const invocations = [];
   const spawnImpl = successfulNotifierAppSpawn((value) => {
     invocations.push(value);
@@ -210,7 +210,7 @@ test('the macOS setup probe can bypass Focus without changing normal alerts', as
     {
       title: 'OpenMergeLens',
       message: 'Setup test',
-      bypassFocus: true,
+      setupProbe: true,
     },
     {
       platform: 'darwin',
@@ -222,7 +222,7 @@ test('the macOS setup probe can bypass Focus without changing normal alerts', as
     {
       title: 'OpenMergeLens',
       message: 'Repeated setup test',
-      bypassFocus: true,
+      setupProbe: true,
     },
     {
       platform: 'darwin',
@@ -232,8 +232,8 @@ test('the macOS setup probe can bypass Focus without changing normal alerts', as
   );
 
   assert.equal(invocations[0].args.includes('--ignore-dnd'), false);
-  assert.equal(invocations[1].args.at(-1), '--ignore-dnd');
-  assert.equal(invocations[2].args.at(-1), '--ignore-dnd');
+  assert.equal(invocations[1].args.includes('--ignore-dnd'), false);
+  assert.equal(invocations[2].args.includes('--ignore-dnd'), false);
   assert.equal(invocations[0].options.timeout, NOTIFICATION_TIMEOUT_MS);
   assert.equal(invocations[1].options.timeout, 30_000);
   assert.equal(invocations[2].options.timeout, 30_000);
