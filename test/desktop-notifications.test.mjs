@@ -410,9 +410,12 @@ test('Windows delivery encodes notification data instead of interpolating PowerS
 
   assert.equal(invocation.command, 'powershell.exe');
   assert.doesNotMatch(invocation.args.join(' '), /PR title with/);
-  assert.doesNotMatch(invocation.args[3], /\\"/);
   assert.match(invocation.args[3], /OpenMergeLens\.lnk/);
   assert.match(invocation.args[3], /System\.AppUserModel\.ID|AppUserModelId/);
+  assert.match(
+    invocation.args[3],
+    /SetArguments\("-NoProfile -WindowStyle Hidden -Command \\"exit 0\\""\)/,
+  );
   assert.match(invocation.args[3], /CreateToastNotifier\("io\.github\.suguspnk\.openmergelens"\)/);
   assert.match(invocation.args[3], /<toast scenario="reminder">/);
   assert.match(invocation.args[3], /template="ToastGeneric"/);

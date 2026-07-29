@@ -68,6 +68,26 @@ test('resolveExecutable reads Windows environment keys case-insensitively', asyn
   );
 });
 
+test('resolveExecutable rejects unsupported Windows lookup results', async () => {
+  const lookup = async () => ({
+    stdout:
+      'C:\\Users\\J\\AppData\\Roaming\\npm\\codex\r\n' +
+      'C:\\Users\\J\\AppData\\Roaming\\npm\\codex.ps1\r\n',
+  });
+
+  await assert.rejects(
+    resolveExecutable('codex', {
+      platform: 'win32',
+      environment: {
+        PATH: 'C:\\Users\\J\\AppData\\Roaming\\npm',
+        PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      },
+      lookup,
+    }),
+    { code: 'ENOENT' },
+  );
+});
+
 test('prepareResolvedCommand keeps native executables shell-free', () => {
   assert.deepEqual(
     prepareResolvedCommand('/usr/local/bin/codex', ['exec'], { platform: 'linux' }),
