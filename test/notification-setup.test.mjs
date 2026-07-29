@@ -20,21 +20,16 @@ test('notification setup verifies a visible test notification', async () => {
   assert.deepEqual(result, { status: 'verified' });
 });
 
-test('notification setup asks while a long-running notifier is still visible', async () => {
-  let finishDelivery;
-  let deliveryPending = true;
+test('notification setup waits for delivery before asking for confirmation', async () => {
+  let delivered = false;
   const result = await verifyDesktopNotificationSetup({
     platform: 'darwin',
-    deliver: () => new Promise((resolve) => {
-      finishDelivery = () => {
-        deliveryPending = false;
-        resolve();
-      };
-    }),
-    waitForDeliveryStart: async () => {},
+    deliver: async () => {
+      await Promise.resolve();
+      delivered = true;
+    },
     confirmVisible: async () => {
-      assert.equal(deliveryPending, true);
-      finishDelivery();
+      assert.equal(delivered, true);
       return true;
     },
   });
@@ -51,29 +46,21 @@ test('notification setup reports operating-system suppression', async () => {
 
   assert.equal(result.status, 'not-visible');
   assert.match(result.guidance, /System Settings/);
-  assert.match(result.guidance, /Terminal/);
+  assert.match(result.guidance, /OpenMergeLens/);
   assert.match(result.guidance, /Alerts instead of Banners/);
   assert.match(result.guidance, /terminal-notifier/);
   assert.match(result.guidance, /Focus/);
 });
 
-test('notification setup reports a delivery failure that occurs during confirmation', async () => {
-  const expected = new Error('notification connection closed');
-  let failDelivery;
+test('notification setup treats post-commit cancellation as unverified', async () => {
   const result = await verifyDesktopNotificationSetup({
     platform: 'darwin',
-    deliver: () => new Promise((resolve, reject) => {
-      failDelivery = () => reject(expected);
-    }),
-    waitForDeliveryStart: async () => {},
-    confirmVisible: async () => {
-      failDelivery();
-      return false;
-    },
+    deliver: async () => {},
+    confirmVisible: async () => Symbol('cancel'),
   });
 
-  assert.equal(result.status, 'delivery-failed');
-  assert.equal(result.error, expected);
+  assert.equal(result.status, 'not-visible');
+  assert.match(result.guidance, /OpenMergeLens/);
 });
 
 test('notification setup reports delivery failures without asking visibility', async () => {

@@ -15,18 +15,22 @@
   `c5d11a805e765f52ba34ec7284bd4fcd6ba68615`
 - Architectures: `x86_64` and `arm64`
 - Minimum macOS deployment target: 13.0
-- Executable SHA-256 after stripping, UUID normalization, and ad-hoc signing:
-  `744c5f4505eb44793a3b0a1205efb7c7d2b5943836491a4058aca88a51e9e458`
+- Application bundle identifier:
+  `io.github.suguspnk.openmergelens.notifier`
+- Bundled executable SHA-256 after stripping, UUID normalization, and ad-hoc
+  bundle signing:
+  `b5b4be0f8df6155e40547d485d216e03bdab08eff0400600e5cb73888e66e0a7`
 - License: `alerter-LICENSE.md`
 
 The official upstream ZIP is arm64-only, so OpenMergeLens reproducibly builds
 the universal executable from the exact source commit. `alerter-Package.resolved`
-pins the transitive source dependency. `alerter-persistent.patch` makes a
-timeout-zero notification exit after macOS confirms delivery without removing
-the delivered notification; this lets Notification Center retain it while the
-poll process exits. Swift deterministic hashing stabilizes compiler ordering,
-and the normalization step zeros per-link Mach-O UUID fields before ad-hoc
-signing.
+pins the transitive source dependency. `alerter-persistent.patch` gives the
+helper OpenMergeLens's dedicated bundle identity and routes timeout-zero alerts
+through Apple's supported UserNotifications framework. The helper exits after
+macOS accepts the request without removing the delivered notification; this
+lets Notification Center retain it while the poll process exits. Swift
+deterministic hashing stabilizes compiler ordering, and the normalization step
+zeros per-link Mach-O UUID fields before ad-hoc signing.
 
 The executable was built with Xcode 26.3 and Swift 6.1:
 
@@ -43,19 +47,26 @@ git -C "$alerter_source_dir" apply \
 env SWIFT_DETERMINISTIC_HASHING=1 swift build \
   --package-path "$alerter_source_dir" \
   -c release --arch arm64 --arch x86_64
+notifier_bundle="$openmergelens_root/vendor/OpenMergeLensNotifier.app"
+mkdir -p "$notifier_bundle/Contents/MacOS"
+cp "$alerter_source_dir/Sources/Alerter/Info.plist" \
+  "$notifier_bundle/Contents/Info.plist"
 cp "$alerter_source_dir/.build/apple/Products/Release/alerter" \
-  /tmp/alerter-universal
-strip -x /tmp/alerter-universal
-codesign --remove-signature /tmp/alerter-universal 2>/dev/null || true
-node vendor/normalize-macho-uuids.mjs /tmp/alerter-universal
-codesign --force --sign - /tmp/alerter-universal
-shasum -a 256 /tmp/alerter-universal
+  "$notifier_bundle/Contents/MacOS/alerter"
+strip -x "$notifier_bundle/Contents/MacOS/alerter"
+codesign --remove-signature \
+  "$notifier_bundle/Contents/MacOS/alerter" 2>/dev/null || true
+node vendor/normalize-macho-uuids.mjs \
+  "$notifier_bundle/Contents/MacOS/alerter"
+codesign --force --sign - "$notifier_bundle/Contents/MacOS/alerter"
+codesign --force --deep --sign - "$notifier_bundle"
+shasum -a 256 "$notifier_bundle/Contents/MacOS/alerter"
 ```
 
-OpenMergeLens uses Alerter on macOS 13 and later. Version 26.4 fixed current
-macOS releases silently dropping notifications from unrecognized sender
-identities; OpenMergeLens explicitly selects Alerter's compatible
-`com.apple.Terminal` sender identity.
+OpenMergeLens uses Alerter on macOS 13 and later. It runs from the signed
+`OpenMergeLensNotifier.app` bundle and selects that bundle's dedicated
+identifier, so Notification Center attributes PR-derived content to
+OpenMergeLens instead of impersonating another installed application.
 
 ## terminal-notifier
 

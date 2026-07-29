@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { writeFile } from 'node:fs/promises';
 import {
   attemptDesktopNotification,
   buildPollNotification,
@@ -18,6 +19,19 @@ function successfulSpawn(onInvocation) {
     onInvocation({ command, args, options });
     const child = new EventEmitter();
     queueMicrotask(() => child.emit('close', 0, null));
+    return child;
+  };
+}
+
+function successfulNotifierAppSpawn(onInvocation) {
+  return (command, args, options) => {
+    onInvocation({ command, args, options });
+    const child = new EventEmitter();
+    const stdoutPath = args[args.indexOf('-o') + 1];
+    queueMicrotask(async () => {
+      await writeFile(stdoutPath, '@DELIVERED');
+      child.emit('close', 0, null);
+    });
     return child;
   };
 }
@@ -139,35 +153,48 @@ test('current macOS uses the maintained bundled alerter', async () => {
   await deliverDesktopNotification(notification, {
     platform: 'darwin',
     darwinMajor: 25,
-    spawnImpl: successfulSpawn((value) => {
+    spawnImpl: successfulNotifierAppSpawn((value) => {
       invocation = value;
     }),
   });
 
+  assert.equal(invocation.command, '/usr/bin/open');
+  const notifierAppPath = invocation.args[invocation.args.indexOf('-a') + 1];
   assert.match(
-    invocation.command,
-    /vendor[\\/]alerter$/,
+    notifierAppPath,
+    /vendor[\\/]OpenMergeLensNotifier\.app$/,
   );
-  assert.deepEqual(invocation.args, [
-    '--title',
-    notification.title,
-    '--message',
-    notification.message,
-    '--sound',
-    'Glass',
-    '--sender',
-    'com.apple.Terminal',
-    '--timeout',
-    '0',
-    '--group',
-    'io.github.suguspnk.openmergelens',
-  ]);
+  assert.match(
+    invocation.args[invocation.args.indexOf('-o') + 1],
+    /openmergelens-notifier-.*[\\/]stdout$/,
+  );
+  assert.match(
+    invocation.args[invocation.args.indexOf('--stderr') + 1],
+    /openmergelens-notifier-.*[\\/]stderr$/,
+  );
+  assert.deepEqual(
+    invocation.args.slice(invocation.args.indexOf('--args') + 1),
+    [
+      '--title',
+      notification.title,
+      '--message',
+      notification.message,
+      '--sound',
+      'Glass',
+      '--sender',
+      'io.github.suguspnk.openmergelens.notifier',
+      '--timeout',
+      '0',
+      '--group',
+      'io.github.suguspnk.openmergelens',
+    ],
+  );
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
 
 test('the macOS setup probe can bypass Focus without changing normal alerts', async () => {
   const invocations = [];
-  const spawnImpl = successfulSpawn((value) => {
+  const spawnImpl = successfulNotifierAppSpawn((value) => {
     invocations.push(value);
   });
 
@@ -194,6 +221,8 @@ test('the macOS setup probe can bypass Focus without changing normal alerts', as
 
   assert.equal(invocations[0].args.includes('--ignore-dnd'), false);
   assert.equal(invocations[1].args.at(-1), '--ignore-dnd');
+  assert.equal(invocations[0].options.timeout, NOTIFICATION_TIMEOUT_MS);
+  assert.equal(invocations[1].options.timeout, 30_000);
 });
 
 test('macOS 12 and earlier retain the legacy universal notifier', async () => {
@@ -230,8 +259,8 @@ test('macOS attention notifications use a distinct failure sound', async () => {
     {
       platform: 'darwin',
       darwinMajor: 25,
-      macAlerterPath: '/bundled/alerter',
-      spawnImpl: successfulSpawn((value) => {
+      macNotifierAppPath: '/bundled/OpenMergeLensNotifier.app',
+      spawnImpl: successfulNotifierAppSpawn((value) => {
         invocation = value;
       }),
     },
@@ -244,6 +273,29 @@ test('macOS attention notifications use a distinct failure sound', async () => {
   );
 });
 
+test('macOS delivery reports notifier errors even when open exits successfully', async () => {
+  await assert.rejects(
+    deliverDesktopNotification(
+      { title: 'OpenMergeLens', message: 'Failed', attention: true },
+      {
+        platform: 'darwin',
+        darwinMajor: 25,
+        macNotifierAppPath: '/bundled/OpenMergeLensNotifier.app',
+        spawnImpl: (command, args) => {
+          const child = new EventEmitter();
+          const stderrPath = args[args.indexOf('--stderr') + 1];
+          queueMicrotask(async () => {
+            await writeFile(stderrPath, 'notification permission was denied');
+            child.emit('close', 0, null);
+          });
+          return child;
+        },
+      },
+    ),
+    /alerter failed: notification permission was denied/,
+  );
+});
+
 test('macOS delivery rejects when the notifier process does not complete', async () => {
   await assert.rejects(
     deliverDesktopNotification(
@@ -251,7 +303,7 @@ test('macOS delivery rejects when the notifier process does not complete', async
       {
         platform: 'darwin',
         darwinMajor: 25,
-        macAlerterPath: '/bundled/alerter',
+        macNotifierAppPath: '/bundled/OpenMergeLensNotifier.app',
         spawnImpl: () => {
           const child = new EventEmitter();
           queueMicrotask(() => child.emit('close', null, 'SIGTERM'));
@@ -277,7 +329,7 @@ test('macOS delivery hard-kills a notifier that never confirms delivery', async 
       {
         platform: 'darwin',
         darwinMajor: 25,
-        macAlerterPath: '/bundled/alerter',
+        macNotifierAppPath: '/bundled/OpenMergeLensNotifier.app',
         spawnImpl: () => child,
         timeoutMs: 10,
       },

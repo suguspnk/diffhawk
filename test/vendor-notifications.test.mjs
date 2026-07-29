@@ -12,8 +12,22 @@ const projectRoot = path.resolve(
 );
 
 test('vendored Alerter is pinned, patched, licensed, normalized, and universal', async () => {
-  const [binary, provenance, license, dependencyLock, persistentPatch] = await Promise.all([
-    readFile(path.join(projectRoot, 'vendor', 'alerter')),
+  const notifierBundle = path.join(
+    projectRoot,
+    'vendor',
+    'OpenMergeLensNotifier.app',
+    'Contents',
+  );
+  const [
+    binary,
+    bundleInfo,
+    provenance,
+    license,
+    dependencyLock,
+    persistentPatch,
+  ] = await Promise.all([
+    readFile(path.join(notifierBundle, 'MacOS', 'alerter')),
+    readFile(path.join(notifierBundle, 'Info.plist'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'README.md'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-LICENSE.md'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-Package.resolved'), 'utf8'),
@@ -38,8 +52,20 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(provenance, new RegExp(checksum));
   assert.match(provenance, /SWIFT_DETERMINISTIC_HASHING=1/);
   assert.match(dependencyLock, /c5d11a805e765f52ba34ec7284bd4fcd6ba68615/);
-  assert.match(persistentPatch, /currentConfig\?\.timeout == 0/);
-  assert.match(persistentPatch, /exit\(0\)/);
+  assert.match(persistentPatch, /config\.timeout == 0/);
+  assert.match(persistentPatch, /UNUserNotificationCenter/);
+  assert.match(persistentPatch, /@DELIVERED/);
+  assert.match(persistentPatch, /exit\(EXIT_SUCCESS\)/);
+  assert.match(
+    persistentPatch,
+    /io\.github\.suguspnk\.openmergelens\.notifier/,
+  );
+  assert.match(bundleInfo, /<string>OpenMergeLens<\/string>/);
+  assert.match(
+    bundleInfo,
+    /<string>io\.github\.suguspnk\.openmergelens\.notifier<\/string>/,
+  );
+  assert.doesNotMatch(bundleInfo, /com\.apple\.Terminal/);
   assert.match(license, /The MIT License \(MIT\)/);
   assert.match(license, /Copyright \(c\) 2015 Valere JEANTET/);
 

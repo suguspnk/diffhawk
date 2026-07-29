@@ -75,14 +75,10 @@ async function readExistingConfig() {
 
 async function verifyConfiguredNotifications() {
   const result = await verifyDesktopNotificationSetup({
-    confirmVisible: async () => {
-      const visible = await p.confirm({
-        message: 'Did the OpenMergeLens test notification appear?',
-        initialValue: true,
-      });
-      if (p.isCancel(visible)) exitCancelled();
-      return visible;
-    },
+    confirmVisible: () => p.confirm({
+      message: 'Did the OpenMergeLens test notification appear?',
+      initialValue: true,
+    }),
   });
 
   if (result.status === 'verified') {
