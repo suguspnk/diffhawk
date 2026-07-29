@@ -218,11 +218,41 @@ test('the macOS setup probe can bypass Focus without changing normal alerts', as
       spawnImpl,
     },
   );
+  await deliverDesktopNotification(
+    {
+      title: 'OpenMergeLens',
+      message: 'Repeated setup test',
+      bypassFocus: true,
+    },
+    {
+      platform: 'darwin',
+      darwinMajor: 25,
+      spawnImpl,
+    },
+  );
 
   assert.equal(invocations[0].args.includes('--ignore-dnd'), false);
   assert.equal(invocations[1].args.at(-1), '--ignore-dnd');
+  assert.equal(invocations[2].args.at(-1), '--ignore-dnd');
   assert.equal(invocations[0].options.timeout, NOTIFICATION_TIMEOUT_MS);
   assert.equal(invocations[1].options.timeout, 30_000);
+  assert.equal(invocations[2].options.timeout, 30_000);
+
+  const notificationGroup = (invocation) => (
+    invocation.args[invocation.args.indexOf('--group') + 1]
+  );
+  assert.equal(
+    notificationGroup(invocations[0]),
+    'io.github.suguspnk.openmergelens',
+  );
+  assert.match(
+    notificationGroup(invocations[1]),
+    /^io\.github\.suguspnk\.openmergelens\.setup\.[0-9a-f-]{36}$/,
+  );
+  assert.notEqual(
+    notificationGroup(invocations[1]),
+    notificationGroup(invocations[2]),
+  );
 });
 
 test('macOS 12 and earlier retain the legacy universal notifier', async () => {

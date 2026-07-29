@@ -11,7 +11,8 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 - Added a setup-time desktop notification test with confirmation and
   platform-specific recovery guidance when delivery fails or the operating
   system suppresses the alert. The confirmation is displayed while the test
-  alert is active, and the setup-only probe bypasses Focus.
+  alert is active, and every setup-only probe uses a fresh notification
+  identity and bypasses Focus.
 - macOS 13+ notifications now remain until the user dismisses them. A newer
   OpenMergeLens notification replaces the previous one without blocking polls.
 
