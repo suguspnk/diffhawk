@@ -5,7 +5,8 @@ Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.**
 
 [Website](https://suguspnk.github.io/openmergelens/) ·
 [npm](https://www.npmjs.com/package/openmergelens) ·
-[Documentation](#install)
+[Quick start](#quick-start) ·
+[Get help](https://github.com/suguspnk/openmergelens/discussions)
 
 OpenMergeLens runs on your own machine on a schedule (cron / launchd / Windows
 Task Scheduler) — no GitHub App, webhook, or server. It uses `gh` to find PRs
@@ -17,6 +18,28 @@ Start with a dry run, review its output, and only then enable posting.
 
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
+
+## Quick start
+
+With [Node.js](#prerequisites), an authenticated GitHub CLI, and an
+authenticated reviewer CLI already available:
+
+```bash
+npm install -g openmergelens
+openmergelens init
+openmergelens --dry-run
+```
+
+The wizard selects the GitHub accounts and repositories to watch, confirms
+repository-by-repository AI-processing consent, detects your reviewer, and
+offers an operating-system schedule. The dry run fetches and reviews matching
+pull requests without posting anything to GitHub.
+
+When the output looks right, run `openmergelens` once to post real reviews.
+For setup questions, use
+[GitHub Discussions](https://github.com/suguspnk/openmergelens/discussions);
+for reproducible defects, use the
+[bug report form](https://github.com/suguspnk/openmergelens/issues/new?template=bug.yml).
 
 ## Prerequisites
 
@@ -95,7 +118,9 @@ This will:
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
 7. Ask whether completed polls should show desktop notifications (enabled by
-   default).
+   default). After setup is applied, send a test notification, confirm that it
+   appeared, and show platform-specific recovery steps if the operating system
+   suppresses it.
 8. Offer one schedule for the complete multi-account poller.
 9. Preview the config, deterministic review-file paths, and schedule, then ask
    once before applying them.
@@ -200,20 +225,37 @@ results are presented as an attention notification, with failed PRs
 prioritized and successful PRs still represented.
 
 No notification is sent when there is no work or when another poll owns the
-operation lock. Notification delivery is best-effort: it has a five-second
-timeout, logs failures to `~/.openmergelens/poll.log`, and never changes a review
-or state outcome. On macOS, OpenMergeLens includes an application-bundled,
-ad-hoc-signed universal build of the established `terminal-notifier` project,
-so scheduled polls have a stable Notification Center identity on both Intel
-and Apple Silicon without relying on background AppleScript or Rosetta. Windows
-uses PowerShell toasts, and Linux uses `notify-send`. A logged-in
-graphical desktop session is required; headless and logged-out scheduler
-sessions cannot display a toast. Linux systems must provide `notify-send`.
+operation lock. Notification delivery is best-effort: helper launches are
+bounded, failures are logged to `~/.openmergelens/poll.log`, and notification
+delivery never changes a review or state outcome. On macOS 13 and later,
+OpenMergeLens includes a universal build of the maintained `alerter` project
+inside a dedicated OpenMergeLens application bundle, so review text is
+attributed to OpenMergeLens rather than another trusted application and uses
+the same official mark as the project website. These notifications have no
+automatic timeout; they remain in Notification Center until dismissed, and a
+newer OpenMergeLens alert replaces the previous one. Select **Alerts** rather
+than **Banners** in OpenMergeLens's macOS notification settings to keep the
+alert visible on screen until you close it. An active Focus can still delay an
+alert; add OpenMergeLens to that Focus mode's **Allowed Apps** or temporarily
+turn Focus off when testing delivery.
+
+macOS 12 and earlier retain the smaller legacy `terminal-notifier` helper. Both
+helpers support Intel and Apple Silicon without relying on background
+AppleScript or Rosetta. Windows uses PowerShell toasts, and Linux uses
+`notify-send`. A logged-in graphical desktop session is required; headless and
+logged-out scheduler sessions cannot display a toast. Linux systems must
+provide `notify-send`.
 
 Set `"desktopNotifications": false` in the config to opt out. For temporary or
 headless execution, `OPENMERGELENS_DESKTOP_NOTIFICATIONS=0` also suppresses
 notifications, including fatal startup notifications that happen before the
 config can be loaded.
+
+When notifications are enabled, `openmergelens init` sends a test notification
+after saving the configuration and asks whether it appeared. If delivery fails
+or the operating system accepts the notification without displaying it, the
+wizard prints the relevant notification-settings steps. Operating-system
+permission still requires user confirmation and cannot be enabled silently.
 
 ## Scheduling
 
@@ -325,8 +367,9 @@ for the security model and private reporting process.
   the specific failure (search failed, reviewer adapter failed, post
   rejected, etc.).
 - **Reviews work but notifications do not** — make sure the poll runs while
-  you are logged into a graphical desktop session. On Linux, install
-  `notify-send`; then check `~/.openmergelens/poll.log` for a
+  you are logged into a graphical desktop session. Rerun `openmergelens init`
+  to send a test notification and get platform-specific recovery steps. On
+  Linux, install `notify-send`; then check `~/.openmergelens/poll.log` for a
   `[notification]` warning.
 - **A review didn't fully post** — OpenMergeLens validates finding line numbers
   against the actual diff before posting; anything it can't anchor to a real

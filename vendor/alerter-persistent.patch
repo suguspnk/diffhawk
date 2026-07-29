@@ -1,0 +1,121 @@
+diff --git a/Sources/Alerter/AlerterCommand.swift b/Sources/Alerter/AlerterCommand.swift
+index 11b4bdb..b3e423b 100644
+--- a/Sources/Alerter/AlerterCommand.swift
++++ b/Sources/Alerter/AlerterCommand.swift
+@@ -50,8 +50,8 @@ struct AlerterCommand: ParsableCommand {
+     @Option(help: "Group ID for notification replacement.")
+     var group: String?
+ 
+-    @Option(help: "Bundle identifier of the app to impersonate. (default: com.apple.Terminal)")
+-    var sender: String = "com.apple.Terminal"
++    @Option(help: "Bundle identifier used to attribute the notification.")
++    var sender: String = "io.github.suguspnk.openmergelens.notifier"
+ 
+     @Option(help: "URL or path of an image to use as app icon.")
+     var appIcon: String?
+diff --git a/Sources/Alerter/Info.plist b/Sources/Alerter/Info.plist
+index fe8144d..010d004 100644
+--- a/Sources/Alerter/Info.plist
++++ b/Sources/Alerter/Info.plist
+@@ -3,9 +3,23 @@
+ <plist version="1.0">
+ <dict>
+ 	<key>CFBundleIdentifier</key>
+-	<string>fr.vjeantet.alerter</string>
++	<string>io.github.suguspnk.openmergelens.notifier</string>
++	<key>CFBundleName</key>
++	<string>OpenMergeLens</string>
++	<key>CFBundleDisplayName</key>
++	<string>OpenMergeLens</string>
++	<key>CFBundleExecutable</key>
++	<string>alerter</string>
++	<key>CFBundlePackageType</key>
++	<string>APPL</string>
++	<key>CFBundleShortVersionString</key>
++	<string>1.0</string>
++	<key>CFBundleVersion</key>
++	<string>2</string>
+ 	<key>CFBundleIconFile</key>
+-	<string>AppIcon</string>
++	<string>OpenMergeLens</string>
++	<key>LSUIElement</key>
++	<true/>
+ 	<key>NSUserNotificationAlertStyle</key>
+ 	<string>alert</string>
+ </dict>
+diff --git a/Sources/Alerter/NotificationManager.swift b/Sources/Alerter/NotificationManager.swift
+index 8a616e1..6bbda47 100644
+--- a/Sources/Alerter/NotificationManager.swift
++++ b/Sources/Alerter/NotificationManager.swift
+@@ -1,4 +1,5 @@
+ import AppKit
++import UserNotifications
+ 
+ struct NotificationConfig {
+     let title: String
+@@ -30,6 +31,13 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
+     func deliverNotification(config: NotificationConfig) {
+         currentConfig = config
+ 
++        if config.timeout == 0 {
++            DispatchQueue.main.async { [weak self] in
++                self?.deliverPersistentNotification(config: config)
++            }
++            return
++        }
++
+         // Remove earlier notification with the same group ID
+         if let groupID = config.groupID {
+             removeNotification(groupID: groupID)
+@@ -99,6 +107,51 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
+         center.deliver(notification)
+     }
+ 
++    private func deliverPersistentNotification(config: NotificationConfig) {
++        let center = UNUserNotificationCenter.current()
++        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
++            if let error = error {
++                fputs("alerter: \(error.localizedDescription)\n", stderr)
++                exit(EXIT_FAILURE)
++            }
++            guard granted else {
++                fputs("alerter: notification permission was denied\n", stderr)
++                exit(EXIT_FAILURE)
++            }
++
++            let content = UNMutableNotificationContent()
++            content.title = config.title
++            content.subtitle = config.subtitle ?? ""
++            content.body = config.message
++            if let sound = config.sound {
++                content.sound = sound == "default"
++                    ? .default
++                    : UNNotificationSound(
++                        named: UNNotificationSoundName(rawValue: sound)
++                    )
++            }
++            if config.ignoreDnD {
++                content.interruptionLevel = .timeSensitive
++            }
++
++            let identifier = config.groupID ?? config.uuid
++            center.removeDeliveredNotifications(withIdentifiers: [identifier])
++            let request = UNNotificationRequest(
++                identifier: identifier,
++                content: content,
++                trigger: nil
++            )
++            center.add(request) { error in
++                if let error = error {
++                    fputs("alerter: \(error.localizedDescription)\n", stderr)
++                    exit(EXIT_FAILURE)
++                }
++                print("@DELIVERED", terminator: "")
++                exit(EXIT_SUCCESS)
++            }
++        }
++    }
++
+     // MARK: - Remove
+ 
+     func removeNotification(groupID: String) {
