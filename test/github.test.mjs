@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import childProcess from 'node:child_process';
 import {
   createReviewMarker,
+  getPullRequest,
   postReview,
   retryMetadataFromDiagnostic,
   reviewAlreadyPosted,
@@ -79,7 +80,43 @@ test('explicit repository search preserves concatenated paginated gh output', as
   assert.equal(command, 'gh');
   assert.ok(args.includes('--paginate'));
   assert.ok(args.includes('--jq'));
+  assert.ok(args.includes('q=is:pr is:open review-requested:sera240910 repo:acme/first'));
   assert.ok(args.some((arg) => arg.includes('.repository_url')));
+});
+
+test('pull request metadata includes the current state', async (t) => {
+  let args;
+  t.mock.method(childProcess, 'spawn', (_spawnCommand, spawnArgs) => {
+    args = spawnArgs;
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = {
+      write() {},
+      end() {},
+    };
+    process.nextTick(() => {
+      child.stdout.emit(
+        'data',
+        Buffer.from(JSON.stringify({
+          headRefOid: 'sha-1',
+          number: 7,
+          state: 'OPEN',
+        })),
+      );
+      child.emit('close', 0);
+    });
+    return child;
+  });
+
+  const pullRequest = await getPullRequest({
+    repo: 'owner/repo',
+    number: 7,
+  });
+
+  assert.equal(pullRequest.state, 'OPEN');
+  const fields = args[args.indexOf('--json') + 1].split(',');
+  assert.ok(fields.includes('state'));
 });
 
 test('gh subprocess output is bounded before parsing', async (t) => {

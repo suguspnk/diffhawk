@@ -6,6 +6,9 @@ state.json.lock
 config.json
 poll.log
 
+# Local maintainer-only launch notes
+docs/LAUNCH.md
+
 # Logs
 logs
 *.log
