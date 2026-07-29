@@ -29,6 +29,7 @@ test('notification setup reports operating-system suppression', async () => {
 
   assert.equal(result.status, 'not-visible');
   assert.match(result.guidance, /System Settings/);
+  assert.match(result.guidance, /Terminal/);
   assert.match(result.guidance, /terminal-notifier/);
   assert.match(result.guidance, /Focus/);
 });

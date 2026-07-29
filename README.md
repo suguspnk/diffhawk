@@ -204,13 +204,14 @@ prioritized and successful PRs still represented.
 No notification is sent when there is no work or when another poll owns the
 operation lock. Notification delivery is best-effort: it has a five-second
 timeout, logs failures to `~/.openmergelens/poll.log`, and never changes a review
-or state outcome. On macOS, OpenMergeLens includes an application-bundled,
-ad-hoc-signed universal build of the established `terminal-notifier` project,
-so scheduled polls have a stable Notification Center identity on both Intel
+or state outcome. On macOS 13 and later, OpenMergeLens includes a universal
+build of the maintained `alerter` project and uses the recognized Terminal
+notification identity required by current macOS releases. macOS 12 and earlier
+retain the smaller legacy `terminal-notifier` helper. Both helpers support Intel
 and Apple Silicon without relying on background AppleScript or Rosetta. Windows
-uses PowerShell toasts, and Linux uses `notify-send`. A logged-in
-graphical desktop session is required; headless and logged-out scheduler
-sessions cannot display a toast. Linux systems must provide `notify-send`.
+uses PowerShell toasts, and Linux uses `notify-send`. A logged-in graphical
+desktop session is required; headless and logged-out scheduler sessions cannot
+display a toast. Linux systems must provide `notify-send`.
 
 Set `"desktopNotifications": false` in the config to opt out. For temporary or
 headless execution, `OPENMERGELENS_DESKTOP_NOTIFICATIONS=0` also suppresses

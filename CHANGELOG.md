@@ -4,6 +4,9 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Replaced deprecated macOS notification delivery on macOS 13 and later with a
+  maintained universal helper that uses a recognized sender identity, while
+  preserving the legacy helper for older Macs.
 - Added a setup-time desktop notification test with confirmation and
   platform-specific recovery guidance when delivery fails or the operating
   system suppresses the alert.

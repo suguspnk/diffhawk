@@ -1,4 +1,33 @@
-# Vendored terminal-notifier
+# Vendored macOS notification helpers
+
+## Alerter
+
+`alerter` is built from the maintained open-source
+[`alerter`](https://github.com/vjeantet/alerter) project:
+
+- Version: 26.5
+- Upstream tag: `v26.5`
+- Architectures: `x86_64` and `arm64`
+- Minimum macOS deployment target: 13.0
+- Executable SHA-256 after stripping and ad-hoc signing:
+  `21af5581efea69223b4b19f360f3d904a69c360841ef2c0543e10dd338b792c7`
+- License: `alerter-LICENSE.md`
+
+The universal executable was built with Xcode 26.3 and Swift 6.1:
+
+```sh
+swift build -c release --arch arm64 --arch x86_64
+cp .build/apple/Products/Release/alerter /tmp/alerter-universal
+strip -x /tmp/alerter-universal
+codesign --force --sign - /tmp/alerter-universal
+```
+
+OpenMergeLens uses Alerter on macOS 13 and later. Version 26.4 fixed current
+macOS releases silently dropping notifications from unrecognized sender
+identities; OpenMergeLens explicitly selects Alerter's compatible
+`com.apple.Terminal` sender identity.
+
+## terminal-notifier
 
 `terminal-notifier.app` is built from the established open-source
 [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) project:
@@ -28,3 +57,6 @@ codesign --force --deep --sign - terminal-notifier.app
 
 The upstream Terminal icon was removed because it is not covered by the MIT
 license. macOS displays the generic application icon instead.
+
+OpenMergeLens retains this helper only for macOS 12 and earlier because Alerter
+26.5 requires macOS 13.

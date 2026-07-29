@@ -128,7 +128,7 @@ test('sanitizes control characters and truncates long PR titles', () => {
   assert.ok(notification.message.length < 100);
 });
 
-test('macOS delivery uses the bundled app notifier with safe arguments and sound', async () => {
+test('current macOS uses the maintained bundled alerter', async () => {
   let invocation;
   const notification = {
     title: 'OpenMergeLens review complete',
@@ -138,6 +138,7 @@ test('macOS delivery uses the bundled app notifier with safe arguments and sound
 
   await deliverDesktopNotification(notification, {
     platform: 'darwin',
+    darwinMajor: 25,
     spawnImpl: successfulSpawn((value) => {
       invocation = value;
     }),
@@ -145,17 +146,48 @@ test('macOS delivery uses the bundled app notifier with safe arguments and sound
 
   assert.match(
     invocation.command,
+    /vendor[\\/]alerter$/,
+  );
+  assert.deepEqual(invocation.args, [
+    '--title',
+    notification.title,
+    '--message',
+    notification.message,
+    '--sound',
+    'Glass',
+    '--sender',
+    'com.apple.Terminal',
+    '--timeout',
+    '3',
+  ]);
+  assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
+});
+
+test('macOS 12 and earlier retain the legacy universal notifier', async () => {
+  let invocation;
+  await deliverDesktopNotification(
+    { title: 'OpenMergeLens', message: 'Complete', attention: false },
+    {
+      platform: 'darwin',
+      darwinMajor: 21,
+      spawnImpl: successfulSpawn((value) => {
+        invocation = value;
+      }),
+    },
+  );
+
+  assert.match(
+    invocation.command,
     /vendor[\\/]terminal-notifier\.app[\\/]Contents[\\/]MacOS[\\/]terminal-notifier$/,
   );
   assert.deepEqual(invocation.args, [
     '-title',
-    notification.title,
+    'OpenMergeLens',
     '-message',
-    notification.message,
+    'Complete',
     '-sound',
     'Glass',
   ]);
-  assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
 
 test('macOS attention notifications use a distinct failure sound', async () => {
@@ -164,7 +196,8 @@ test('macOS attention notifications use a distinct failure sound', async () => {
     { title: 'OpenMergeLens needs attention', message: 'Failed', attention: true },
     {
       platform: 'darwin',
-      macNotifierPath: '/bundled/terminal-notifier',
+      darwinMajor: 25,
+      macAlerterPath: '/bundled/alerter',
       spawnImpl: successfulSpawn((value) => {
         invocation = value;
       }),
@@ -173,7 +206,7 @@ test('macOS attention notifications use a distinct failure sound', async () => {
 
   assert.equal(invocation.options.stdio, 'ignore');
   assert.equal(
-    invocation.args[invocation.args.indexOf('-sound') + 1],
+    invocation.args[invocation.args.indexOf('--sound') + 1],
     'Basso',
   );
 });
@@ -184,7 +217,8 @@ test('macOS delivery rejects when the notifier process does not complete', async
       { title: 'OpenMergeLens', message: 'Failed', attention: true },
       {
         platform: 'darwin',
-        macNotifierPath: '/bundled/terminal-notifier',
+        darwinMajor: 25,
+        macAlerterPath: '/bundled/alerter',
         spawnImpl: () => {
           const child = new EventEmitter();
           queueMicrotask(() => child.emit('close', null, 'SIGTERM'));
@@ -192,7 +226,7 @@ test('macOS delivery rejects when the notifier process does not complete', async
         },
       },
     ),
-    /terminal-notifier exited with SIGTERM/,
+    /alerter exited with SIGTERM/,
   );
 });
 
@@ -209,12 +243,13 @@ test('macOS delivery hard-kills a notifier that ignores its timeout', async () =
       { title: 'OpenMergeLens', message: 'Failed', attention: true },
       {
         platform: 'darwin',
-        macNotifierPath: '/bundled/terminal-notifier',
+        darwinMajor: 25,
+        macAlerterPath: '/bundled/alerter',
         spawnImpl: () => child,
         timeoutMs: 10,
       },
     ),
-    /terminal-notifier timed out after 10ms/,
+    /alerter timed out after 10ms/,
   );
   assert.equal(receivedSignal, 'SIGKILL');
 });
