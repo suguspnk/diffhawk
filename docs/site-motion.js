@@ -3,14 +3,14 @@ import { animate } from './vendor/motion-mini-12.43.0.js';
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const activeAnimations = new Set();
 const motion = Object.freeze({
-  easeOut: [0.22, 1, 0.36, 1],
-  heroDuration: 0.64,
-  heroStagger: 0.09,
-  terminalDuration: 0.72,
-  terminalDelay: 0.18,
-  revealDuration: 0.56,
-  riseDuration: 0.62,
-  revealStagger: 0.08,
+  easeOut: [0.25, 0.46, 0.45, 0.94],
+  heroDuration: 0.95,
+  heroStagger: 0.14,
+  terminalDuration: 1.1,
+  terminalDelay: 0.28,
+  revealDuration: 0.85,
+  riseDuration: 0.95,
+  revealStagger: 0.12,
 });
 let revealObserver;
 

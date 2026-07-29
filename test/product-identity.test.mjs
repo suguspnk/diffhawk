@@ -137,13 +137,16 @@ test('GitHub Pages motion is local, pinned, and progressively enhanced', async (
   );
   assert.match(motionSource, /prefers-reduced-motion: reduce/);
   assert.match(motionSource, /IntersectionObserver/);
-  assert.match(motionSource, /heroDuration: 0\.64/);
-  assert.match(motionSource, /terminalDuration: 0\.72/);
-  assert.match(motionSource, /revealDuration: 0\.56/);
-  assert.match(motionSource, /revealStagger: 0\.08/);
-  assert.match(motionSource, /easeOut: \[0\.22, 1, 0\.36, 1\]/);
+  assert.match(motionSource, /heroDuration: 0\.95/);
+  assert.match(motionSource, /terminalDuration: 1\.1/);
+  assert.match(motionSource, /revealDuration: 0\.85/);
+  assert.match(motionSource, /revealStagger: 0\.12/);
+  assert.match(
+    motionSource,
+    /easeOut: \[0\.25, 0\.46, 0\.45, 0\.94\]/,
+  );
   assert.match(motionSource, /transform: \['translateY\(12px\)'/);
-  assert.match(pageStyles, /--motion-fast: 220ms/);
+  assert.match(pageStyles, /--motion-fast: 260ms/);
   assert.doesNotMatch(pageStyles, /\[data-motion[^}]*opacity:\s*0/);
   assert.match(
     pageStyles,
