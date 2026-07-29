@@ -161,6 +161,73 @@ test('invokeReviewer preserves launch errors when stdin also cannot accept the p
   );
 });
 
+test('invokeReviewer rejects successful-looking output without required GitHub inspections', async () => {
+  const reviewerCommand = [
+    `"${process.execPath}"`,
+    '-e',
+    '"process.stdout.write(JSON.stringify({summary:\\"looks valid\\",findings:[]}))"',
+    '--',
+    '{{mcp_config}}',
+    '{{mcp_tool}}',
+  ].join(' ');
+  let gatewayClosed = false;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand,
+      prompt: '',
+      githubAccess: {
+        repo: 'example/repo',
+        number: pr.number,
+        url: pr.url,
+        headRefOid: pr.headRefOid,
+        environment: {},
+      },
+      startGitHubGateway: async () => ({
+        mcpConfigPath: '/tmp/reviewer-mcp.json',
+        mcpServerPath: '/tmp/reviewer-mcp.mjs',
+        assertRequiredInspection() {
+          throw new Error(
+            'reviewer did not complete required GitHub inspection: missing PR metadata and cumulative PR diff',
+          );
+        },
+        async close() {
+          gatewayClosed = true;
+        },
+      }),
+    }),
+    /missing PR metadata and cumulative PR diff/,
+  );
+  assert.equal(gatewayClosed, true);
+});
+
+test('invokeReviewer rejects a gateway that cannot verify required inspections', async () => {
+  let gatewayClosed = false;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand: 'custom-reviewer {{mcp_config}} {{mcp_tool}}',
+      prompt: '',
+      githubAccess: {
+        repo: 'example/repo',
+        number: pr.number,
+        url: pr.url,
+        headRefOid: pr.headRefOid,
+        environment: {},
+      },
+      startGitHubGateway: async () => ({
+        mcpConfigPath: '/tmp/reviewer-mcp.json',
+        mcpServerPath: '/tmp/reviewer-mcp.mjs',
+        async close() {
+          gatewayClosed = true;
+        },
+      }),
+    }),
+    /gateway cannot verify required inspections/,
+  );
+  assert.equal(gatewayClosed, true);
+});
+
 test('buildPrompt sends a PR link and tool-based inspection contract instead of the diff', () => {
   const template = [
     'Review #{{pr_number}} at {{pr_url}}.',
