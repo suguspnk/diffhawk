@@ -4,6 +4,10 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added a setup-time desktop notification test with confirmation and
+  platform-specific recovery guidance when delivery fails or the operating
+  system suppresses the alert.
+
 ## [1.0.1] - 2026-07-29
 
 - Fixed non-interactive Codex reviews cancelling the constrained GitHub

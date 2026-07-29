@@ -27,6 +27,9 @@ import { acquireLock } from '../lib/lock.mjs';
 import { isValidReviewBatchSize } from '../lib/poll-batching.mjs';
 import { userHome, userPath } from '../lib/paths.mjs';
 import {
+  verifyDesktopNotificationSetup,
+} from '../lib/notification-setup.mjs';
+import {
   ensureReviewPrompt,
   reviewPromptPathFor,
 } from '../lib/review-prompts.mjs';
@@ -68,6 +71,30 @@ async function readExistingConfig() {
     p.log.warn(`Existing config will not be imported: ${err.message}`);
     return null;
   }
+}
+
+async function verifyConfiguredNotifications() {
+  const result = await verifyDesktopNotificationSetup({
+    confirmVisible: async () => {
+      const visible = await p.confirm({
+        message: 'Did the OpenMergeLens test notification appear?',
+        initialValue: true,
+      });
+      return !p.isCancel(visible) && visible;
+    },
+  });
+
+  if (result.status === 'verified') {
+    p.log.success('Desktop notifications verified');
+    return;
+  }
+
+  if (result.status === 'delivery-failed') {
+    p.log.warn(`Test notification failed: ${result.error.message}`);
+  } else {
+    p.log.warn('The operating system accepted the test, but no alert appeared.');
+  }
+  p.note(result.guidance, 'Enable desktop notifications');
 }
 
 async function main() {
@@ -373,6 +400,10 @@ async function main() {
         scheduleSpinner.stop(`Configuration saved, but schedule installation failed: ${err.message}`);
         process.exitCode = 1;
       }
+    }
+
+    if (desktopNotifications) {
+      await verifyConfiguredNotifications();
     }
 
     p.outro(

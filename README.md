@@ -95,7 +95,9 @@ This will:
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
 7. Ask whether completed polls should show desktop notifications (enabled by
-   default).
+   default). After setup is applied, send a test notification, confirm that it
+   appeared, and show platform-specific recovery steps if the operating system
+   suppresses it.
 8. Offer one schedule for the complete multi-account poller.
 9. Preview the config, deterministic review-file paths, and schedule, then ask
    once before applying them.
@@ -215,6 +217,12 @@ headless execution, `OPENMERGELENS_DESKTOP_NOTIFICATIONS=0` also suppresses
 notifications, including fatal startup notifications that happen before the
 config can be loaded.
 
+When notifications are enabled, `openmergelens init` sends a test notification
+after saving the configuration and asks whether it appeared. If delivery fails
+or the operating system accepts the notification without displaying it, the
+wizard prints the relevant notification-settings steps. Operating-system
+permission still requires user confirmation and cannot be enabled silently.
+
 ## Scheduling
 
 If you skipped scheduling during `init`, or want to change it later, rerun
@@ -325,8 +333,9 @@ for the security model and private reporting process.
   the specific failure (search failed, reviewer adapter failed, post
   rejected, etc.).
 - **Reviews work but notifications do not** — make sure the poll runs while
-  you are logged into a graphical desktop session. On Linux, install
-  `notify-send`; then check `~/.openmergelens/poll.log` for a
+  you are logged into a graphical desktop session. Rerun `openmergelens init`
+  to send a test notification and get platform-specific recovery steps. On
+  Linux, install `notify-send`; then check `~/.openmergelens/poll.log` for a
   `[notification]` warning.
 - **A review didn't fully post** — OpenMergeLens validates finding line numbers
   against the actual diff before posting; anything it can't anchor to a real
