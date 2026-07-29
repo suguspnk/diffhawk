@@ -163,6 +163,37 @@ test('current macOS uses the maintained bundled alerter', async () => {
   assert.equal(invocation.options.timeout, NOTIFICATION_TIMEOUT_MS);
 });
 
+test('the macOS setup probe can bypass Focus without changing normal alerts', async () => {
+  const invocations = [];
+  const spawnImpl = successfulSpawn((value) => {
+    invocations.push(value);
+  });
+
+  await deliverDesktopNotification(
+    { title: 'OpenMergeLens', message: 'Normal review complete' },
+    {
+      platform: 'darwin',
+      darwinMajor: 25,
+      spawnImpl,
+    },
+  );
+  await deliverDesktopNotification(
+    {
+      title: 'OpenMergeLens',
+      message: 'Setup test',
+      bypassFocus: true,
+    },
+    {
+      platform: 'darwin',
+      darwinMajor: 25,
+      spawnImpl,
+    },
+  );
+
+  assert.equal(invocations[0].args.includes('--ignore-dnd'), false);
+  assert.equal(invocations[1].args.at(-1), '--ignore-dnd');
+});
+
 test('macOS 12 and earlier retain the legacy universal notifier', async () => {
   let invocation;
   await deliverDesktopNotification(
