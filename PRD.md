@@ -207,13 +207,14 @@ poller as a `pnpm` script / bin.
    best-effort, limited to five seconds, and can never change review state or
    the poll exit status.
 
-10. **Repository AI-processing consent.** Repository selection alone is not
+10. **Selected-set AI-processing consent.** Repository selection alone is not
     authorization to send source code or PR data to a third-party reviewer.
-    Configuration records an explicit `aiProcessingConsent` repository list
-    for each account. The setup wizard explains provider retention, training,
-    confidentiality, data-residency, and DPA considerations and requires a
-    repository-by-repository confirmation. Polling fails closed before search
-    or reviewer invocation for repositories without consent.
+    Configuration records one explicit top-level `aiProcessingConsent`
+    attestation scoped to the complete repository set selected across all
+    accounts and the shared reviewer backend. The setup wizard explains provider retention,
+    training, confidentiality, data-residency, and DPA considerations and
+    requires one bulk confirmation. Polling fails closed before authentication,
+    search, or reviewer invocation when consent is absent.
 
 ## Structured output format (adopted design suggestion #1)
 
@@ -289,19 +290,21 @@ stdin, since that matches how the user already works — but keep it swappable.
 
 ```json
 {
-  "configVersion": 2,
+  "configVersion": 3,
+  "aiProcessingConsent": {
+    "granted": true,
+    "scope": "sha256:<reviewer-and-selected-repository-scope>"
+  },
   "githubAccounts": [
     {
       "hostname": "github.com",
       "username": "work-account",
-      "repositories": ["OWNER/socialpostai-v2"],
-      "aiProcessingConsent": ["OWNER/socialpostai-v2"]
+      "repositories": ["OWNER/socialpostai-v2"]
     },
     {
       "hostname": "github.com",
       "username": "personal-account",
-      "repositories": ["OWNER/personal-project"],
-      "aiProcessingConsent": ["OWNER/personal-project"]
+      "repositories": ["OWNER/personal-project"]
     }
   ],
   "reviewerCommand": "claude -p",

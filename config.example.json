@@ -1,14 +1,11 @@
 {
-  "configVersion": 2,
+  "configVersion": 3,
+  "aiProcessingConsent": null,
   "githubAccounts": [
     {
       "hostname": "github.com",
       "username": "work-account",
       "repositories": [
-        "COMPANY/API",
-        "COMPANY/WEB"
-      ],
-      "aiProcessingConsent": [
         "COMPANY/API",
         "COMPANY/WEB"
       ]
@@ -17,9 +14,6 @@
       "hostname": "github.com",
       "username": "personal-account",
       "repositories": [
-        "OWNER/PROJECT"
-      ],
-      "aiProcessingConsent": [
         "OWNER/PROJECT"
       ]
     }

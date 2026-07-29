@@ -21,32 +21,39 @@ import {
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
 import { parseCommand } from '../lib/reviewer-adapter.mjs';
+import {
+  createAiProcessingConsent,
+  hasAiProcessingConsent,
+} from '../lib/ai-processing-consent.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const validAccounts = [
+  {
+    hostname: 'github.com',
+    username: 'work-user',
+    repositories: ['Company/API', 'Company/web'],
+  },
+  {
+    hostname: 'enterprise.example.com',
+    username: 'personal',
+    repositories: ['owner/repo'],
+  },
+];
 const validConfig = {
-  configVersion: 2,
-  githubAccounts: [
-    {
-      hostname: 'github.com',
-      username: 'work-user',
-      repositories: ['Company/API', 'Company/web'],
-      aiProcessingConsent: ['Company/API', 'Company/web'],
-    },
-    {
-      hostname: 'enterprise.example.com',
-      username: 'personal',
-      repositories: ['owner/repo'],
-      aiProcessingConsent: ['owner/repo'],
-    },
-  ],
+  configVersion: 3,
+  githubAccounts: validAccounts,
+  aiProcessingConsent: createAiProcessingConsent(
+    CODEX_REVIEWER_COMMAND,
+    validAccounts,
+  ),
   reviewerCommand: 'codex exec',
   reviewBatchSize: 5,
   reviewFocusCount: 4,
   stateFile: './state.json',
 };
 
-test('validates and normalizes a version 2 multi-account config', () => {
+test('validates and normalizes a version 3 multi-account config', () => {
   assert.deepEqual(validateConfig(validConfig), {
     ...validConfig,
     githubAccounts: validConfig.githubAccounts,
@@ -205,7 +212,7 @@ test('rejects legacy, global, empty, and duplicate account shapes', () => {
   );
   assert.throws(
     () => validateConfig({ ...validConfig, configVersion: 1 }),
-    /configVersion 2/,
+    /configVersion 3/,
   );
   assert.throws(
     () => validateConfig({ ...validConfig, searchScope: 'global' }),
@@ -289,28 +296,19 @@ test('requires explicit, unique repositories for every account', () => {
   }
 });
 
-test('AI-processing consent is explicit, repository-scoped, and unique', () => {
+test('AI-processing consent is one explicit config-wide scoped record', () => {
   const withoutConsent = validateConfig({
     ...validConfig,
-    githubAccounts: [{
-      hostname: 'github.com',
-      username: 'octocat',
-      repositories: ['owner/repo'],
-    }],
+    aiProcessingConsent: undefined,
   });
-  assert.deepEqual(withoutConsent.githubAccounts[0].aiProcessingConsent, []);
+  assert.equal(withoutConsent.aiProcessingConsent, null);
 
   assert.throws(
     () => validateConfig({
       ...validConfig,
-      githubAccounts: [{
-        hostname: 'github.com',
-        username: 'octocat',
-        repositories: ['owner/repo'],
-        aiProcessingConsent: ['other/repo'],
-      }],
+      aiProcessingConsent: ['owner/repo'],
     }),
-    /consent for unselected repository/,
+    /aiProcessingConsent must be a consent object/,
   );
   assert.throws(
     () => validateConfig({
@@ -319,22 +317,64 @@ test('AI-processing consent is explicit, repository-scoped, and unique', () => {
         hostname: 'github.com',
         username: 'octocat',
         repositories: ['Owner/Repo'],
-        aiProcessingConsent: ['Owner/Repo', 'owner/repo'],
+        aiProcessingConsent: true,
       }],
     }),
-    /duplicate AI-processing consent/,
+    /unsupported field "aiProcessingConsent"/,
   );
+});
+
+test('version 2 repository consent migrates fail closed to version 3', () => {
+  const legacyConfig = {
+    ...validConfig,
+    configVersion: 2,
+    aiProcessingConsent: undefined,
+    githubAccounts: validConfig.githubAccounts.map((account) => ({
+      ...account,
+      aiProcessingConsent: [...account.repositories],
+    })),
+  };
+  const fullyConsented = validateConfig(legacyConfig);
+  assert.equal(fullyConsented.configVersion, 3);
+  assert.equal(hasAiProcessingConsent(fullyConsented), true);
+  assert.equal(
+    Object.hasOwn(fullyConsented.githubAccounts[0], 'aiProcessingConsent'),
+    false,
+  );
+
+  const partiallyConsented = validateConfig({
+    ...legacyConfig,
+    githubAccounts: legacyConfig.githubAccounts.map((account, index) => ({
+      ...account,
+      aiProcessingConsent: index === 0 ? account.repositories.slice(0, 1) : [],
+    })),
+  });
+  assert.equal(partiallyConsented.aiProcessingConsent, null);
+
+  const overbroadLegacyConsent = validateConfig({
+    ...legacyConfig,
+    githubAccounts: legacyConfig.githubAccounts.map((account, index) => ({
+      ...account,
+      aiProcessingConsent: index === 0
+        ? [...account.repositories, 'other/repo']
+        : account.repositories,
+    })),
+  });
+  assert.equal(overbroadLegacyConsent.aiProcessingConsent, null);
+
   assert.throws(
     () => validateConfig({
       ...validConfig,
+      configVersion: 2,
+      aiProcessingConsent: undefined,
       githubAccounts: [{
         hostname: 'github.com',
         username: 'octocat',
         repositories: ['owner/repo'],
-        aiProcessingConsent: true,
+        aiProcessingConsent: ['not/a/valid/repository/path'],
       }],
     }),
-    /aiProcessingConsent must be an array/,
+    /valid OWNER\/REPO/,
   );
 });
 

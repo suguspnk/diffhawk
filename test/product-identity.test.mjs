@@ -41,6 +41,15 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   );
 });
 
+test('the bundled manual config requires init to record bulk consent', async () => {
+  const example = JSON.parse(
+    await readFile(path.join(projectRoot, 'config.example.json'), 'utf8'),
+  );
+
+  assert.equal(example.configVersion, 3);
+  assert.equal(example.aiProcessingConsent, null);
+});
+
 test('GitHub Pages entry point exposes complete search metadata', async () => {
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),

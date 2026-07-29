@@ -1,52 +1,113 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  aiProcessingConsentScope,
+  createAiProcessingConsent,
   hasAiProcessingConsent,
-  repositoriesNeedingAiProcessingConsent,
-  retainedAiProcessingConsent,
-  scopeConsentToReviewerCommand,
+  normalizeAiProcessingConsent,
+  retainAiProcessingConsent,
 } from '../lib/ai-processing-consent.mjs';
 
-const account = {
+const accounts = [{
   hostname: 'github.com',
   username: 'octocat',
   repositories: ['Owner/One', 'Owner/Two'],
-  aiProcessingConsent: ['Owner/One'],
-};
+}];
+const reviewerCommand = 'reviewer --safe';
+const consent = createAiProcessingConsent(reviewerCommand, accounts);
 
-test('consent matching is repository-scoped and case-insensitive', () => {
-  assert.equal(hasAiProcessingConsent(account, 'owner/one'), true);
-  assert.equal(hasAiProcessingConsent(account, 'owner/two'), false);
+test('one scoped consent covers the complete selected configuration', () => {
+  assert.equal(
+    hasAiProcessingConsent({
+      aiProcessingConsent: consent,
+      reviewerCommand,
+      githubAccounts: accounts,
+    }),
+    true,
+  );
+  assert.match(consent.scope, /^sha256:[a-f0-9]{64}$/);
 });
 
-test('repository selection retains only consent for still-selected repositories', () => {
-  assert.deepEqual(
-    retainedAiProcessingConsent(account, ['OWNER/ONE', 'Owner/Three']),
-    ['Owner/One'],
-  );
-});
-
-test('changing the reviewer command invalidates every repository consent', () => {
-  assert.deepEqual(
-    scopeConsentToReviewerCommand([account], 'reviewer-a', 'reviewer-b')[0]
-      .aiProcessingConsent,
-    [],
-  );
-  assert.deepEqual(
-    scopeConsentToReviewerCommand([account], 'reviewer-a', 'reviewer-a')[0]
-      .aiProcessingConsent,
-    ['Owner/One'],
-  );
-  assert.deepEqual(
-    scopeConsentToReviewerCommand([account], undefined, 'reviewer-a')[0]
-      .aiProcessingConsent,
-    [],
+test('consent scope is stable across harmless casing and ordering changes', () => {
+  assert.equal(
+    aiProcessingConsentScope(reviewerCommand, accounts),
+    aiProcessingConsentScope(reviewerCommand, [{
+      hostname: 'GITHUB.COM',
+      username: 'OctoCat',
+      repositories: ['owner/two', 'owner/one'],
+    }]),
   );
 });
 
-test('pending consent entries retain their owning account', () => {
-  assert.deepEqual(
-    repositoriesNeedingAiProcessingConsent([account]),
-    [{ account, repository: 'Owner/Two' }],
+test('reviewer, account, or repository changes invalidate consent', () => {
+  for (const config of [
+    {
+      reviewerCommand: 'different reviewer',
+      githubAccounts: accounts,
+    },
+    {
+      reviewerCommand,
+      githubAccounts: [{ ...accounts[0], username: 'other-user' }],
+    },
+    {
+      reviewerCommand,
+      githubAccounts: [{
+        ...accounts[0],
+        repositories: [...accounts[0].repositories, 'Owner/Three'],
+      }],
+    },
+  ]) {
+    assert.equal(
+      hasAiProcessingConsent({ ...config, aiProcessingConsent: consent }),
+      false,
+    );
+    assert.equal(
+      retainAiProcessingConsent(
+        consent,
+        reviewerCommand,
+        config.reviewerCommand,
+        accounts,
+        config.githubAccounts,
+      ),
+      null,
+    );
+  }
+});
+
+test('malformed scope inputs fail closed', () => {
+  assert.equal(
+    retainAiProcessingConsent(
+      consent,
+      reviewerCommand,
+      reviewerCommand,
+      accounts,
+      [{ hostname: 'github.com', username: 'octocat', repositories: [null] }],
+    ),
+    null,
+  );
+  assert.throws(
+    () => createAiProcessingConsent(reviewerCommand, [{
+      hostname: 'github.com',
+      username: 'octocat',
+      repositories: [null],
+    }]),
+    /scope is invalid/,
+  );
+});
+
+test('consent records are structurally strict', () => {
+  assert.equal(normalizeAiProcessingConsent(undefined), null);
+  assert.deepEqual(normalizeAiProcessingConsent(consent), consent);
+  assert.throws(
+    () => normalizeAiProcessingConsent(true),
+    /must be a consent object/,
+  );
+  assert.throws(
+    () => normalizeAiProcessingConsent({ ...consent, extra: true }),
+    /unsupported field "extra"/,
+  );
+  assert.throws(
+    () => normalizeAiProcessingConsent({ granted: true, scope: 'invalid' }),
+    /sha256 scope/,
   );
 });

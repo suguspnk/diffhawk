@@ -5,9 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { currentUsername, listAccessibleRepos } from '../lib/github.mjs';
 import {
-  repositoriesNeedingAiProcessingConsent,
-  retainedAiProcessingConsent,
-  scopeConsentToReviewerCommand,
+  createAiProcessingConsent,
+  retainAiProcessingConsent,
 } from '../lib/ai-processing-consent.mjs';
 import {
   accountKey,
@@ -33,6 +32,9 @@ import {
   ensureReviewPrompt,
   reviewPromptPathFor,
 } from '../lib/review-prompts.mjs';
+import {
+  validateReviewerCommandContract,
+} from '../lib/reviewer-command-defaults.mjs';
 import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
 import {
   cronPreview, installCron,
@@ -171,10 +173,6 @@ async function main() {
       githubAccounts.push({
         ...account,
         repositories,
-        aiProcessingConsent: retainedAiProcessingConsent(
-          existingByKey.get(selectedKey),
-          repositories,
-        ),
       });
     }
 
@@ -235,33 +233,40 @@ async function main() {
       }
       reviewerCommand = agent.reviewerCommand;
     }
+    reviewerCommand = validateReviewerCommandContract(reviewerCommand);
 
-    // Consent is granted after the user evaluates one specific reviewer
-    // backend. A backend change can change the external processor and its
-    // retention/training terms, so require fresh repository confirmations.
-    githubAccounts = scopeConsentToReviewerCommand(
-      githubAccounts,
+    // Consent covers the complete selected repository set only after the user
+    // evaluates one specific shared reviewer backend. A backend change can
+    // change the external processor and its retention/training terms.
+    let aiProcessingConsent = retainAiProcessingConsent(
+      existingConfig?.aiProcessingConsent,
       existingConfig?.reviewerCommand,
       reviewerCommand,
+      existingConfig?.githubAccounts,
+      githubAccounts,
     );
-    const repositoriesNeedingConsent =
-      repositoriesNeedingAiProcessingConsent(githubAccounts);
-    if (repositoriesNeedingConsent.length > 0) {
+    if (!aiProcessingConsent) {
+      const repositoryCount = githubAccounts.reduce(
+        (total, account) => total + account.repositories.length,
+        0,
+      );
       p.log.warn(
         'The selected reviewer backend may send private source code, pull-request ' +
         'content, and personal data to its provider. Confirm that the repository ' +
         'owner permits this and that provider retention, training, confidentiality, ' +
         'data-residency, and DPA terms are acceptable.',
       );
-      for (const { account, repository } of repositoriesNeedingConsent) {
-        const consent = await p.confirm({
-          message:
-            `Authorize third-party AI processing for ${repository} as ${accountLabel(account)}?`,
-          initialValue: false,
-        });
-        if (p.isCancel(consent) || !consent) exitCancelled();
-        account.aiProcessingConsent.push(repository);
-      }
+      const consent = await p.confirm({
+        message:
+          `Authorize third-party AI processing for all ${repositoryCount} selected ` +
+          `repositories across ${githubAccounts.length} account(s)?`,
+        initialValue: false,
+      });
+      if (p.isCancel(consent) || !consent) exitCancelled();
+      aiProcessingConsent = createAiProcessingConsent(
+        reviewerCommand,
+        githubAccounts,
+      );
     }
 
     const reviewFocusCount = await p.select({
@@ -308,6 +313,7 @@ async function main() {
     const config = validateConfig({
       configVersion: CONFIG_VERSION,
       githubAccounts,
+      aiProcessingConsent,
       reviewerCommand,
       reviewerInputMode: 'stdin',
       reviewBatchSize: isValidReviewBatchSize(existingConfig?.reviewBatchSize)
