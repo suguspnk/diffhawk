@@ -41,26 +41,61 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
 });
 
 test('GitHub Pages entry point exposes complete search metadata', async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+  );
   const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
   const sitemap = await readFile(
     path.join(projectRoot, 'docs/sitemap.xml'),
     'utf8',
   );
+  const canonicalUrl = packageJson.homepage;
+  const metaTags = [...html.matchAll(/<meta\b[^>]*>/g)].map(
+    (match) => match[0],
+  );
+  const metaContent = (attribute, value) => {
+    const tag = metaTags.find(
+      (candidate) => candidate.includes(`${attribute}="${value}"`),
+    );
+    return tag?.match(/\bcontent="([^"]*)"/)?.[1];
+  };
 
   assert.match(
     html,
     /<title>OpenMergeLens — Local AI Code Review for GitHub Pull Requests<\/title>/,
   );
+  assert.equal(
+    html.match(/<link rel="canonical" href="([^"]+)">/)?.[1],
+    canonicalUrl,
+  );
   assert.match(
     html,
-    /<link rel="canonical" href="https:\/\/suguspnk\.github\.io\/openmergelens\/">/,
+    /<h1>OpenMergeLens: AI code reviews on your machine\.<\/h1>/,
   );
-  assert.match(html, /<script type="application\/ld\+json">/);
-  assert.match(html, /"@type": "SoftwareApplication"/);
-  assert.match(
-    sitemap,
-    /<loc>https:\/\/suguspnk\.github\.io\/openmergelens\/<\/loc>/,
+  assert.equal(sitemap.match(/<loc>([^<]+)<\/loc>/)?.[1], canonicalUrl);
+  assert.equal(metaContent('property', 'og:url'), canonicalUrl);
+  assert.ok(metaContent('property', 'og:image'));
+  assert.equal(
+    metaContent('property', 'og:image'),
+    metaContent('name', 'twitter:image'),
   );
+  assert.equal(metaContent('property', 'og:image:width'), '1200');
+  assert.equal(metaContent('property', 'og:image:height'), '600');
+  assert.equal(
+    metaContent('property', 'og:image:alt'),
+    metaContent('name', 'twitter:image:alt'),
+  );
+
+  const structuredDataSource = html.match(
+    /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
+  )?.[1];
+  assert.ok(structuredDataSource, 'structured data script is present');
+
+  const structuredData = JSON.parse(structuredDataSource);
+  const schemaTypes = structuredData['@graph'].map((entry) => entry['@type']);
+  assert.deepEqual(schemaTypes, ['WebSite', 'SoftwareApplication']);
+  assert.equal(structuredData['@graph'][0].url, canonicalUrl);
+  assert.equal(structuredData['@graph'][1].url, canonicalUrl);
 });
 
 test('relative links in the installed README target packaged files', async () => {
