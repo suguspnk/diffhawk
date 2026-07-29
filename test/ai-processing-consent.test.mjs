@@ -74,4 +74,14 @@ test('reviewer or selected-repository changes invalidate config-wide consent', (
     ),
     false,
   );
+  assert.equal(
+    retainAiProcessingConsent(
+      true,
+      'reviewer-a',
+      'reviewer-a',
+      accounts,
+      [{ hostname: 'github.com', username: 'octocat', repositories: [null] }],
+    ),
+    false,
+  );
 });
