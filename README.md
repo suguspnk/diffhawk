@@ -1,15 +1,15 @@
 # OpenMergeLens
 
-**Local, agent-agnostic AI code reviews for GitHub pull requests.**
+**A local CLI that automates AI code reviews for GitHub pull requests using
+Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.**
 
 OpenMergeLens runs on your own machine on a schedule (cron / launchd / Windows
 Task Scheduler) — no GitHub App, webhook, or server. It uses `gh` to find PRs
-where you're the requested reviewer and a reviewer CLI of your choice (Claude
-Code, Codex, or any other command) to generate an inline, severity-tagged
-GitHub review.
+where you're the requested reviewer and a compatible reviewer CLI (Codex,
+Claude Code, or a custom MCP-enabled command) to generate an inline,
+severity-tagged GitHub review.
 
-OpenMergeLens is pre-1.0 software. Start with a dry run, review its output, and
-only then enable posting.
+Start with a dry run, review its output, and only then enable posting.
 
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.

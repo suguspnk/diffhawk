@@ -18,6 +18,10 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   );
 
   assert.equal(packageJson.name, 'openmergelens');
+  assert.equal(
+    packageJson.description,
+    'A local CLI that automates AI code reviews for GitHub pull requests using Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.',
+  );
   assert.deepEqual(packageJson.bin, {
     openmergelens: 'bin/openmergelens.mjs',
   });

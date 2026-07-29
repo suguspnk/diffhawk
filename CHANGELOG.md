@@ -6,8 +6,8 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0] - 2026-07-28
 
-Initial stable release of local, scheduled, agent-agnostic GitHub pull-request
-reviews.
+Initial stable release of local, scheduled GitHub pull-request reviews using
+Codex, Claude Code, or a compatible MCP-enabled reviewer CLI.
 
 - Added cross-platform CI and installed-package smoke testing.
 - Added staged npm publishing with trusted-publisher provenance.
