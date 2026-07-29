@@ -296,7 +296,7 @@ test('requires explicit, unique repositories for every account', () => {
   }
 });
 
-test('AI-processing consent is one explicit config-wide boolean', () => {
+test('AI-processing consent is one explicit config-wide scoped record', () => {
   const withoutConsent = validateConfig({
     ...validConfig,
     aiProcessingConsent: undefined,
