@@ -2,9 +2,8 @@
 
 ## Supported versions
 
-OpenMergeLens is pre-1.0 software. Security fixes are provided for the latest
-published version only. Upgrade before reporting a problem that is already
-fixed in a newer release.
+Security fixes are provided for the latest published version only. Upgrade
+before reporting a problem that is already fixed in a newer release.
 
 ## Reporting a vulnerability
 

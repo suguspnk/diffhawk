@@ -5,6 +5,7 @@ state.json
 state.json.lock
 config.json
 poll.log
+docs/LAUNCH.md
 
 # Logs
 logs

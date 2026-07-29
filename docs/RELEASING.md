@@ -66,3 +66,19 @@ stable release only:
 
 If any check fails, do not move a tag or reuse a published version. Fix the
 problem and release a new version. npm publication is immutable.
+
+## After every release
+
+1. Confirm the registry version, distribution tags, and installed CLI:
+
+   ```bash
+   npm view openmergelens version dist-tags
+   npx openmergelens@<version> --version
+   ```
+
+2. Confirm the published version includes provenance on its npm package page.
+3. Test the complete clean-user path from outside the repository: global
+   install, `init`, a dry run, and—against a disposable pull request—a real
+   review.
+4. Record early-user onboarding and review-quality outcomes. Prioritize
+   repeated failures before adding speculative features.
