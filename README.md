@@ -243,9 +243,13 @@ turn Focus off when testing delivery.
 macOS 12 and earlier retain the smaller legacy `terminal-notifier` helper. Both
 helpers support Intel and Apple Silicon without relying on background
 AppleScript or Rosetta. Windows uses PowerShell toasts, and Linux uses
-`notify-send`. A logged-in graphical desktop session is required; headless and
-logged-out scheduler sessions cannot display a toast. Linux systems must
-provide `notify-send`.
+`notify-send` with critical urgency to request alerts that stay visible until
+the user dismisses them. A logged-in graphical desktop session is required;
+headless and logged-out scheduler sessions cannot display a toast. On Linux,
+scheduled polls reuse the setup-time notification session variables when they
+are available, and skip notification delivery without logging a warning when no
+graphical notification session is available. Linux systems must provide
+`notify-send`.
 
 Set `"desktopNotifications": false` in the config to opt out. For temporary or
 headless execution, `OPENMERGELENS_DESKTOP_NOTIFICATIONS=0` also suppresses
@@ -276,10 +280,12 @@ it up manually:
 
 The wizard only offers schedulers supported by the current operating system.
 Installed schedules use an environment file under `~/.openmergelens/` to retain
-the `PATH` validated during setup and any `OPENMERGELENS_HOME` override. This
-keeps `gh` and the selected reviewer CLI discoverable under the restricted
-environments used by cron, launchd, and Task Scheduler. The file contains
-paths only, never GitHub or reviewer credentials.
+the `PATH` validated during setup, any `OPENMERGELENS_HOME` override, and the
+Linux desktop notification session variables needed by `notify-send` when they
+are present. This keeps `gh`, the selected reviewer CLI, and desktop
+notifications discoverable under the restricted environments used by cron,
+launchd, and Task Scheduler. The file contains paths and local session
+addresses only, never GitHub or reviewer credentials.
 
 ## Privacy, security, and cost
 

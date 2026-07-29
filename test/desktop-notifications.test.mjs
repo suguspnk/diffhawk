@@ -369,19 +369,26 @@ test('macOS delivery hard-kills a notifier that never confirms delivery', async 
   assert.equal(receivedSignal, 'SIGKILL');
 });
 
-test('Linux delivery requests urgency and sound through notify-send', async () => {
-  let invocation;
+test('Linux delivery requests persistent urgency and context-specific sound', async () => {
+  const invocations = [];
   const execFileImpl = (command, args, options, callback) => {
-    invocation = { command, args, options };
+    invocations.push({ command, args, options });
     callback(null);
   };
+  await deliverDesktopNotification(
+    { title: 'Reviewed', message: 'Complete', attention: false },
+    { platform: 'linux', execFileImpl },
+  );
   await deliverDesktopNotification(
     { title: 'Attention', message: 'Failed', attention: true },
     { platform: 'linux', execFileImpl },
   );
-  assert.equal(invocation.command, 'notify-send');
-  assert.ok(invocation.args.includes('--urgency=critical'));
-  assert.ok(invocation.args.includes('--hint=string:sound-name:dialog-error'));
+  assert.equal(invocations[0].command, 'notify-send');
+  assert.ok(invocations[0].args.includes('--urgency=critical'));
+  assert.ok(invocations[0].args.includes('--hint=string:sound-name:message-new-instant'));
+  assert.equal(invocations[1].command, 'notify-send');
+  assert.ok(invocations[1].args.includes('--urgency=critical'));
+  assert.ok(invocations[1].args.includes('--hint=string:sound-name:dialog-error'));
 });
 
 test('Windows delivery encodes notification data instead of interpolating PowerShell', async () => {
@@ -471,6 +478,29 @@ test('notification delivery failures are logged and isolated from the caller', a
     'notification',
     'desktop notification failed: desktop unavailable',
   ]]);
+});
+
+test('Linux polls skip desktop notification outside a graphical session', async () => {
+  let called = false;
+  const logged = [];
+  const delivered = await attemptDesktopNotification(
+    { title: 'Title', message: 'Message' },
+    {
+      config: { desktopNotifications: true },
+      environment: { PATH: '/usr/bin' },
+      platform: 'linux',
+      deliver: async () => {
+        called = true;
+      },
+      logFailure: async (...args) => {
+        logged.push(args);
+      },
+    },
+  );
+
+  assert.equal(delivered, false);
+  assert.equal(called, false);
+  assert.deepEqual(logged, []);
 });
 
 test('disabled notifications do not invoke delivery', async () => {

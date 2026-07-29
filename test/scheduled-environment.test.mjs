@@ -14,13 +14,17 @@ import {
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('scheduled environment restores only PATH and OPENMERGELENS_HOME', async (t) => {
+test('scheduled environment restores the poll and Linux notification session keys', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-env-'));
   const filePath = path.join(directory, 'scheduler-environment.json');
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(filePath, JSON.stringify({
     PATH: '/custom/bin',
     OPENMERGELENS_HOME: '/custom/state',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    DISPLAY: ':0',
+    WAYLAND_DISPLAY: 'wayland-0',
+    XDG_RUNTIME_DIR: '/run/user/1000',
   }));
 
   const target = { UNRELATED: 'preserved' };
@@ -29,6 +33,10 @@ test('scheduled environment restores only PATH and OPENMERGELENS_HOME', async (t
   assert.deepEqual(target, {
     PATH: '/custom/bin',
     OPENMERGELENS_HOME: '/custom/state',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    DISPLAY: ':0',
+    WAYLAND_DISPLAY: 'wayland-0',
+    XDG_RUNTIME_DIR: '/run/user/1000',
     UNRELATED: 'preserved',
   });
 });
