@@ -226,7 +226,7 @@ test('launchdPreview escapes XML and persists the scheduled environment', () => 
   );
 });
 
-test('schtasksPreview uses the environment-restoring runner and quotes Windows paths', () => {
+test('schtasksPreview uses a hidden Windows launcher and quotes paths', () => {
   const preview = schtasksPreview({
     pollScriptPath: 'C:\\Program Files\\openmergelens\\bin\\poll.mjs',
     intervalMinutes: 15,
@@ -241,6 +241,8 @@ test('schtasksPreview uses the environment-restoring runner and quotes Windows p
 
   assert.equal(
     preview.args.at(-1),
+    '"wscript.exe" //B //Nologo ' +
+    '"C:\\Program Files\\openmergelens\\bin\\scheduled-win32.vbs" ' +
     '"C:\\Program Files\\nodejs\\node.exe" ' +
     '"C:\\Program Files\\openmergelens\\bin\\scheduled.mjs" ' +
     '"C:\\Users\\Test User\\.openmergelens\\scheduler-environment.json"',

@@ -242,13 +242,15 @@ turn Focus off when testing delivery.
 
 macOS 12 and earlier retain the smaller legacy `terminal-notifier` helper. Both
 helpers support Intel and Apple Silicon without relying on background
-AppleScript or Rosetta. Windows uses PowerShell toasts, and Linux uses
-`notify-send` with critical urgency to request alerts that stay visible until
-the user dismisses them. A logged-in graphical desktop session is required;
-headless and logged-out scheduler sessions cannot display a toast. On Linux,
-scheduled polls reuse the setup-time notification session variables when they
-are available, and skip notification delivery without logging a warning when no
-graphical notification session is available. Linux systems must provide
+AppleScript or Rosetta. Windows uses PowerShell toasts registered under
+OpenMergeLens and sends them as reminder notifications, so they stay visible
+until dismissed manually when Windows notification settings allow them. Linux
+uses `notify-send` with critical urgency to request alerts that stay visible
+until the user dismisses them. A logged-in graphical desktop session is
+required; headless and logged-out scheduler sessions cannot display a toast. On
+Linux, scheduled polls reuse the setup-time notification session variables when
+they are available, and skip notification delivery without logging a warning
+when no graphical notification session is available. Linux systems must provide
 `notify-send`.
 
 Set `"desktopNotifications": false` in the config to opt out. For temporary or
@@ -276,7 +278,9 @@ it up manually:
   `~/Library/LaunchAgents/io.github.suguspnk.openmergelens.poll.plist` and loads it with
   `launchctl load`.
 - **Windows Task Scheduler**: the wizard runs
-  `schtasks /create /sc minute /mo <N> /tn openmergelens-poll /tr "node ...\bin\scheduled.mjs ...\scheduler-environment.json"`.
+  `schtasks /create /sc minute /mo <N> /tn openmergelens-poll /tr "wscript.exe //B //Nologo ...\bin\scheduled-win32.vbs node ...\bin\scheduled.mjs ...\scheduler-environment.json"`.
+  The `wscript.exe` launcher keeps scheduled Windows polls hidden instead of
+  flashing a console window while Node runs.
 
 The wizard only offers schedulers supported by the current operating system.
 Installed schedules use an environment file under `~/.openmergelens/` to retain
