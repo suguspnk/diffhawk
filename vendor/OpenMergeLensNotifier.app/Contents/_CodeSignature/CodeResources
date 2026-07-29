@@ -3,9 +3,22 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict/>
+	<dict>
+		<key>Resources/OpenMergeLens.icns</key>
+		<data>
+		ng/nk8Fo5TfUrZdHTSvEuZ9Psx0=
+		</data>
+	</dict>
 	<key>files2</key>
-	<dict/>
+	<dict>
+		<key>Resources/OpenMergeLens.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			LPMYSaPSCcvNkpvfngaAuM/o6y8AXTlcGzxlSLkbo2s=
+			</data>
+		</dict>
+	</dict>
 	<key>rules</key>
 	<dict>
 		<key>^Resources/</key>

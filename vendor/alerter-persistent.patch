@@ -14,16 +14,14 @@ index 11b4bdb..b3e423b 100644
      @Option(help: "URL or path of an image to use as app icon.")
      var appIcon: String?
 diff --git a/Sources/Alerter/Info.plist b/Sources/Alerter/Info.plist
-index fe8144d..8c2f5c7 100644
+index fe8144d..bb0b2db 100644
 --- a/Sources/Alerter/Info.plist
 +++ b/Sources/Alerter/Info.plist
-@@ -3,9 +3,21 @@
+@@ -3,9 +3,23 @@
  <plist version="1.0">
  <dict>
  	<key>CFBundleIdentifier</key>
 -	<string>fr.vjeantet.alerter</string>
--	<key>CFBundleIconFile</key>
--	<string>AppIcon</string>
 +	<string>io.github.suguspnk.openmergelens.notifier</string>
 +	<key>CFBundleName</key>
 +	<string>OpenMergeLens</string>
@@ -37,6 +35,9 @@ index fe8144d..8c2f5c7 100644
 +	<string>1.0</string>
 +	<key>CFBundleVersion</key>
 +	<string>1</string>
+ 	<key>CFBundleIconFile</key>
+-	<string>AppIcon</string>
++	<string>OpenMergeLens</string>
 +	<key>LSUIElement</key>
 +	<true/>
  	<key>NSUserNotificationAlertStyle</key>

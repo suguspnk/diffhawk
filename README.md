@@ -207,11 +207,12 @@ bounded, failures are logged to `~/.openmergelens/poll.log`, and notification
 delivery never changes a review or state outcome. On macOS 13 and later,
 OpenMergeLens includes a universal build of the maintained `alerter` project
 inside a dedicated OpenMergeLens application bundle, so review text is
-attributed to OpenMergeLens rather than another trusted application. These
-notifications have no automatic timeout; they remain in Notification Center
-until dismissed, and a newer OpenMergeLens alert replaces the previous one.
-Select **Alerts** rather than **Banners** in OpenMergeLens's macOS notification
-settings to keep the alert visible on screen until you close it.
+attributed to OpenMergeLens rather than another trusted application and uses
+the same official mark as the project website. These notifications have no
+automatic timeout; they remain in Notification Center until dismissed, and a
+newer OpenMergeLens alert replaces the previous one. Select **Alerts** rather
+than **Banners** in OpenMergeLens's macOS notification settings to keep the
+alert visible on screen until you close it.
 macOS 12 and earlier retain the smaller legacy `terminal-notifier` helper. Both
 helpers support Intel and Apple Silicon without relying on background
 AppleScript or Rosetta. Windows uses PowerShell toasts, and Linux uses

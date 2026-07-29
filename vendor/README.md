@@ -17,9 +17,13 @@
 - Minimum macOS deployment target: 13.0
 - Application bundle identifier:
   `io.github.suguspnk.openmergelens.notifier`
+- Official mark source (`docs/openmergelens-mark.svg`) SHA-256:
+  `f8ee81382daf5b506396c7a0e557a24f3fdb278f7ad7ace272bf8eec73b06221`
+- Generated `OpenMergeLens.icns` SHA-256:
+  `2cf31849a3d209cbcd929bdf9e0680b8cfe8eb2f005d395c1b3c6548b91ba36b`
 - Bundled executable SHA-256 after stripping, UUID normalization, and ad-hoc
   bundle signing:
-  `b5b4be0f8df6155e40547d485d216e03bdab08eff0400600e5cb73888e66e0a7`
+  `2f8fe06c96236359357838e1d57ff9ccbb6b8b0ad6817cb8c17953f5dff99602`
 - License: `alerter-LICENSE.md`
 
 The official upstream ZIP is arm64-only, so OpenMergeLens reproducibly builds
@@ -30,7 +34,8 @@ through Apple's supported UserNotifications framework. The helper exits after
 macOS accepts the request without removing the delivered notification; this
 lets Notification Center retain it while the poll process exits. Swift
 deterministic hashing stabilizes compiler ordering, and the normalization step
-zeros per-link Mach-O UUID fields before ad-hoc signing.
+zeros per-link Mach-O UUID fields before ad-hoc signing. The notifier icon is
+generated directly from the website's SVG mark with macOS system tools.
 
 The executable was built with Xcode 26.3 and Swift 6.1:
 
@@ -48,9 +53,29 @@ env SWIFT_DETERMINISTIC_HASHING=1 swift build \
   --package-path "$alerter_source_dir" \
   -c release --arch arm64 --arch x86_64
 notifier_bundle="$openmergelens_root/vendor/OpenMergeLensNotifier.app"
-mkdir -p "$notifier_bundle/Contents/MacOS"
+mkdir -p "$notifier_bundle/Contents/MacOS" \
+  "$notifier_bundle/Contents/Resources"
 cp "$alerter_source_dir/Sources/Alerter/Info.plist" \
   "$notifier_bundle/Contents/Info.plist"
+icon_work_dir=$(mktemp -d /tmp/openmergelens-icon.XXXXXX)
+qlmanage -t -s 1024 -o "$icon_work_dir" \
+  "$openmergelens_root/docs/openmergelens-mark.svg"
+icon_png="$icon_work_dir/openmergelens-mark.svg.png"
+for icon_size in 16 32 48 128 256 512 1024; do
+  sips -s format tiff -z "$icon_size" "$icon_size" "$icon_png" \
+    --out "$icon_work_dir/icon-$icon_size.tiff"
+done
+tiffutil -cat \
+  "$icon_work_dir/icon-16.tiff" \
+  "$icon_work_dir/icon-32.tiff" \
+  "$icon_work_dir/icon-48.tiff" \
+  "$icon_work_dir/icon-128.tiff" \
+  "$icon_work_dir/icon-256.tiff" \
+  "$icon_work_dir/icon-512.tiff" \
+  "$icon_work_dir/icon-1024.tiff" \
+  -out "$icon_work_dir/OpenMergeLens.tiff"
+tiff2icns "$icon_work_dir/OpenMergeLens.tiff" \
+  "$notifier_bundle/Contents/Resources/OpenMergeLens.icns"
 cp "$alerter_source_dir/.build/apple/Products/Release/alerter" \
   "$notifier_bundle/Contents/MacOS/alerter"
 strip -x "$notifier_bundle/Contents/MacOS/alerter"
