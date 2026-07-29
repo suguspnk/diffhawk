@@ -4,9 +4,13 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-29
+
 - Fixed non-interactive Codex reviews cancelling the constrained GitHub
   inspection tool, and rejected reviewer output unless required PR metadata and
   cumulative diff reads complete successfully.
+- Pointed published package metadata at the canonical OpenMergeLens product
+  site.
 
 ## [1.0.0] - 2026-07-28
 
