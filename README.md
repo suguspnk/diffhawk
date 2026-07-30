@@ -284,9 +284,10 @@ it up manually:
 
 The wizard only offers schedulers supported by the current operating system.
 Installed schedules use an environment file under `~/.openmergelens/` to retain
-the `PATH` validated during setup, any `OPENMERGELENS_HOME` override, and the
-Linux desktop notification session variables needed by `notify-send` when they
-are present. This keeps `gh`, the selected reviewer CLI, and desktop
+the `PATH` validated during setup, the user home / `CODEX_HOME` used by Codex,
+any `OPENMERGELENS_HOME` override, and the Linux desktop notification session
+variables needed by `notify-send` when they are present. This keeps `gh`,
+the selected reviewer CLI, and desktop
 notifications discoverable under the restricted environments used by cron,
 launchd, and Task Scheduler. The file contains paths and local session
 addresses only, never GitHub or reviewer credentials.

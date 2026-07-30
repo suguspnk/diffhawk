@@ -48,6 +48,35 @@ test('resolveExecutable prefers Windows PATHEXT matches over extensionless shims
   );
 });
 
+test('resolveExecutable avoids WindowsApps aliases when a later npm cmd shim exists', async () => {
+  const existing = new Set([
+    'C:\\Users\\J\\AppData\\Roaming\\npm\\codex.cmd',
+  ]);
+
+  assert.equal(
+    await resolveExecutable('codex', {
+      platform: 'win32',
+      environment: {
+        PATH:
+          'C:\\Users\\J\\AppData\\Local\\Microsoft\\WindowsApps;' +
+          'C:\\Users\\J\\AppData\\Roaming\\npm',
+        PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      },
+      lookup: async () => ({
+        stdout:
+          'C:\\Program Files\\WindowsApps\\OpenAI.Codex\\codex\r\n' +
+          'C:\\Program Files\\WindowsApps\\OpenAI.Codex\\codex.exe\r\n',
+      }),
+      access: async (candidate) => {
+        if (!existing.has(candidate)) {
+          throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        }
+      },
+    }),
+    'C:\\Users\\J\\AppData\\Roaming\\npm\\codex.cmd',
+  );
+});
+
 test('resolveExecutable reads Windows environment keys case-insensitively', async () => {
   const lookup = async () => ({
     stdout:
@@ -83,6 +112,9 @@ test('resolveExecutable rejects unsupported Windows lookup results', async () =>
         PATHEXT: '.COM;.EXE;.BAT;.CMD',
       },
       lookup,
+      access: async () => {
+        throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      },
     }),
     { code: 'ENOENT' },
   );

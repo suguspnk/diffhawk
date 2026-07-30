@@ -263,7 +263,12 @@ test('installLaunchd writes the environment file and uses an injectable launchct
   await installLaunchd({
     pollScriptPath: path.join(directory, 'bin', 'poll.mjs'),
     intervalMinutes: 15,
-    environment: { PATH: '/custom/bin', OPENMERGELENS_HOME: stateHome },
+    environment: {
+      PATH: '/custom/bin',
+      HOME: homeDirectory,
+      CODEX_HOME: path.join(homeDirectory, '.codex'),
+      OPENMERGELENS_HOME: stateHome,
+    },
     homeDirectory,
     platform: 'darwin',
     launchctlCommand: 'launchctl',
@@ -274,7 +279,12 @@ test('installLaunchd writes the environment file and uses an injectable launchct
 
   assert.deepEqual(
     JSON.parse(await readFile(path.join(stateHome, 'scheduler-environment.json'), 'utf8')),
-    { PATH: '/custom/bin', OPENMERGELENS_HOME: stateHome },
+    {
+      PATH: '/custom/bin',
+      HOME: homeDirectory,
+      CODEX_HOME: path.join(homeDirectory, '.codex'),
+      OPENMERGELENS_HOME: stateHome,
+    },
   );
   if (process.platform !== 'win32') {
     assert.equal(
@@ -297,7 +307,11 @@ test('installSchtasks writes the environment file and invokes Task Scheduler', a
   await installSchtasks({
     pollScriptPath: 'C:\\Program Files\\openmergelens\\bin\\poll.mjs',
     intervalMinutes: 15,
-    environment: { PATH: 'C:\\Tools', OPENMERGELENS_HOME: stateHome },
+    environment: {
+      PATH: 'C:\\Tools',
+      USERPROFILE: 'C:\\Users\\Test',
+      OPENMERGELENS_HOME: stateHome,
+    },
     homeDirectory: 'C:\\Users\\Test',
     nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
     platform: 'win32',
@@ -310,7 +324,11 @@ test('installSchtasks writes the environment file and invokes Task Scheduler', a
 
   assert.deepEqual(
     JSON.parse(await readFile(path.join(stateHome, 'scheduler-environment.json'), 'utf8')),
-    { PATH: 'C:\\Tools', OPENMERGELENS_HOME: stateHome },
+    {
+      PATH: 'C:\\Tools',
+      USERPROFILE: 'C:\\Users\\Test',
+      OPENMERGELENS_HOME: stateHome,
+    },
   );
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], 'schtasks');
