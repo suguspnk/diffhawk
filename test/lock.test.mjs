@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -223,6 +223,71 @@ test('acquisition and release leave no filesystem artifacts', async () => {
   assert.fail('could not find an unoccupied lock namespace');
 });
 
+test('marker write failures release the reserved listener', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = path.join(
+      tmpdir(),
+      `openmergelens-missing-parent-${process.pid}-${randomUUID()}`,
+      'operation.lock',
+    );
+    try {
+      await assert.rejects(acquireLock(key), /ENOENT/);
+    } catch (err) {
+      if (err.code === 'ELOCKAMBIGUOUS') continue;
+      throw err;
+    }
+
+    const server = createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen({
+          host: '127.0.0.1',
+          port: lockPortFor(key),
+          exclusive: true,
+        }, resolve);
+      });
+      await new Promise((resolve) => server.close(resolve));
+      return;
+    } catch {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  assert.fail('could not find an unoccupied marker-failure namespace');
+});
+
+test('stale owner markers do not block acquisition', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`stale-marker-${attempt}`);
+    const ports = lockCandidatePortsFor(key);
+    const markerPath = `${key}.owner.json`;
+    await mkdir(path.dirname(markerPath), { recursive: true });
+    await writeFile(
+      markerPath,
+      JSON.stringify({
+        version: 1,
+        identity: '0'.repeat(64),
+        rank: 0,
+        port: ports[0],
+        pid: -1,
+        nonce: randomUUID(),
+      }),
+    );
+
+    try {
+      const release = await acquireLock(key);
+      assert.ok(release);
+      await release();
+      return;
+    } catch (err) {
+      if (err.code !== 'ELOCKAMBIGUOUS') throw err;
+    }
+  }
+
+  assert.fail('could not find an unoccupied stale-marker namespace');
+});
+
 test('release destroys accepted probing sockets before closing', async (t) => {
   let key;
   let release;
@@ -382,6 +447,79 @@ test('a silent connected service on a later candidate is skipped safely', async 
   }
 
   assert.fail('could not find a later silent candidate to skip');
+});
+
+test('a blocked same-key fallback owner still prevents overlap', async (t) => {
+  const moduleUrl = new URL('../lib/lock.mjs', import.meta.url).href;
+
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`blocked-fallback-owner-${attempt}`);
+    const ports = lockCandidatePortsFor(key);
+    const blocker = createServer((socket) => socket.end('not-openmergelens\n'));
+    try {
+      await new Promise((resolve, reject) => {
+        blocker.once('error', reject);
+        blocker.listen({
+          host: '127.0.0.1',
+          port: ports[0],
+          exclusive: true,
+        }, resolve);
+      });
+    } catch {
+      await new Promise((resolve) => blocker.close(resolve));
+      continue;
+    }
+
+    const child = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        `
+          import { acquireLock } from ${JSON.stringify(moduleUrl)};
+          const release = await acquireLock(${JSON.stringify(key)}, {
+            probeTimeoutMs: 20,
+          });
+          if (!release) process.exit(2);
+          process.stdout.write('ready\\n');
+          const end = Date.now() + 10_000;
+          while (Date.now() < end) {}
+          await release();
+        `,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
+    );
+    t.after(() => {
+      if (child.exitCode === null) child.kill();
+    });
+
+    try {
+      const ready = await new Promise((resolve, reject) => {
+        let stdout = '';
+        child.once('error', reject);
+        child.stdout.on('data', (chunk) => {
+          stdout += chunk.toString('utf8');
+          if (stdout.includes('ready\n')) resolve(true);
+        });
+        child.once('exit', (code) => resolve({ exited: code }));
+      });
+      if (ready !== true) continue;
+
+      await new Promise((resolve) => blocker.close(resolve));
+      assert.equal(
+        await acquireLock(key, { probeTimeoutMs: 20 }),
+        null,
+        'a blocked fallback owner must remain discoverable',
+      );
+      child.kill();
+      return;
+    } finally {
+      if (child.exitCode === null) child.kill();
+      await new Promise((resolve) => blocker.close(resolve));
+    }
+  }
+
+  assert.fail('could not create a blocked fallback-owner scenario');
 });
 
 test('contention behind an unrelated first-port service still has one winner', async () => {
