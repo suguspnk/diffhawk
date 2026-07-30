@@ -9,6 +9,7 @@ import path from 'node:path';
 import {
   acquireLock,
   compareLockOwners,
+  lockCandidatePortsFor,
   lockPortFor,
 } from '../lib/lock.mjs';
 
@@ -338,6 +339,49 @@ test('a silent connected service is treated as ambiguous', async (t) => {
     acquireLock(key, { probeTimeoutMs: 20 }),
     /unable to identify a silent listener/,
   );
+});
+
+test('a silent connected service on a later candidate is skipped safely', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`later-silent-service-${attempt}`);
+    const ports = lockCandidatePortsFor(key);
+    let server;
+    let listening = false;
+
+    for (const port of ports.slice(1)) {
+      server = createServer(() => {});
+      try {
+        await new Promise((resolve, reject) => {
+          server.once('error', reject);
+          server.listen({
+            host: '127.0.0.1',
+            port,
+            exclusive: true,
+          }, resolve);
+        });
+        listening = true;
+        break;
+      } catch {
+        await new Promise((resolve) => server.close(resolve));
+        server = undefined;
+      }
+    }
+
+    if (!listening) continue;
+
+    try {
+      const release = await acquireLock(key, { probeTimeoutMs: 20 });
+      assert.ok(release);
+      await release();
+      return;
+    } catch (err) {
+      if (err.code !== 'ELOCKAMBIGUOUS') throw err;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  assert.fail('could not find a later silent candidate to skip');
 });
 
 test('contention behind an unrelated first-port service still has one winner', async () => {
