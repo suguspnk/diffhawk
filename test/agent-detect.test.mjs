@@ -77,6 +77,31 @@ test('detectAgents gives Codex the default user CODEX_HOME when none is configur
   );
 });
 
+test('detectAgents gives Claude the default user config dir when none is configured', async () => {
+  const executions = [];
+  const agents = await detectAgents({
+    platform: 'linux',
+    environment: {
+      PATH: '/usr/local/bin',
+      HOME: '/home/sandbox',
+    },
+    homeDirectory: '/home/reviewer',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (...args) => {
+      executions.push(args);
+      return {
+        stdout: '--setting-sources --tools dontAsk',
+      };
+    },
+  });
+
+  assert.equal(agents.find((agent) => agent.id === 'claude').status, 'ready');
+  assert.equal(
+    executions[1][2].env.CLAUDE_CONFIG_DIR,
+    '/home/reviewer/.claude',
+  );
+});
+
 test('detectAgents distinguishes missing and failed agent checks', async () => {
   const agents = await detectAgents({
     platform: 'linux',

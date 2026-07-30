@@ -267,6 +267,7 @@ test('installLaunchd writes the environment file and uses an injectable launchct
       PATH: '/custom/bin',
       HOME: homeDirectory,
       CODEX_HOME: path.join(homeDirectory, '.codex'),
+      CLAUDE_CONFIG_DIR: path.join(homeDirectory, '.claude'),
       OPENMERGELENS_HOME: stateHome,
     },
     homeDirectory,
@@ -283,6 +284,7 @@ test('installLaunchd writes the environment file and uses an injectable launchct
       PATH: '/custom/bin',
       HOME: homeDirectory,
       CODEX_HOME: path.join(homeDirectory, '.codex'),
+      CLAUDE_CONFIG_DIR: path.join(homeDirectory, '.claude'),
       OPENMERGELENS_HOME: stateHome,
     },
   );

@@ -38,3 +38,37 @@ test('buildReviewerEnvironment uses the OS account home when HOME is sandboxed o
   assert.equal(environment.HOME, '/home/codex-sandbox-offline');
   assert.equal(environment.CODEX_HOME, '/home/j/.codex');
 });
+
+test('buildReviewerEnvironment sets Claude config dir from the OS account home', () => {
+  const environment = buildReviewerEnvironment(
+    'claude',
+    {
+      PATH: '/usr/local/bin',
+      HOME: '/home/claude-sandbox-offline',
+    },
+    {
+      homeDirectory: '/home/reviewer',
+    },
+  );
+
+  assert.equal(environment.HOME, '/home/claude-sandbox-offline');
+  assert.equal(environment.CLAUDE_CONFIG_DIR, '/home/reviewer/.claude');
+  assert.equal(environment.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+  assert.equal(environment.CLAUDE_CODE_SAFE_MODE, '1');
+});
+
+test('buildReviewerEnvironment preserves an explicit Claude config dir', () => {
+  const environment = buildReviewerEnvironment(
+    'claude',
+    {
+      PATH: '/usr/local/bin',
+      HOME: '/home/reviewer',
+      CLAUDE_CONFIG_DIR: '/tmp/claude-work',
+    },
+    {
+      homeDirectory: '/home/other',
+    },
+  );
+
+  assert.equal(environment.CLAUDE_CONFIG_DIR, '/tmp/claude-work');
+});
