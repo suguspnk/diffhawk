@@ -20,6 +20,9 @@ test('scheduled environment restores the poll and Linux notification session key
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(filePath, JSON.stringify({
     PATH: '/custom/bin',
+    HOME: '/home/reviewer',
+    CODEX_HOME: '/home/reviewer/.codex',
+    CLAUDE_CONFIG_DIR: '/home/reviewer/.claude',
     OPENMERGELENS_HOME: '/custom/state',
     DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
     DISPLAY: ':0',
@@ -32,6 +35,9 @@ test('scheduled environment restores the poll and Linux notification session key
 
   assert.deepEqual(target, {
     PATH: '/custom/bin',
+    HOME: '/home/reviewer',
+    CODEX_HOME: '/home/reviewer/.codex',
+    CLAUDE_CONFIG_DIR: '/home/reviewer/.claude',
     OPENMERGELENS_HOME: '/custom/state',
     DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
     DISPLAY: ':0',

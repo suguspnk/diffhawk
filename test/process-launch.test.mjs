@@ -10,6 +10,7 @@ import { EventEmitter } from 'node:events';
 
 test('resolveExecutable uses the platform lookup and first concrete result', async () => {
   const calls = [];
+  let accessCalled = false;
   const lookup = async (...args) => {
     calls.push(args);
     return { stdout: 'C:\\Tools\\codex.cmd\r\nC:\\Tools\\codex.exe\r\n' };
@@ -20,10 +21,14 @@ test('resolveExecutable uses the platform lookup and first concrete result', asy
       platform: 'win32',
       environment: { PATH: 'C:\\Tools' },
       lookup,
+      access: async () => {
+        accessCalled = true;
+      },
     }),
     'C:\\Tools\\codex.cmd',
   );
   assert.deepEqual(calls[0].slice(0, 2), ['where.exe', ['codex']]);
+  assert.equal(accessCalled, false);
 });
 
 test('resolveExecutable prefers Windows PATHEXT matches over extensionless shims', async () => {
@@ -46,6 +51,67 @@ test('resolveExecutable prefers Windows PATHEXT matches over extensionless shims
     }),
     'C:\\Users\\J\\AppData\\Roaming\\npm\\codex.cmd',
   );
+});
+
+test('resolveExecutable avoids WindowsApps aliases when a later npm cmd shim exists', async () => {
+  const existing = new Set([
+    'C:\\Users\\J\\AppData\\Roaming\\npm\\codex.cmd',
+  ]);
+
+  assert.equal(
+    await resolveExecutable('codex', {
+      platform: 'win32',
+      environment: {
+        PATH:
+          'C:\\Users\\J\\AppData\\Local\\Microsoft\\WindowsApps;' +
+          'C:\\Users\\J\\AppData\\Roaming\\npm',
+        PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      },
+      lookup: async () => ({
+        stdout:
+          'C:\\Program Files\\WindowsApps\\OpenAI.Codex\\codex\r\n' +
+          'C:\\Program Files\\WindowsApps\\OpenAI.Codex\\codex.exe\r\n',
+      }),
+      access: async (candidate) => {
+        if (!existing.has(candidate)) {
+          throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        }
+      },
+    }),
+    'C:\\Users\\J\\AppData\\Roaming\\npm\\codex.cmd',
+  );
+});
+
+test('resolveExecutable bounds parallel Windows PATH fallback probes', async () => {
+  const started = [];
+  const start = Date.now();
+
+  assert.equal(
+    await resolveExecutable('codex', {
+      platform: 'win32',
+      environment: {
+        PATH: 'C:\\Slow;C:\\AlsoSlow',
+        PATHEXT: '.EXE;.CMD',
+      },
+      lookup: async () => ({
+        stdout: 'C:\\Program Files\\WindowsApps\\OpenAI.Codex\\codex.exe\r\n',
+      }),
+      access: async (candidate) => {
+        started.push(candidate);
+        await new Promise(() => {});
+      },
+      pathProbeTimeoutMs: 10,
+    }),
+    'C:\\Program Files\\WindowsApps\\OpenAI.Codex\\codex.exe',
+  );
+
+  assert.deepEqual(started, [
+    'C:\\Slow\\codex.exe',
+    'C:\\Slow\\codex.cmd',
+    'C:\\AlsoSlow\\codex.exe',
+    'C:\\AlsoSlow\\codex.cmd',
+  ]);
+  assert.ok(Date.now() - start < 200);
 });
 
 test('resolveExecutable reads Windows environment keys case-insensitively', async () => {
@@ -83,6 +149,9 @@ test('resolveExecutable rejects unsupported Windows lookup results', async () =>
         PATHEXT: '.COM;.EXE;.BAT;.CMD',
       },
       lookup,
+      access: async () => {
+        throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      },
     }),
     { code: 'ENOENT' },
   );

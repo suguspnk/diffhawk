@@ -51,6 +51,57 @@ test('detectAgents executes Windows npm shims through ComSpec', async () => {
   assert.equal(executions[0][2].windowsVerbatimArguments, true);
 });
 
+test('detectAgents gives Codex the default user CODEX_HOME when none is configured', async () => {
+  const executions = [];
+  const agents = await detectAgents({
+    platform: 'win32',
+    environment: {
+      PATH: 'C:\\npm',
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      USERPROFILE: 'C:\\Users\\J',
+      ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+    },
+    resolve: async (binary) => `C:\\npm\\${binary}.cmd`,
+    execute: async (...args) => {
+      executions.push(args);
+      return {
+        stdout: '--setting-sources --tools dontAsk',
+      };
+    },
+  });
+
+  assert.equal(agents.find((agent) => agent.id === 'codex').status, 'ready');
+  assert.equal(
+    executions.at(-1)[2].env.CODEX_HOME,
+    'C:\\Users\\J\\.codex',
+  );
+});
+
+test('detectAgents gives Claude the default user config dir when none is configured', async () => {
+  const executions = [];
+  const agents = await detectAgents({
+    platform: 'linux',
+    environment: {
+      PATH: '/usr/local/bin',
+      HOME: '/home/sandbox',
+    },
+    homeDirectory: '/home/reviewer',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (...args) => {
+      executions.push(args);
+      return {
+        stdout: '--setting-sources --tools dontAsk',
+      };
+    },
+  });
+
+  assert.equal(agents.find((agent) => agent.id === 'claude').status, 'ready');
+  assert.equal(
+    executions[1][2].env.CLAUDE_CONFIG_DIR,
+    '/home/reviewer/.claude',
+  );
+});
+
 test('detectAgents distinguishes missing and failed agent checks', async () => {
   const agents = await detectAgents({
     platform: 'linux',
