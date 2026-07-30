@@ -4,6 +4,13 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-07-30
+
+- Fixed lock acquisition fallback handling so unrelated silent candidates do
+  not release or overwrite the active lock owner.
+- Fixed reviewer CLI auth detection when the configured command resolves
+  through Windows path fallbacks and scheduled environment allowlists.
+
 ## [1.1.2] - 2026-07-30
 
 - Fixed scheduled OpenMergeLens runs on Linux so they restore the setup-time
