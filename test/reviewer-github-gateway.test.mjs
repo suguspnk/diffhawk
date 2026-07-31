@@ -44,6 +44,8 @@ test('semantic reviewer operations map only to fixed-PR read commands', () => {
       'api',
       '--method',
       'GET',
+      '--header',
+      'Accept: application/vnd.github.raw+json',
       'repos/owner/repo/contents/src%2Fa%20file.js?ref=abc123',
     ],
   );
@@ -53,6 +55,8 @@ test('semantic reviewer operations map only to fixed-PR read commands', () => {
     { operation: 'metadata', path: 'ignored' },
     { operation: 'cumulative_diff', cursor: -1 },
     { operation: 'cumulative_diff', cursor: 1.5 },
+    { operation: 'file_context', path: 'src/a.js', cursor: -1 },
+    { operation: 'file_context', path: 'src/a.js', cursor: 1.5 },
     { operation: 'file_context', path: '../secret' },
     { operation: 'file_context', path: '/absolute' },
     { operation: 'file_context', path: 'src\\ambiguous.js' },
@@ -73,6 +77,25 @@ test('UTF-8 diff pagination preserves the complete text without replacement char
   assert.throws(() => chunkUtf8Text(source, 3), /at least 4 bytes/);
 });
 
+test('pagination prefers complete lines when one fits within the byte limit', () => {
+  const source = 'first line\nsecond line\nthird';
+  const pages = chunkUtf8Text(source, 12);
+
+  assert.deepEqual(pages, ['first line\n', 'second line\n', 'third']);
+  assert.equal(pages.join(''), source);
+});
+
+test('default inspection pages stay within 64 KiB', () => {
+  const source = `${'a'.repeat(65_000)}\n${'b'.repeat(10_000)}`;
+  const pages = chunkUtf8Text(source);
+
+  assert.equal(pages.length, 2);
+  assert.equal(pages.join(''), source);
+  assert.ok(pages.every(
+    (page) => Buffer.byteLength(page, 'utf8') <= 64 * 1024,
+  ));
+});
+
 test('the generated MCP tool enforces semantic reads and complete diff pagination', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -82,10 +105,11 @@ test('the generated MCP tool enforces semantic reads and complete diff paginatio
     directory,
     target,
     githubEnvironment: {},
-    diffPageBytes: 16,
+    inspectionPageBytes: 16,
     runGitHub: async (args) => {
       calls.push(args);
       if (args[0] === 'pr' && args[1] === 'diff') return diff;
+      if (args[0] === 'api') return 'first file line\nsecond file line';
       return 'safe output';
     },
   });
@@ -209,4 +233,56 @@ test('the generated MCP tool enforces semantic reads and complete diff paginatio
     'number,title,body,baseRefName,headRefName,headRefOid,files,commits',
   ]);
   assert.deepEqual(calls[1], ['pr', 'diff', target.url]);
+
+  const firstFileResponse = waitForResponse(6);
+  call(6, { operation: 'file_context', path: 'src/a file.js', cursor: 0 });
+  await withResponseTimeout(firstFileResponse, 'first file page');
+  const firstFilePage =
+    responses.find(({ id }) => id === 6).result.content[0].text;
+  assert.match(firstFilePage, /page 1\/2/);
+  assert.match(firstFilePage, /same path and cursor 1/);
+
+  const secondFileResponse = waitForResponse(7);
+  call(7, { operation: 'file_context', path: 'src/a file.js', cursor: 1 });
+  await withResponseTimeout(secondFileResponse, 'second file page');
+  const secondFilePage =
+    responses.find(({ id }) => id === 7).result.content[0].text;
+  assert.match(secondFilePage, /page 2\/2/);
+  assert.match(secondFilePage, /final page/);
+  assert.equal(calls.filter((args) => args[0] === 'api').length, 1);
+  assert.deepEqual(calls.at(-1), [
+    'api',
+    '--method',
+    'GET',
+    '--header',
+    'Accept: application/vnd.github.raw+json',
+    'repos/owner/repo/contents/src%2Fa%20file.js?ref=abc123',
+  ]);
+
+  const repeatedMetadataResponse = waitForResponse(8);
+  call(8, { operation: 'metadata' });
+  await withResponseTimeout(repeatedMetadataResponse, 'repeated metadata');
+  assert.equal(
+    calls.filter((args) => args[0] === 'pr' && args[1] === 'view').length,
+    1,
+  );
+
+  for (let index = 1; index < 32; index += 1) {
+    const id = 100 + index;
+    const response = waitForResponse(id);
+    call(id, { operation: 'file_context', path: `src/context-${index}.js` });
+    await withResponseTimeout(response, `file context ${index}`);
+  }
+  const excessiveFileResponse = waitForResponse(200);
+  call(200, { operation: 'file_context', path: 'src/one-too-many.js' });
+  await withResponseTimeout(excessiveFileResponse, 'file context limit');
+  assert.equal(
+    responses.find(({ id }) => id === 200).result.isError,
+    true,
+  );
+  assert.match(
+    responses.find(({ id }) => id === 200).result.content[0].text,
+    /limited to 32 distinct paths/,
+  );
+  assert.equal(calls.filter((args) => args[0] === 'api').length, 32);
 });
