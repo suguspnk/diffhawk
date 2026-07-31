@@ -232,6 +232,26 @@ test('the reviewer receives only the selected account credential environment', a
   );
 });
 
+test('the poller supplies reviewer retry diagnostics with PR context', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  let onDiagnostic;
+  dependencies.invokeMultiPassReview = async (options) => {
+    ({ onDiagnostic } = options);
+    return { summary: 'reviewed', findings: [] };
+  };
+
+  await pollOnce({
+    config: config([work]),
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(typeof onDiagnostic, 'function');
+  assert.doesNotThrow(() => onDiagnostic('retrying semantic inspection'));
+});
+
 test('a diff larger than two MiB still reaches the reviewer and posting anchor flow', async (t) => {
   const files = await fixture(t);
   const events = [];

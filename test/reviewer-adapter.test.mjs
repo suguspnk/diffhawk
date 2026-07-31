@@ -12,6 +12,9 @@ import {
   parseFindings,
   resolveReviewFocusCount,
 } from '../lib/reviewer-adapter.mjs';
+import {
+  INCOMPLETE_INSPECTION_ERROR,
+} from '../lib/reviewer-github-gateway.mjs';
 
 const pr = {
   title: 'Fix off-by-one in pagination',
@@ -242,8 +245,9 @@ test('buildPrompt sends a PR link and tool-based inspection contract instead of 
   assert.match(prompt, /Review #42 at https:\/\/github\.com\/example\/repo\/pull\/42\./);
   assert.match(prompt, /Expected head commit: abc123/);
   assert.match(prompt, /openmergelens\.inspect_github_pr/);
-  assert.match(prompt, /constrained GitHub CLI/);
-  assert.match(prompt, /inspect it incrementally by file or hunk/);
+  assert.match(prompt, /constrained semantic GitHub reads/);
+  assert.match(prompt, /cumulative_diff/);
+  assert.match(prompt, /follow every returned cursor through the\s+final page/i);
   assert.match(prompt, /mutation-capable GitHub commands/);
   assert.match(prompt, /generated artifacts excluded from line-by-line review/);
   assert.doesNotMatch(prompt, /Closes #41\./);
@@ -263,7 +267,7 @@ test('buildPrompt never embeds the untrusted PR body', () => {
     },
   });
   assert.doesNotMatch(prompt, /UNTRUSTED_BODY_SENTINEL/);
-  assert.match(prompt, /retrieve the current description with gh pr view/);
+  assert.match(prompt, /retrieve the current description with the metadata operation/);
 });
 
 test('buildPrompt omits the learnings section entirely when there are no learnings', () => {
@@ -469,6 +473,114 @@ test('invokeMultiPassReview aborts before synthesis when a focused pass is malfo
   assert.equal(invocation, 1);
 });
 
+test('invokeMultiPassReview retries only an incomplete focused inspection', async () => {
+  const diagnostics = [];
+  const prompts = [];
+  let invocation = 0;
+  const result = await invokeMultiPassReview({
+    reviewerCommand: 'stub-reviewer',
+    template: 'Review {{diff}}',
+    learnings: '',
+    pr,
+    reviewFocusCount: 1,
+    onDiagnostic: (message) => diagnostics.push(message),
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      invocation += 1;
+      if (invocation === 1) {
+        const error = new Error(
+          'missing cumulative PR diff (metadata=complete, cumulative_diff_pages=0/not-started)',
+        );
+        error.code = INCOMPLETE_INSPECTION_ERROR;
+        throw error;
+      }
+      return JSON.stringify({
+        summary: invocation === 2 ? 'focused pass' : 'synthesis',
+        findings: [],
+      });
+    },
+  });
+
+  assert.deepEqual(result, { summary: 'synthesis', findings: [] });
+  assert.equal(invocation, 3);
+  assert.equal(prompts.length, 3);
+  assert.doesNotMatch(prompts[0], /Inspection retry/);
+  assert.match(prompts[1], /Inspection retry 1\/1/);
+  assert.match(prompts[1], /call metadata, then cumulative_diff at cursor 0/);
+  assert.equal(diagnostics.length, 1);
+  assert.match(diagnostics[0], /behavior and correctness.*retrying/);
+});
+
+test('invokeMultiPassReview retries an incomplete synthesis inspection', async () => {
+  let invocation = 0;
+  const prompts = [];
+  const result = await invokeMultiPassReview({
+    reviewerCommand: 'stub-reviewer',
+    template: 'Review {{diff}}',
+    learnings: '',
+    pr,
+    reviewFocusCount: 1,
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      invocation += 1;
+      if (invocation === 2) {
+        const error = new Error('missing cumulative PR diff');
+        error.code = INCOMPLETE_INSPECTION_ERROR;
+        throw error;
+      }
+      return JSON.stringify({
+        summary: invocation === 1 ? 'focused pass' : 'synthesis',
+        findings: [],
+      });
+    },
+  });
+
+  assert.deepEqual(result, { summary: 'synthesis', findings: [] });
+  assert.equal(invocation, 3);
+  assert.match(prompts[2], /Final synthesis pass/);
+  assert.match(prompts[2], /Inspection retry 1\/1/);
+});
+
+test('invokeMultiPassReview fails closed after the inspection retry is exhausted', async () => {
+  let invocation = 0;
+  await assert.rejects(
+    invokeMultiPassReview({
+      reviewerCommand: 'stub-reviewer',
+      template: 'Review {{diff}}',
+      learnings: '',
+      pr,
+      reviewFocusCount: 1,
+      invoke: async () => {
+        invocation += 1;
+        const error = new Error('missing cumulative PR diff');
+        error.code = INCOMPLETE_INSPECTION_ERROR;
+        throw error;
+      },
+    }),
+    /behavior and correctness.*incomplete after 2 attempts/,
+  );
+  assert.equal(invocation, 2);
+});
+
+test('invokeMultiPassReview does not retry unrelated reviewer failures', async () => {
+  let invocation = 0;
+  await assert.rejects(
+    invokeMultiPassReview({
+      reviewerCommand: 'stub-reviewer',
+      template: 'Review {{diff}}',
+      learnings: '',
+      pr,
+      reviewFocusCount: 1,
+      invoke: async () => {
+        invocation += 1;
+        throw new Error('reviewer timed out');
+      },
+    }),
+    /reviewer timed out/,
+  );
+  assert.equal(invocation, 1);
+});
+
 test('bundled per-repo template requires an exhaustive review of the cumulative diff', async () => {
   const template = await readFile(
     new URL('../docs/review-prompt.default.md', import.meta.url),
@@ -492,7 +604,7 @@ test('bundled per-repo template requires an exhaustive review of the cumulative 
   assert.match(normalizedPrompt, /do not impose an arbitrary limit on findings/i);
   assert.match(normalizedPrompt, /complete cumulative PR diff/i);
   assert.match(normalizedPrompt, /including code from earlier commits/i);
-  assert.match(normalizedPrompt, /inspect it incrementally by file or hunk/i);
+  assert.match(normalizedPrompt, /follow every returned cursor through the final page/i);
   assert.match(normalizedPrompt, /coverage ledger/i);
   assert.match(normalizedPrompt, /generated-file headers/i);
   assert.match(normalizedPrompt, /never classify a file as generated from its size or filename alone/i);
