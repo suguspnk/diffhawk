@@ -19,6 +19,24 @@ Start with a dry run, review its output, and only then enable posting.
 Full design rationale lives in [PRD.md](./PRD.md). This doc is just
 setup.
 
+## Why OpenMergeLens
+
+- **Keep review execution local.** Your configured reviewer runs on your
+  machine; OpenMergeLens does not require a hosted review service, GitHub App,
+  webhook, tunnel, or repository workflow YAML.
+- **Use the reviewer you already trust.** Choose Codex, Claude Code, or a
+  compatible MCP-enabled command without coupling the polling workflow to one
+  model vendor.
+- **Adapt reviews to each repository.** Every watched repository gets an
+  editable review prompt, so its checklist and priorities can match the code
+  instead of a global generic policy.
+- **Teach later reviews.** Durable learnings are isolated by GitHub identity
+  and repository, keeping corrections relevant to the right reviewer and
+  codebase.
+- **Inspect before posting.** Dry-run mode performs discovery and review
+  without GitHub mutations. Real runs validate inline anchors against the
+  actual diff and move unanchored findings into the summary.
+
 ## Quick start
 
 With [Node.js](#prerequisites), an authenticated GitHub CLI, and an

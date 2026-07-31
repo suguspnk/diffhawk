@@ -9,6 +9,9 @@ poll.log
 # Local maintainer-only launch notes
 docs/LAUNCH.md
 
+# Local post-launch media and distribution kit
+post-launch/
+
 # Logs
 logs
 *.log
