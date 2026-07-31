@@ -1,2 +1,2 @@
-docs/vendor/motion-mini-*.js binary
+docs/assets/vendor/motion-mini-*.js binary
 vendor/*.patch -whitespace
