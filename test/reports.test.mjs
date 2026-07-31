@@ -14,6 +14,7 @@ import {
   atomicWrite,
   createPollReport,
   formatReportChoice,
+  groupReportEntries,
   listReports,
   openReport,
   pruneReports,
@@ -94,8 +95,116 @@ test('report entries contain only PR outcomes and order attention first', () => 
   );
 });
 
+test('report entries group by account, then repository, without changing entry order', () => {
+  const entries = reportEntries({
+    outcomes: [
+      result('reviewed', {
+        account: 'work@github.com',
+        repo: 'owner/service',
+        number: 1,
+      }).outcomes[0],
+      result('reviewed', {
+        account: 'personal@github.com',
+        repo: 'owner/site',
+        number: 2,
+      }).outcomes[0],
+      result('reviewed', {
+        account: 'work@github.com',
+        repo: 'owner/service',
+        number: 3,
+      }).outcomes[0],
+      result('reviewed', {
+        account: 'work@github.com',
+        repo: 'owner/cli',
+        number: 4,
+      }).outcomes[0],
+      result('reviewed', {
+        account: '',
+        repo: 'owner/unassigned',
+        number: 5,
+      }).outcomes[0],
+    ],
+  });
+
+  assert.deepEqual(
+    groupReportEntries(entries).map((accountGroup) => ({
+      account: accountGroup.account,
+      entries: accountGroup.entries.map((entry) => entry.number),
+      repositories: accountGroup.repositories.map((repositoryGroup) => ({
+        repo: repositoryGroup.repo,
+        entries: repositoryGroup.entries.map((entry) => entry.number),
+      })),
+    })),
+    [
+      {
+        account: 'work@github.com',
+        entries: [1, 3, 4],
+        repositories: [
+          { repo: 'owner/service', entries: [1, 3] },
+          { repo: 'owner/cli', entries: [4] },
+        ],
+      },
+      {
+        account: 'personal@github.com',
+        entries: [2],
+        repositories: [{ repo: 'owner/site', entries: [2] }],
+      },
+      {
+        account: 'Unspecified account',
+        entries: [5],
+        repositories: [{ repo: 'owner/unassigned', entries: [5] }],
+      },
+    ],
+  );
+});
+
+test('report rendering presents account and repository hierarchy without repeated context', () => {
+  const entries = reportEntries({
+    outcomes: [
+      result('reviewed', {
+        account: 'work@github.com',
+        repo: 'owner/service',
+        number: 1,
+      }).outcomes[0],
+      result('reviewed', {
+        account: 'work@github.com',
+        repo: 'owner/service',
+        number: 2,
+      }).outcomes[0],
+      result('reviewed', {
+        account: 'work@github.com',
+        repo: 'owner/cli',
+        number: 3,
+      }).outcomes[0],
+      result('reviewed', {
+        account: 'personal@github.com',
+        repo: 'owner/site',
+        number: 4,
+      }).outcomes[0],
+    ],
+  });
+  const html = renderReportDocument({
+    generatedAt: '2026-07-31T08:00:00.000Z',
+    entries,
+  });
+
+  assert.match(html, /class="account-group" aria-labelledby="account-0"/);
+  assert.match(html, /class="repository-group" aria-labelledby="repository-0-0"/);
+  assert.equal(html.match(/work@github\.com/g)?.length, 1);
+  assert.equal(html.match(/owner\/service/g)?.length, 1);
+  assert.doesNotMatch(html, /as work@github\.com/);
+  assert.ok(html.indexOf('work@github.com') < html.indexOf('owner/service'));
+  assert.ok(html.indexOf('owner/service') < html.indexOf('class="pr-number">#1'));
+  assert.ok(html.indexOf('owner/service') < html.indexOf('class="pr-number">#2'));
+  assert.ok(html.indexOf('owner/cli') < html.indexOf('class="pr-number">#3'));
+  assert.ok(html.indexOf('personal@github.com') < html.indexOf('owner/site'));
+  assert.ok(html.indexOf('owner/site') < html.indexOf('class="pr-number">#4'));
+});
+
 test('report rendering escapes untrusted PR text and rejects unsafe URLs', () => {
   const entries = reportEntries(result('reviewed', {
+    account: 'work<script>@github.com',
+    repo: 'owner/<repo>',
     title: '<script>alert("x")</script>',
     note: '<img src=x onerror=alert(1)>',
     url: 'javascript:alert(1)',
@@ -106,6 +215,8 @@ test('report rendering escapes untrusted PR text and rejects unsafe URLs', () =>
   });
 
   assert.doesNotMatch(html, /<script>|<img src=x|javascript:/i);
+  assert.match(html, /work&lt;script&gt;@github\.com/);
+  assert.match(html, /owner\/&lt;repo&gt;/);
   assert.match(html, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/);
   assert.match(html, /Link unavailable/);
   assert.match(html, /Content-Security-Policy/);
