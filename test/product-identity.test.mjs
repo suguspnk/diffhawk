@@ -27,6 +27,11 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
     openmergelens: 'bin/openmergelens.mjs',
   });
   assert.equal(
+    packageJson.scripts.report,
+    'node bin/openmergelens.mjs report',
+    'the repository report script must use the published CLI dispatcher',
+  );
+  assert.equal(
     packageJson.repository.url,
     'git+https://github.com/suguspnk/openmergelens.git',
   );

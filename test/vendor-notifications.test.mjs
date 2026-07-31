@@ -69,6 +69,11 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(persistentPatch, /UNUserNotificationCenter/);
   assert.match(persistentPatch, /@DELIVERED/);
   assert.match(persistentPatch, /exit\(EXIT_SUCCESS\)/);
+  assert.match(persistentPatch, /OPEN_REPORT/);
+  assert.match(persistentPatch, /UNNotificationDefaultActionIdentifier/);
+  assert.match(persistentPatch, /url\.isFileURL/);
+  assert.match(persistentPatch, /listenForPersistentActivation/);
+  assert.match(persistentPatch, /hasPrefix\("-psn_"\)/);
   assert.match(
     persistentPatch,
     /io\.github\.suguspnk\.openmergelens\.notifier/,
@@ -85,7 +90,7 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   );
   assert.match(
     bundleInfo,
-    /<key>CFBundleVersion<\/key>\s*<string>2<\/string>/,
+    /<key>CFBundleVersion<\/key>\s*<string>3<\/string>/,
   );
   assert.equal(bundleIcon.toString('ascii', 0, 4), 'icns');
   assert.equal(bundleIcon.readUInt32BE(4), bundleIcon.length);

@@ -8,6 +8,10 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
   metadata plus paginated cumulative-diff and raw file-context operations.
   Incomplete inspection passes now report sanitized coverage diagnostics and
   retry once before the review fails closed.
+- Added private per-poll HTML review reports that open from supported
+  notification body/actions, with a cross-platform `openmergelens report`
+  command, interactive `--list` picker, bounded retention, and Linux fallback
+  behavior for notification servers without action support.
 
 ## [1.1.3] - 2026-07-30
 

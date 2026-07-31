@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseArgs, parsePollArgs } from '../lib/dispatch.mjs';
+import { parseArgs, parsePollArgs, parseReportArgs } from '../lib/dispatch.mjs';
 
 test('no arguments routes to poll with no flags', () => {
   assert.deepEqual(parseArgs([]), { subcommand: 'poll', flags: [] });
@@ -14,10 +14,46 @@ test('init alone routes to init with no flags', () => {
   assert.deepEqual(parseArgs(['init']), { subcommand: 'init', flags: [] });
 });
 
+test('report routes to latest, picker, or an exact report ID', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  assert.deepEqual(parseArgs(['report']), {
+    subcommand: 'report',
+    flags: [],
+  });
+  assert.deepEqual(parseArgs(['report', '--list']), {
+    subcommand: 'report',
+    flags: ['--list'],
+  });
+  assert.deepEqual(parseArgs(['report', id]), {
+    subcommand: 'report',
+    flags: [id],
+  });
+  assert.deepEqual(parseReportArgs([]), { list: false });
+  assert.deepEqual(parseReportArgs(['--list']), { list: true });
+  assert.deepEqual(parseReportArgs([id]), { list: false, id });
+});
+
+test('report rejects unknown and malformed selectors', () => {
+  assert.deepEqual(parseArgs(['report', '--unknown']), {
+    error: 'unrecognized report argument "--unknown"',
+  });
+  assert.deepEqual(parseArgs(['report', 'not-an-id']), {
+    error: 'unrecognized report argument "not-an-id"',
+  });
+});
+
 test('help and version flags route without starting a poll', () => {
   assert.deepEqual(parseArgs(['--help']), { subcommand: 'help', flags: [] });
   assert.deepEqual(parseArgs(['-h']), { subcommand: 'help', flags: [] });
   assert.deepEqual(parseArgs(['init', '--help']), { subcommand: 'help', flags: [] });
+  assert.deepEqual(parseArgs(['report', '--help']), {
+    subcommand: 'help',
+    flags: [],
+  });
+  assert.deepEqual(parseArgs(['report', '-h']), {
+    subcommand: 'help',
+    flags: [],
+  });
   assert.deepEqual(parseArgs(['--version']), { subcommand: 'version', flags: [] });
   assert.deepEqual(parseArgs(['-v']), { subcommand: 'version', flags: [] });
 });
