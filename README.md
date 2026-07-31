@@ -9,7 +9,7 @@ Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.**
 [Get help](https://github.com/suguspnk/openmergelens/discussions)
 
 OpenMergeLens runs on your own machine on a schedule (cron / launchd / Windows
-Task Scheduler): no GitHub App, webhook, or server. It uses `gh` to find PRs
+Task Scheduler). It requires no GitHub App, webhook, or server. It uses `gh` to find PRs
 where you're the requested reviewer and a compatible reviewer CLI (Codex,
 Claude Code, or a custom MCP-enabled command) to generate an inline,
 severity-tagged GitHub review.
@@ -311,7 +311,7 @@ permission still requires user confirmation and cannot be enabled silently.
 ## Scheduling
 
 If you skipped scheduling during `init`, or want to change it later, rerun
-the wizard (it's safe to run again: it just asks the same questions) or set
+the wizard (it's safe to run again because it asks the same questions) or set
 it up manually:
 
 - **cron** (macOS/Linux): add a line like
@@ -392,8 +392,8 @@ for the security model and private reporting process.
 ## Customizing reviews
 
 - **`~/.openmergelens/docs/review-prompts/<host>/<owner>/<repo>.md`**: the
-  prompt shared by every configured reviewer of that host/repository: framing, review
-  criteria, and where the PR URL and past learnings get inserted (via
+  prompt shared by every configured reviewer of that host/repository. It defines
+  the framing, review criteria, and where the PR URL and past learnings get inserted (via
   `{{pr_url}}`, `{{pr_number}}`, and `{{learnings_section}}` placeholders).
   Existing templates using `{{diff}}` remain compatible: that placeholder now
   expands to the fixed instructions for inspecting the linked PR with `gh`,
@@ -403,7 +403,7 @@ for the security model and private reporting process.
   watched repo from the bundled default the first time you add that repo;
   edit a repo's copy directly any time: reorder sections, change the
   criteria, and adjust the framing without a code change or wizard rerun. It
-  it never affects any other repo's prompt. Re-running `init` never
+  never affects any other repo's prompt. Re-running `init` never
   overwrites an existing copy. The strict JSON output-format instruction
   the review-posting logic depends on to anchor inline comments is always
   appended automatically and isn't part of this file, so an edit here can't

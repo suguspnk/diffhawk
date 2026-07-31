@@ -53,7 +53,7 @@ template with no `{{diff}}` placeholder (e.g. an un-migrated pre-template
 checklist file) is treated as legacy content and wrapped with the old fixed
 framing instead, so it keeps producing a working prompt.
 
-## Key constraints (from the design spec: see PRD.md for the "why")
+## Key constraints (from the design spec; see PRD.md for the "why")
 
 - No `.github/workflows/*.yml`, no webhooks, no tunnels. Pure client-side
   polling via `gh` CLI.

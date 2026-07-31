@@ -310,9 +310,9 @@ interpreted as shell syntax.
 
 ### Overview
 
-OpenMergeLens is designed to run on a recurring schedule via one of three
-OS-native schedulers: cron or launchd on macOS/Linux, Windows Task
-Scheduler on Windows: installed programmatically by `lib/scheduler.mjs`.
+OpenMergeLens is designed to run on a recurring schedule via cron or launchd
+on macOS/Linux, or Windows Task Scheduler on Windows. These entries are
+installed programmatically by `lib/scheduler.mjs`.
 
 ### Best Practices
 
@@ -320,8 +320,8 @@ Scheduler on Windows: installed programmatically by `lib/scheduler.mjs`.
   wherever `which node` resolves), the script itself, and any files it
   touches. Cron's default PATH (typically `/usr/bin:/bin`) doesn't source
   shell profiles, so `node`/`gh` can silently fail to resolve.
-- Redirect stdout and stderr to a log file on every invocation: append,
-  don't overwrite, so failures are visible across runs (cron:
+- Redirect stdout and stderr to a log file on every invocation. Append rather
+  than overwrite so failures are visible across runs (cron:
   `>> poll.log 2>&1`; launchd: `StandardOutPath`/`StandardErrorPath`;
   Task Scheduler: redirect inside the wrapper script).
 - Prevent overlapping runs with a lock (e.g. `flock -n /tmp/openmergelens.lock
@@ -334,7 +334,7 @@ Scheduler on Windows: installed programmatically by `lib/scheduler.mjs`.
   bin/poll.mjs`) so a hung `gh` call or reviewer CLI invocation fails fast
   instead of blocking the next scheduled run.
 - After editing a launchd plist, always re-run `launchctl
-  bootstrap`/`bootout` (or `unload`/`load`): launchd does not hot-reload a
+  bootstrap`/`bootout` (or `unload`/`load`). Launchd does not hot-reload a
   changed plist file on its own. For Task Scheduler, prefer delete-and-
   recreate over `/change` when altering the schedule itself, since
   `/Change` can't modify the trigger-defining flags (`/SC`, `/MO`, `/D`,

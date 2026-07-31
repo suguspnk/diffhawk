@@ -49,7 +49,7 @@ than the security-critical injection surface.
 ## Node.js (ESM + child_process): ✅ Compliant, one soft gap
 
 - `"type": "module"` used consistently; `"engines": { "node": ">=18" }`
-  declared in [`package.json`](../package.json): matches the standard.
+  declared in [`package.json`](../package.json), matching the standard.
 - `execFile`/`spawn` used everywhere `child_process` appears; no instance of
   `exec`, `execSync`, or `shell: true` found anywhere in `bin/` or `lib/`.
 - **Gap:** `engines` is declared but not enforced (`engineStrict` is not set
@@ -91,13 +91,13 @@ than the security-critical injection surface.
   human-readable text parsing anywhere ([`lib/github.mjs`](../lib/github.mjs),
   every `gh` call).
 - `--method GET` is correctly forced on `/search/issues` and `user/repos`
-  calls, with an inline comment explaining *why* (`-f` defaults to POST body)
- : shows awareness of a real `gh api` gotcha the standards doc didn't even
+  calls, with an inline comment explaining *why* (`-f` defaults to POST body);
+  this shows awareness of a real `gh api` gotcha the standards doc didn't even
   call out.
 - **Gap: no `--paginate` on the PR search itself.** `listAccessibleRepos`
   correctly uses `--paginate` ([`lib/github.mjs:42`](../lib/github.mjs)), but
-  `searchReviewRequestedPRs`: the actual "find PRs awaiting my review" call
-  against `/search/issues`: does not
+  `searchReviewRequestedPRs`, the actual "find PRs awaiting my review" call
+  against `/search/issues`, does not
   ([`lib/github.mjs:65-68`](../lib/github.mjs)). Per the standard, `gh api`
   search/list calls silently truncate to the first page without
   `--paginate`. In practice `/search/issues` caps at 100 items/page and this
@@ -142,8 +142,8 @@ than the security-critical injection surface.
 
 ## OS Scheduling (cron / launchd / Task Scheduler): ⚠️ Two gaps
 
-- Absolute paths used throughout: `process.execPath` for the Node binary,
-  resolved absolute `pollScriptPath`: matches the standard's top practice
+- Absolute paths used throughout: `process.execPath` for the Node binary and a
+  resolved absolute `pollScriptPath`. This matches the standard's top practice
   ([`lib/scheduler.mjs:11-13`](../lib/scheduler.mjs)).
 - stdout/stderr redirection is wired for all three backends: cron's
   `>> poll.log 2>&1` ([`lib/scheduler.mjs:16`](../lib/scheduler.mjs)),
@@ -166,14 +166,14 @@ than the security-critical injection surface.
   ([`bin/poll.mjs:44`](../bin/poll.mjs), `142`), so two overlapping runs
   (e.g. a slow reviewer-CLI invocation causing one run to still be in flight
   when the next scheduled tick fires) can race on `loadState`/`saveState`
-  and silently lose a state update: a scenario the standards doc calls out
+  and silently lose a state update. The standards doc calls out this scenario
   by name for this exact read/write pattern.
 - **Gap: no timeout wrapper at the OS-invocation level.** `invokeReviewer`
   does have its own internal `timeoutMs` (default 5 minutes,
   [`lib/reviewer-adapter.mjs:55`](../lib/reviewer-adapter.mjs)), which
   covers the single riskiest long-running call. But there's no outer
   `timeout` wrapper (or equivalent) around the whole `poll.mjs` invocation
-  in any of the generated cron lines, plist, or schtasks command: if `gh`
+  in any of the generated cron lines, plist, or schtasks command. If `gh`
   itself hangs (e.g. a network stall not covered by `execFileAsync`'s
   default no-timeout behavior in `lib/github.mjs`), nothing bounds that call,
   which feeds back into the overlap risk above.

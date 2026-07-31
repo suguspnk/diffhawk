@@ -48,8 +48,8 @@ Applies to all code in this repo: `bin/`, `lib/`, and `test/`.
   submitted-review list before another POST is attempted. The summary-only
   fallback is limited to confirmed HTTP 422 validation failures.
 - **On reviewer-CLI failure or empty/malformed output: skip posting, leave
-  state untouched.** This is a load-bearing invariant (see PRD.md): never
-  post a broken or empty review, and never advance `state.json`'s
+  state untouched.** This is a load-bearing invariant (see PRD.md). Never
+  post a broken or empty review or advance `state.json`'s
   last-reviewed SHA for a PR that wasn't actually reviewed, so the next poll
   retries automatically.
 - **Never let a raw stack trace or internal error object reach anything
@@ -111,7 +111,7 @@ for the general pattern; these are the OpenMergeLens-specific rules.
 - **Set a timeout on every subprocess call, no exceptions.** A hung or
   malicious subprocess must not block the poller indefinitely. Every `gh`
   invocation, every `github-auth.mjs` call, and every reviewer-CLI
-  invocation must specify an explicit `timeout`: see `GH_TIMEOUT_MS` /
+  invocation must specify an explicit `timeout`, as defined by `GH_TIMEOUT_MS` /
   `GH_AUTH_TIMEOUT_MS` and `reviewer-adapter.mjs`'s `timeoutMs` default.
 - **Untrusted content goes through stdin or a file, never through argv when
   avoidable.** `postReview` sends its JSON payload via `--input -` +
@@ -150,12 +150,12 @@ for the general pattern; these are the OpenMergeLens-specific rules.
   credential storage (macOS Keychain / Windows Credential Manager / libsecret)
   via `github-auth.mjs`'s `resolveGitHubAuth`, which fetches a token
   on-demand per run rather than OpenMergeLens storing one itself.
-  `config.json`/`state.json` stay gitignored for the same reason: never
+  `config.json`/`state.json` stay gitignored for the same reason. Never
   remove them from `.gitignore`.
 - **Never log a secret.** No token, even truncated, should reach
   `poll.log`, `console.log`, or an error message. If a future change needs
   to log auth-related diagnostics, log the account identity
-  (`OPENMERGELENS_GITHUB_ACCOUNT`-style `user@host`): never the token itself.
+  (`OPENMERGELENS_GITHUB_ACCOUNT`-style `user@host`) rather than the token itself.
 - **Scope credentials to the minimum needed.** When multiple GitHub
   accounts are configured, resolve and use only the account attached to that
   queued operation: don't fall back to a broader or
@@ -175,7 +175,7 @@ for the general pattern; these are the OpenMergeLens-specific rules.
 
 - **Commit `pnpm-lock.yaml` and install with `pnpm install --frozen-lockfile`
   in any automated context.** Deterministic, auditable dependency
-  resolution: never let a stale lockfile silently drift.
+  resolution. Never let a stale lockfile silently drift.
 - **Default to Node built-ins over adding a package.** `node:child_process`,
   `node:fs`, `node:test`, `node:util` cover everything this project needs
   today. Every new dependency (there is currently exactly one:
@@ -201,7 +201,7 @@ for the general pattern; these are the OpenMergeLens-specific rules.
   `diffAnchors`, severity formatting, `parseAuthStatus`,
   `validateConfig`, `needsReview`'s SHA comparison, and
   `lock.mjs`'s reclaim logic are the cheapest, highest-value test surface
-  in this codebase: see `test/github-auth.test.mjs`,
+  in this codebase. See `test/github-auth.test.mjs`,
   `test/state.test.mjs`, and `test/lock.test.mjs` for the level of coverage
   expected (basic semantics, malformed config shapes, and
   concurrency/race scenarios where relevant). Prefer this over mocking
@@ -247,6 +247,6 @@ for the general pattern; these are the OpenMergeLens-specific rules.
   the same PR.
 - **Avoid unbounded work driven by external input.** A single PR's diff
   size, or the number of PRs a poll cycle finds, is attacker/environment
-  influenced (in the loose sense, a very large or very active repo),
-  keep per-call `maxBuffer`/timeout settings in place rather than assuming
+  influenced in the loose sense of a very large or very active repo. Keep
+  per-call `maxBuffer`/timeout settings in place rather than assuming
   inputs stay small.

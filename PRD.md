@@ -31,7 +31,7 @@ a fresh session with: "implement the PR review bot per PRD.md".
      isolated per GitHub host/account/repository.
   4. Output: post directly as a `gh pr comment`, as pre-approved by the user
      for this specific automated flow, no confirmation prompt needed each run.
-     (This approval is scoped to this bot's own posting behavior only: not a
+     (This approval is scoped to this bot's own posting behavior and is not a
      general standing permission for PR comments in other contexts.)
   5. Agent-agnostic: don't hardcode a `claude` CLI invocation. The "reviewer
      backend" should be a swappable command/adapter so any CLI capable of
@@ -64,7 +64,7 @@ openmergelens/
 ```
 
 **Decided: Node, package-managed with pnpm.** Cross-OS is a hard requirement
-(must work on Windows without WSL/Git Bash/Cygwin): bash doesn't run natively
+(it must work on Windows without WSL/Git Bash/Cygwin). Bash doesn't run natively
 on Windows, so it's ruled out. Node runs identically on Windows/macOS/Linux;
 `gh` itself is still the one external prerequisite (already required either
 way, since it's the GitHub interface). pnpm used for dependency install
@@ -131,7 +131,7 @@ poller as a `pnpm` script / bin.
      file based only on its size or name.
 
      For each issue, output a structured entry: file, line, severity
-     (critical/major/nit), and the comment text: see "Structured output
+     (critical/major/nit), and the comment text. See "Structured output
      format" below for the exact shape the adapter must return.
 
      ## Past learnings (adjust future reviews accordingly)
@@ -141,7 +141,7 @@ poller as a `pnpm` script / bin.
      <GitHub PR URL>
      ```
 
-5. **Run independent reviewer passes** (agent-agnostic: see below) against the
+5. **Run independent reviewer passes** (agent-agnostic; see below) against the
    same PR URL. The reviewer receives a temporary structured MCP inspection
    tool, not the selected account credential. A parent-owned gateway validates every request
    as a GET against the fixed PR and repository before running the real `gh`
@@ -158,12 +158,12 @@ poller as a `pnpm` script / bin.
    retries.
 
 6. **Post the review.** **Decided: formal `gh pr review`**, not a plain
-   comment: shows up in the PR's review list, not just as a comment.
+   comment. It shows up in the PR's review list, not just as a comment.
    **Decided: inline, severity-tagged comments** (one of the two adopted
    design suggestions below), posted as part of the same review object via
    `gh api` (the `gh pr review` CLI subcommand doesn't support per-line
    comments directly, so use the underlying REST API for a single review
-   with multiple `comments[]` entries: each anchored to `path`+`line`,
+   with multiple `comments[]` entries, each anchored to `path`+`line`,
    pulled from the adapter's structured findings):
    ```bash
    gh api --method POST /repos/OWNER/REPO/pulls/<N>/reviews \
@@ -250,26 +250,26 @@ issue, should fix), `nit` (style/minor, optional). The reviewer-adapter
 prompt must instruct the backend to emit exactly this shape (e.g. "respond
 with JSON only, matching this schema: ..."); `lib/reviewer-adapter.mjs`
 parses and validates it, falling back to treating the whole response as an
-unanchored `summary` finding if parsing fails (rather than failing the poll
-outright: degrade gracefully to a summary-only review).
+   unanchored `summary` finding if parsing fails. This degrades gracefully to
+   a summary-only review instead of failing the poll outright.
 
 ## Learnings file (adopted design suggestion #2)
 
 Prior-art research shows tools like CodeRabbit let reviewers reject/accept
-AI suggestions, and that feedback shapes future reviews: reducing repeat
+AI suggestions, and that feedback shapes future reviews, thereby reducing repeat
 false positives. **Decided: adopt a lightweight local equivalent.**
 
 - `docs/learnings/<host>/<username>/<owner>/<repo>.md`: a free-form markdown
   file of durable notes ("don't flag X, it's intentional because Y"). The
   deterministic path prevents corrections learned for one reviewer identity
   or repository from contaminating another.
-- Not auto-written by OpenMergeLens itself in v1: the user manually appends
+- Not auto-written by OpenMergeLens itself in v1. The user manually appends
   entries after noticing the bot repeat a bad suggestion. (Auto-capturing
   "user reacted 👎 to this comment" would require polling PR comment
   reactions, which is a reasonable future enhancement but out of scope for
   the initial implementation.)
 - Loaded and inlined into every review prompt per step 4 above, so it
-  compounds over time without any code change: just editing a markdown
+  compounds over time without any code change beyond editing a markdown
   file.
 
 ## Agent-agnostic reviewer adapter
@@ -339,7 +339,7 @@ Repository targets are always explicit `OWNER/REPO` strings.
 
 `node bin/poll.mjs` remains a one-shot script: no built-in daemon/loop
 mode. **Decided: the `openmergelens init` wizard installs the schedule**, not a
-manual next-session step: see **Onboarding** below for the exact flow
+manual next-session step; see **Onboarding** below for the exact flow
 (cron / launchd / Task Scheduler, each with a confirm-before-write, or
 "I'll do it myself" which only prints instructions). This section covers
 what each option actually installs:
@@ -448,14 +448,14 @@ cloned checkout). Steps, in order:
 
 7. **Scheduling.** Select one:
    - `cron` (macOS/Linux)
-   - `launchd` (macOS, preferred over cron: survives reboots better)
+   - `launchd` (macOS, preferred over cron because it survives reboots better)
    - Windows Task Scheduler
    - "I'll do it myself": prints the equivalent manual snippet/steps for
      whichever platform the user is on and does nothing further.
 
    **Decided: for the first three, OpenMergeLens installs the entry itself**
-   (writes the crontab line / launchd plist + `launchctl load` / Task
-   Scheduler entry): not just instructions. But because this is a
+   and writes the crontab line, launchd plist plus `launchctl load`, or Task
+   Scheduler entry rather than merely printing instructions. Because this is a
    standing OS-level configuration change made on the user's behalf, the
    wizard must show the **exact entry it's about to write** (full crontab
    line, full plist contents, or full `schtasks` command) and get an
@@ -471,7 +471,7 @@ cloned checkout). Steps, in order:
 9. **Success screen.** Print the command to do a complete dry run and an
    account-filtered example using `--account USERNAME@HOSTNAME`, e.g.
    `node bin/poll.mjs --dry-run` (composes prompts and calls the reviewer
-   adapter, but skips the actual `gh pr review` post): onboarding ends at
+   adapter, but skips the actual `gh pr review` post), so onboarding ends at
    "see it produce real output," not "trust it blindly."
 
 Validation happens inline at each step (e.g. repo names checked live via
@@ -496,11 +496,11 @@ All open items from spec drafting are now resolved:
    visible in the PR's review list. **Refined further per prior-art
    research:** inline, severity-tagged comments (via the REST API's
    `comments[]`, since `gh pr review` CLI can't anchor per-line), not a
-   single review body: see **Structured output format** above.
+   single review body; see **Structured output format** above.
 6. **Prompt source: OpenMergeLens's own bundled template**, seeded into a
    directly editable host/repository prompt path.
 7. **Prior-art research done** (competitive scan of CodeRabbit, Qodo/PR-Agent,
-   Sourcery, DeepSource, Greptile, Hermes Agent, etc.: see conversation
+   Sourcery, DeepSource, Greptile, Hermes Agent, etc.; see conversation
    history). Confirmed no existing product does local-polling +
    no-GitHub-App + BYO-LLM the way OpenMergeLens does; two design patterns
    adopted from the scan:
