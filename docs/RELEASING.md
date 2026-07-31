@@ -74,7 +74,7 @@ problem and release a new version. npm publication is immutable.
 2. Confirm the published version includes provenance on its npm package page.
 3. From a disposable operating-system account or isolated machine, test the
    complete clean-user path outside the repository: global install, `init`, a
-   dry run, and—against a disposable pull request—a real review. Do not reuse
+   dry run, and against a disposable pull request a real review. Do not reuse
    a maintainer's live OpenMergeLens configuration or scheduler.
 4. Record early-user onboarding and review-quality outcomes. Prioritize
    repeated failures before adding speculative features.

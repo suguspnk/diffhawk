@@ -9,7 +9,7 @@ Codex, Claude Code, or any compatible MCP-enabled reviewer CLI.**
 [Get help](https://github.com/suguspnk/openmergelens/discussions)
 
 OpenMergeLens runs on your own machine on a schedule (cron / launchd / Windows
-Task Scheduler) — no GitHub App, webhook, or server. It uses `gh` to find PRs
+Task Scheduler): no GitHub App, webhook, or server. It uses `gh` to find PRs
 where you're the requested reviewer and a compatible reviewer CLI (Codex,
 Claude Code, or a custom MCP-enabled command) to generate an inline,
 severity-tagged GitHub review.
@@ -73,7 +73,7 @@ Before running anything, make sure you have:
    ```
    If this fails, run `gh auth login` first. Multiple authenticated accounts,
    including accounts on different GitHub hosts, can run together.
-3. **A reviewer CLI**, already logged in on its own — pick one:
+3. **A reviewer CLI**, already logged in on its own: pick one:
    - [Claude Code](https://claude.com/claude-code): `claude /login`
    - [Codex CLI](https://github.com/openai/codex): `codex login`
    - A custom CLI that can read a prompt from stdin, print text/JSON to
@@ -101,12 +101,12 @@ openmergelens --version
 
 Config, poll state, logs, retained review reports, and your editable per-repo
 review prompts/learnings files all live under `~/.openmergelens/` (override
-with the `OPENMERGELENS_HOME` env var) — not inside the package install — so
+with the `OPENMERGELENS_HOME` env var), not inside the package install, so
 they survive upgrades and don't need write access to wherever npm put the
 package.
 
 If you want scheduling (cron/launchd/Task Scheduler) to keep working long
-term, install with `npm install -g` rather than running through `npx` —
+term, install with `npm install -g` rather than running through `npx`;
 `npx` without a global install can run from a temporary cache location that
 gets cleaned up, breaking the scheduled entry.
 
@@ -150,7 +150,7 @@ unchanged.
 ### Setting up by hand instead
 
 If you'd rather skip the wizard, write `~/.openmergelens/config.json` yourself.
-A template is bundled with the package — find it with:
+A template is bundled with the package: find it with:
 
 ```bash
 npm root -g
@@ -170,7 +170,7 @@ then copy `<that path>/openmergelens/config.example.json` to
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openmergelens/`). |
 
-`~/.openmergelens/config.json` is local, machine-specific config — it's never
+`~/.openmergelens/config.json` is local, machine-specific config. It is never
 committed to a repo. It stores hostnames and usernames, never tokens. Each poll
 retrieves every selected account's token from the GitHub CLI credential store.
 The reviewer never receives that token. Instead, OpenMergeLens exposes one
@@ -182,8 +182,8 @@ has no direct network access, and fails closed on unknown configuration.
 ## Try it (dry run)
 
 Before trusting OpenMergeLens to post anything, run it in dry-run mode. This does
-everything — search, diff fetch, invoke the reviewer agent against the linked
-PR, and validate findings against the fetched diff — but
+everything: search, diff fetch, invoke the reviewer agent against the linked
+PR, and validate findings against the fetched diff, but
 stops short of posting to GitHub:
 
 ```bash
@@ -240,7 +240,7 @@ redirect process output.
 When a poll reviews, re-reviews, dry-runs, or recovers one or more PRs,
 OpenMergeLens sends one audible desktop notification after the complete batch
 and all state writes finish. The notification lists up to three
-`OWNER/REPO#N — title` entries and summarizes any remaining entries. Mixed
+`OWNER/REPO#N: title` entries and summarizes any remaining entries. Mixed
 results are presented as an attention notification, with failed PRs
 prioritized and successful PRs still represented.
 
@@ -311,7 +311,7 @@ permission still requires user confirmation and cannot be enabled silently.
 ## Scheduling
 
 If you skipped scheduling during `init`, or want to change it later, rerun
-the wizard (it's safe to run again — it just asks the same questions) or set
+the wizard (it's safe to run again: it just asks the same questions) or set
 it up manually:
 
 - **cron** (macOS/Linux): add a line like
@@ -391,7 +391,7 @@ for the security model and private reporting process.
 
 ## Customizing reviews
 
-- **`~/.openmergelens/docs/review-prompts/<host>/<owner>/<repo>.md`** — the
+- **`~/.openmergelens/docs/review-prompts/<host>/<owner>/<repo>.md`**: the
   prompt shared by every configured reviewer of that host/repository: framing, review
   criteria, and where the PR URL and past learnings get inserted (via
   `{{pr_url}}`, `{{pr_number}}`, and `{{learnings_section}}` placeholders).
@@ -401,43 +401,43 @@ for the security model and private reporting process.
   for compatibility but direct the agent to retrieve current metadata.
   `init` seeds one copy per
   watched repo from the bundled default the first time you add that repo;
-  edit a repo's copy directly any time — reorder sections, change the
-  criteria, adjust the framing, no code change or wizard rerun needed — and
+  edit a repo's copy directly any time: reorder sections, change the
+  criteria, and adjust the framing without a code change or wizard rerun. It
   it never affects any other repo's prompt. Re-running `init` never
   overwrites an existing copy. The strict JSON output-format instruction
   the review-posting logic depends on to anchor inline comments is always
   appended automatically and isn't part of this file, so an edit here can't
   break that regardless of what you change.
-- **`~/.openmergelens/docs/learnings/<host>/<username>/<owner>/<repo>.md`** —
+- **`~/.openmergelens/docs/learnings/<host>/<username>/<owner>/<repo>.md`**:
   corrections isolated to one reviewer identity and repository (for example,
   "don't flag X, it's intentional because Y"). `init` creates each selected
   target's file and never overwrites its contents.
 
 ## Troubleshooting
 
-- **`gh` not authenticated** — `gh auth login`, then rerun.
-- **Configured GitHub account is unavailable** — authenticate it with
+- **`gh` not authenticated**: `gh auth login`, then rerun.
+- **Configured GitHub account is unavailable**: authenticate it with
   `gh auth login --hostname <hostname>`, or rerun init and select another
   account. Polling does not depend on whichever account is globally active.
-- **Reviewer CLI "found but not authenticated"** during `init` — run the
+- **Reviewer CLI "found but not authenticated"** during `init`: run the
   login command it prints (e.g. `claude /login`), then continue.
-- **Codex reports "Not inside a trusted directory"** — current versions
+- **Codex reports "Not inside a trusted directory"**: current versions
   automatically upgrade known older generated Codex commands to the current
   ephemeral, strict, read-only command. Upgrade OpenMergeLens or rerun
   `openmergelens init`; custom Codex commands are intentionally not rewritten.
-- **Nothing happens on a poll run** — check `~/.openmergelens/poll.log` for
+- **Nothing happens on a poll run**: check `~/.openmergelens/poll.log` for
   the specific failure (search failed, reviewer adapter failed, post
   rejected, etc.).
-- **Reviews work but notifications do not** — make sure the poll runs while
+- **Reviews work but notifications do not**: make sure the poll runs while
   you are logged into a graphical desktop session. Rerun `openmergelens init`
   to send a test notification and get platform-specific recovery steps. On
   Linux, install `notify-send`; then check `~/.openmergelens/poll.log` for a
   `[notification]` warning.
-- **A notification does not open its report** — run `openmergelens report` to
+- **A notification does not open its report**: run `openmergelens report` to
   open the latest retained snapshot or `openmergelens report --list` to choose
   one. On Linux, the desktop notification server may not support actions even
   when `notify-send` is installed.
-- **A review didn't fully post** — OpenMergeLens validates finding line numbers
+- **A review didn't fully post**: OpenMergeLens validates finding line numbers
   against the actual diff before posting; anything it can't anchor to a real
   line gets folded into the review's summary text instead of being dropped
   silently, so check the summary for an "Additional findings" section.

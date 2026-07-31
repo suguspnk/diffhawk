@@ -298,7 +298,7 @@ test('buildPrompt does not reinterpret $-sequences in substituted values as repl
   // corrupted (e.g. "$&" doubling the matched placeholder text, or "$`"
   // inserting everything before the match). The current implementation
   // uses a function replacer, whose return value is inserted literally
-  // with no special-casing, so this must never happen — this test pins
+  // with no special-casing, so this must never happen. This test pins
   // that behavior against future refactors.
   const prompt = buildPrompt({
     template: '{{pr_url}}\n{{diff}}',
@@ -361,7 +361,7 @@ test('buildPrompt appends the schema instruction even if the template tries to r
 test('buildPrompt treats a template with no PR target placeholder as legacy content and wraps it', () => {
   // A template seeded before placeholder support existed (e.g. an
   // un-migrated docs/checklist.md) has nowhere for the diff/PR info to
-  // land — substituting into it directly would silently produce a prompt
+  // land: substituting into it directly would silently produce a prompt
   // with no diff at all. It must be wrapped with the old fixed
   // framing/sections instead, so it still produces a working prompt.
   const legacyTemplate = '# Review Checklist\n\n- flag off-by-one errors\n- flag missing error handling\n';

@@ -77,7 +77,7 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
 
   assert.match(
     html,
-    /<title>OpenMergeLens — Local AI Code Review for GitHub Pull Requests<\/title>/,
+    /<title>OpenMergeLens \| Local AI Code Review for GitHub Pull Requests<\/title>/,
   );
   assert.equal(
     html.match(/<link rel="canonical" href="([^"]+)">/)?.[1],
