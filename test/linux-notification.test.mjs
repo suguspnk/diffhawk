@@ -8,7 +8,7 @@ import {
 } from '../lib/linux-notification.mjs';
 
 const REPORT_ID = '11111111-1111-4111-8111-111111111111';
-const REPORTS_DIRECTORY = '/tmp/openmergelens/reports';
+const REPORTS_DIRECTORY = path.resolve('/tmp/openmergelens/reports');
 const REPORT_PATH = path.join(REPORTS_DIRECTORY, `${REPORT_ID}.html`);
 
 function encodedPayload(overrides = {}) {

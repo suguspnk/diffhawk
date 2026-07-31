@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import {
   attemptDesktopNotification,
   buildPollNotification,
@@ -278,7 +279,7 @@ test('current macOS attaches the local report URL for body and action activation
   );
   assert.equal(
     helperArgs[helperArgs.indexOf('--open') + 1],
-    'file:///tmp/OpenMergeLens%20reports/result%20one.html',
+    pathToFileURL(reportPath).href,
   );
 });
 
@@ -311,11 +312,12 @@ test('macOS 12 and earlier retain the legacy universal notifier', async () => {
 
 test('legacy macOS attaches the local report URL', async () => {
   let invocation;
+  const reportPath = '/tmp/report result.html';
   await deliverDesktopNotification(
     {
       title: 'OpenMergeLens',
       message: 'Complete',
-      report: { path: '/tmp/report result.html' },
+      report: { path: reportPath },
     },
     {
       platform: 'darwin',
@@ -327,7 +329,7 @@ test('legacy macOS attaches the local report URL', async () => {
   );
   assert.equal(
     invocation.args[invocation.args.indexOf('-open') + 1],
-    'file:///tmp/report%20result.html',
+    pathToFileURL(reportPath).href,
   );
 });
 

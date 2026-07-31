@@ -75,7 +75,7 @@ test('report rendering escapes untrusted PR text and rejects unsafe URLs', () =>
     entries,
   });
 
-  assert.doesNotMatch(html, /<script>|<img src=x|javascript:/);
+  assert.doesNotMatch(html, /<script>|<img src=x|javascript:/i);
   assert.match(html, /&lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/);
   assert.match(html, /Link unavailable/);
   assert.match(html, /Content-Security-Policy/);
@@ -131,14 +131,16 @@ test('creating a report writes private paired files and lists it newest first', 
   assert.equal(reports.length, 1);
   assert.equal(reports[0].firstPullRequest, 'owner/repo#42');
   assert.equal(reports[0].total, 1);
-  assert.equal(
-    (await stat(path.join(directory, `${FIRST_ID}.html`))).mode & 0o777,
-    0o600,
-  );
-  assert.equal(
-    (await stat(path.join(directory, `${FIRST_ID}.json`))).mode & 0o777,
-    0o600,
-  );
+  if (process.platform !== 'win32') {
+    assert.equal(
+      (await stat(path.join(directory, `${FIRST_ID}.html`))).mode & 0o777,
+      0o600,
+    );
+    assert.equal(
+      (await stat(path.join(directory, `${FIRST_ID}.json`))).mode & 0o777,
+      0o600,
+    );
+  }
 });
 
 test('report creation ignores generic failures with no pull request identity', async (t) => {
