@@ -2,7 +2,7 @@
 
 A local CLI that automates AI code reviews for GitHub pull requests using
 Codex, Claude Code, or any compatible MCP-enabled reviewer CLI. OpenMergeLens
-runs on the user's machine on a schedule — no GitHub App, webhook, or server.
+runs on the user's machine on a schedule: no GitHub App, webhook, or server.
 It uses `gh` to find requested reviews and the configured reviewer CLI to
 generate inline, severity-tagged GitHub reviews.
 
@@ -34,12 +34,12 @@ lib/scheduler.mjs         cron/launchd/Task Scheduler installers
 test/                     node:test suite (`npm test`)
 docs/review-prompt.default.md  bundled template new per-repo review prompts are seeded from
 docs/CODE_QUALITY_GUIDELINES.md  project-specific review and implementation guidance
-docs/learnings.md         optional, gitignored — durable corrections fed into prompts
+docs/learnings.md         optional, gitignored: durable corrections fed into prompts
 ```
 
-All per-user state — `config.json`, `state.json`, `poll.log`, and the
-editable `docs/review-prompts/<owner>/<repo>.md` files / `docs/learnings.md`
-— lives under `~/.openmergelens/` (override with `OPENMERGELENS_HOME`), not in
+All per-user state, including `config.json`, `state.json`, `poll.log`, the
+editable `docs/review-prompts/<owner>/<repo>.md` files, and `docs/learnings.md`,
+lives under `~/.openmergelens/` (override with `OPENMERGELENS_HOME`), not in
 this repo. See `lib/paths.mjs`. `config.example.json` here is just the
 config template; `docs/review-prompt.default.md` is the review-prompt
 template `init` seeds each repo's copy from on first use.
@@ -47,19 +47,19 @@ template `init` seeds each repo's copy from on first use.
 `lib/reviewer-adapter.mjs`'s `buildPrompt` fills a repo's review-prompt
 template's `{{pr_title}}`/`{{pr_number}}`/`{{pr_body}}`/`{{diff}}`/
 `{{learnings_section}}` placeholders and always appends a fixed JSON
-output-format instruction afterward — that instruction is never part of the
+output-format instruction afterward. That instruction is never part of the
 editable template, since `parseFindings` depends on it structurally. A
 template with no `{{diff}}` placeholder (e.g. an un-migrated pre-template
 checklist file) is treated as legacy content and wrapped with the old fixed
 framing instead, so it keeps producing a working prompt.
 
-## Key constraints (from the design spec — see PRD.md for the "why")
+## Key constraints (from the design spec; see PRD.md for the "why")
 
 - No `.github/workflows/*.yml`, no webhooks, no tunnels. Pure client-side
   polling via `gh` CLI.
 - State is keyed by `OWNER/REPO#N` → last-reviewed head SHA, not a seen/unseen
   boolean. A PR with new commits since its last review must be re-reviewed.
-- The reviewer backend (`reviewerCommand`) must stay swappable via config —
+- The reviewer backend (`reviewerCommand`) must stay swappable via config;
   never hardcode a specific CLI invocation (e.g. `claude -p`) directly in the
   polling logic.
 - If the reviewer CLI fails or returns nothing, skip posting and leave state
@@ -68,19 +68,19 @@ framing instead, so it keeps producing a working prompt.
   anything that can't be anchored goes into the summary text instead of being
   silently dropped.
 - Posting PR reviews from this bot is pre-approved by the user for this
-  specific flow only — that approval doesn't extend to other PR-commenting
+  specific flow only. That approval doesn't extend to other PR-commenting
   contexts.
 
 ## Running it
 
 ```bash
-openmergelens --dry-run   # search, diff, prompt, invoke reviewer — no posting
+openmergelens --dry-run   # search, diff, prompt, invoke reviewer: no posting
 openmergelens             # posts real GitHub reviews, updates ~/.openmergelens/state.json
 openmergelens init        # setup wizard
 ```
 
 When working in this repo directly (not the published package), the
 equivalent is `node bin/poll.mjs --dry-run` / `node bin/poll.mjs` /
-`node bin/init.mjs` — same behavior, same `~/.openmergelens` state directory.
+`node bin/init.mjs`: same behavior, same `~/.openmergelens` state directory.
 
 Failures are logged to `~/.openmergelens/poll.log`.

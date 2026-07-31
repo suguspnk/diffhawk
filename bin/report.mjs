@@ -29,7 +29,7 @@ async function main() {
     return;
   }
 
-  p.intro('OpenMergeLens — retained review reports');
+  p.intro('OpenMergeLens: retained review reports');
   const selectedId = await p.select({
     message: 'Which report would you like to open?',
     options: reports.map((report) => ({

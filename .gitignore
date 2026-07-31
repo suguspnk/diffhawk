@@ -1,4 +1,4 @@
-# OpenMergeLens-specific — state.json/config.json/poll.log normally live under
+# OpenMergeLens-specific: state.json/config.json/poll.log normally live under
 # ~/.openmergelens/, not here, but ignore them in case something runs with
 # OPENMERGELENS_HOME unset to a repo-local path during local development
 state.json

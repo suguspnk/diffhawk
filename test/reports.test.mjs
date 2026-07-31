@@ -419,6 +419,7 @@ test('report choices include time, counts, attention, and first PR', () => {
     summary: '3 reviewed, 1 failed',
     firstPullRequest: 'owner/repo#42',
   });
+  assert.equal(label.split(' | ').length, 3);
   assert.match(label, /3 reviewed, 1 failed/);
   assert.match(label, /owner\/repo#42 \+3 more/);
 });

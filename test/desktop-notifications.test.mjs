@@ -49,7 +49,7 @@ test('formats successful, re-review, recovery, and dry-run outcomes', () => {
     }),
     {
       title: 'OpenMergeLens review complete',
-      message: 'Reviewed: owner/repo#12 — Fix notifications',
+      message: 'Reviewed: owner/repo#12: Fix notifications',
       attention: false,
     },
   );
@@ -106,7 +106,7 @@ test('formats account and repository failures without duplicating identity', () 
   });
   assert.match(
     notification.message,
-    /Failed: work@github\.com — authentication failed/,
+    /Failed: work@github\.com: authentication failed/,
   );
   assert.doesNotMatch(
     notification.message,
@@ -114,7 +114,7 @@ test('formats account and repository failures without duplicating identity', () 
   );
   assert.match(
     notification.message,
-    /Failed: owner\/repo \(as personal@github\.com\) — search failed/,
+    /Failed: owner\/repo \(as personal@github\.com\): search failed/,
   );
 });
 
@@ -147,7 +147,7 @@ test('current macOS uses the maintained bundled alerter', async () => {
   let invocation;
   const notification = {
     title: 'OpenMergeLens review complete',
-    message: 'Reviewed: owner/repo#1 — `"; display dialog "unsafe',
+    message: 'Reviewed: owner/repo#1: `"; display dialog "unsafe',
     attention: false,
   };
 

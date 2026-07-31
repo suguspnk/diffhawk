@@ -7,7 +7,7 @@ design, and what gets merged. There is no formal contributor tier with merge
 rights at this time.
 
 External contributions (issues, PRs) are welcome, but merge rights are not
-extended to contributors currently — this may change as the project grows,
+extended to contributors currently. This may change as the project grows,
 but there's no fixed criteria or timeline for that yet.
 
 ## Change process

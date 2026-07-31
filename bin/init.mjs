@@ -55,7 +55,7 @@ const reviewPromptTemplatePath = path.join(
 );
 
 function exitCancelled() {
-  p.cancel('Setup cancelled — configuration and review files were not changed.');
+  p.cancel('Setup cancelled. Configuration and review files were not changed.');
   throw Object.assign(new Error('setup cancelled'), { code: 'ECANCELLED' });
 }
 
@@ -98,7 +98,7 @@ async function verifyConfiguredNotifications() {
 
 async function main() {
   console.clear();
-  p.intro('OpenMergeLens — configure independent GitHub reviewer accounts');
+  p.intro('OpenMergeLens: configure independent GitHub reviewer accounts');
 
   await ensurePrivateDirectory(userHome());
   const releaseOperationLock = await acquireLock(userPath('operation.lock'));

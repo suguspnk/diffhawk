@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Single published entrypoint: `openmergelens init` runs the setup wizard,
 // `openmergelens` (with no subcommand, or --dry-run) runs a poll. Kept as a thin
-// dispatcher over poll.mjs/init.mjs — both of those still run main() at
+// dispatcher over poll.mjs/init.mjs: both of those still run main() at
 // import time, so they're re-executed as child processes rather than
 // imported, and stdio is inherited so their interactive prompts still work.
 import { fileURLToPath } from 'node:url';
