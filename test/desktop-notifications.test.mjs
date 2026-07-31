@@ -255,6 +255,33 @@ test('the macOS setup probe gets a fresh identity without changing normal alerts
   );
 });
 
+test('current macOS attaches the local report URL for body and action activation', async () => {
+  let invocation;
+  const reportPath = '/tmp/OpenMergeLens reports/result one.html';
+  await deliverDesktopNotification(
+    {
+      title: 'OpenMergeLens review complete',
+      message: 'Reviewed: owner/repo#1',
+      report: { path: reportPath },
+    },
+    {
+      platform: 'darwin',
+      darwinMajor: 25,
+      spawnImpl: successfulNotifierAppSpawn((value) => {
+        invocation = value;
+      }),
+    },
+  );
+
+  const helperArgs = invocation.args.slice(
+    invocation.args.indexOf('--args') + 1,
+  );
+  assert.equal(
+    helperArgs[helperArgs.indexOf('--open') + 1],
+    'file:///tmp/OpenMergeLens%20reports/result%20one.html',
+  );
+});
+
 test('macOS 12 and earlier retain the legacy universal notifier', async () => {
   let invocation;
   await deliverDesktopNotification(
@@ -280,6 +307,28 @@ test('macOS 12 and earlier retain the legacy universal notifier', async () => {
     '-sound',
     'Glass',
   ]);
+});
+
+test('legacy macOS attaches the local report URL', async () => {
+  let invocation;
+  await deliverDesktopNotification(
+    {
+      title: 'OpenMergeLens',
+      message: 'Complete',
+      report: { path: '/tmp/report result.html' },
+    },
+    {
+      platform: 'darwin',
+      darwinMajor: 21,
+      spawnImpl: successfulSpawn((value) => {
+        invocation = value;
+      }),
+    },
+  );
+  assert.equal(
+    invocation.args[invocation.args.indexOf('-open') + 1],
+    'file:///tmp/report%20result.html',
+  );
 });
 
 test('macOS attention notifications use a distinct failure sound', async () => {
@@ -391,6 +440,48 @@ test('Linux delivery requests persistent urgency and context-specific sound', as
   assert.ok(invocations[1].args.includes('--hint=string:sound-name:dialog-error'));
 });
 
+test('Linux report delivery launches a detached action listener', async () => {
+  let invocation;
+  let unrefCalled = false;
+  const spawnImpl = (command, args, options) => {
+    invocation = { command, args, options };
+    const child = new EventEmitter();
+    child.unref = () => {
+      unrefCalled = true;
+    };
+    queueMicrotask(() => child.emit('spawn'));
+    return child;
+  };
+  await deliverDesktopNotification(
+    {
+      title: 'Reviewed',
+      message: 'Complete',
+      report: { path: '/tmp/reports/11111111-1111-4111-8111-111111111111.html' },
+    },
+    {
+      platform: 'linux',
+      spawnImpl,
+      environment: {
+        DISPLAY: ':0',
+        PATH: '/usr/bin',
+      },
+    },
+  );
+
+  assert.equal(invocation.command, process.execPath);
+  assert.match(invocation.args[0], /bin[\\/]linux-notification\.mjs$/);
+  assert.equal(invocation.options.detached, true);
+  assert.equal(invocation.options.stdio, 'ignore');
+  assert.equal(unrefCalled, true);
+  const decoded = JSON.parse(
+    Buffer.from(
+      invocation.options.env.OPENMERGELENS_NOTIFICATION,
+      'base64',
+    ).toString('utf8'),
+  );
+  assert.equal(decoded.reportPath, '/tmp/reports/11111111-1111-4111-8111-111111111111.html');
+});
+
 test('Windows delivery encodes notification data instead of interpolating PowerShell', async () => {
   let invocation;
   const execFileImpl = (command, args, options, callback) => {
@@ -434,7 +525,44 @@ test('Windows delivery encodes notification data instead of interpolating PowerS
   assert.deepEqual(decoded, {
     title: notification.title,
     message: notification.message,
+    reportUrl: null,
   });
+});
+
+test('Windows body and View results action use an encoded file protocol URL', async () => {
+  let invocation;
+  const execFileImpl = (command, args, options, callback) => {
+    invocation = { command, args, options };
+    callback(null);
+  };
+  await deliverDesktopNotification(
+    {
+      title: 'OpenMergeLens',
+      message: 'Reviewed',
+      report: { path: 'C:\\Users\\Example User\\report & result.html' },
+    },
+    {
+      platform: 'win32',
+      execFileImpl,
+      environment: {},
+    },
+  );
+
+  const decoded = JSON.parse(
+    Buffer.from(
+      invocation.options.env.OPENMERGELENS_NOTIFICATION,
+      'base64',
+    ).toString('utf8'),
+  );
+  assert.match(decoded.reportUrl, /^file:\/\/\/.*report%20&%20result\.html$/);
+  assert.match(
+    invocation.args[3],
+    /launch="\{0\}" activationType="protocol"/,
+  );
+  assert.match(
+    invocation.args[3],
+    /content="View results" arguments="\{0\}" activationType="protocol"/,
+  );
 });
 
 test('delivery errors and unsupported platforms reject for the caller to isolate', async () => {

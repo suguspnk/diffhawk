@@ -199,13 +199,18 @@ poller as a `pnpm` script / bin.
 
 9. **Notify after the complete poll settles.** Desktop notifications are
    default-on with a config opt-out and use native macOS, Windows, and Linux
-   facilities. Emit one audible, informational-only notification when review
+   facilities. Emit one audible notification when review
    work occurred or a failure needs attention; no-op and lock-contention runs
    stay silent. Identify up to three PRs by repository, number, and title,
    distinguish reviews/re-reviews/dry-runs/recoveries/tracking failures, and
-   prioritize failures in mixed results. Notification delivery is
-   best-effort, limited to five seconds, and can never change review state or
-   the poll exit status.
+   prioritize failures in mixed results. Eligible notifications carry a
+   private, bounded local HTML snapshot of that exact poll. Body activation
+   and a View-results action open the snapshot on macOS and Windows; Linux
+   exposes the action when the desktop notification server supports it, with
+   `openmergelens report` as the fallback. Reports retain only display metadata
+   and canonical PR links, never review bodies, diffs, findings, or secrets.
+   Notification delivery is best-effort, limited at its launch boundary, and
+   can never change review state or the poll exit status.
 
 10. **Selected-set AI-processing consent.** Repository selection alone is not
     authorization to send source code or PR data to a third-party reviewer.

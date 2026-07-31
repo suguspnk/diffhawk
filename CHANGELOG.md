@@ -4,6 +4,11 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Added private per-poll HTML review reports that open from supported
+  notification body/actions, with a cross-platform `openmergelens report`
+  command, interactive `--list` picker, bounded retention, and Linux fallback
+  behavior for notification servers without action support.
+
 ## [1.1.3] - 2026-07-30
 
 - Fixed lock acquisition fallback handling so unrelated silent candidates do

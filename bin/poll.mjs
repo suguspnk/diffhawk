@@ -11,7 +11,9 @@ import { pollOnce } from '../lib/poller.mjs';
 import {
   attemptDesktopNotification,
   buildPollNotification,
+  desktopNotificationsEnabled,
 } from '../lib/desktop-notifications.mjs';
+import { createPollReport } from '../lib/reports.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
@@ -27,6 +29,27 @@ function notify(notification) {
     config: activeConfig,
     logPath: userPath('poll.log'),
   });
+}
+
+async function notifyPollResult(result) {
+  const notification = buildPollNotification(result);
+  if (!notification) return false;
+
+  let report;
+  if (desktopNotificationsEnabled(activeConfig)) {
+    try {
+      report = await createPollReport(result, {
+        reportsDirectory: userPath('reports'),
+      });
+    } catch (error) {
+      await appendFailure(
+        userPath('poll.log'),
+        'report',
+        `review report failed: ${error.message}`,
+      );
+    }
+  }
+  return notify(report ? { ...notification, report } : notification);
 }
 
 async function main() {
@@ -54,7 +77,7 @@ async function main() {
       dryRun: parsed.dryRun,
       accountSelector,
     });
-    await notify(buildPollNotification(result));
+    await notifyPollResult(result);
     if (result.failed) process.exitCode = 1;
   } finally {
     await releaseLock();
@@ -63,12 +86,12 @@ async function main() {
 
 main().catch(async (err) => {
   await appendFailure(userPath('poll.log'), 'fatal', `openmergelens: ${err.message}`);
-  await notify(buildPollNotification({
+  await notifyPollResult({
     failures: [{
       status: 'failed',
       subject: 'OpenMergeLens',
       note: 'startup failed; see poll.log',
     }],
-  }));
+  });
   process.exitCode = 1;
 });

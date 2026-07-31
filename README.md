@@ -99,10 +99,11 @@ openmergelens --help
 openmergelens --version
 ```
 
-Config, poll state, logs, and your editable per-repo review prompts/learnings
-files all live under `~/.openmergelens/` (override with the `OPENMERGELENS_HOME`
-env var) — not inside the package install — so they survive upgrades and
-don't need write access to wherever npm put the package.
+Config, poll state, logs, retained review reports, and your editable per-repo
+review prompts/learnings files all live under `~/.openmergelens/` (override
+with the `OPENMERGELENS_HOME` env var) — not inside the package install — so
+they survive upgrades and don't need write access to wherever npm put the
+package.
 
 If you want scheduling (cron/launchd/Task Scheduler) to keep working long
 term, install with `npm install -g` rather than running through `npx` —
@@ -243,6 +244,29 @@ and all state writes finish. The notification lists up to three
 results are presented as an attention notification, with failed PRs
 prioritized and successful PRs still represented.
 
+When a notification contains PR results, click its body or choose **View
+results** to open that poll's exact report in the default browser. Reports are
+self-contained local HTML files: they include outcome, repository/PR number,
+title, a short failure note when relevant, and the GitHub link when available.
+They never include review bodies, diffs, findings, credentials, or tokens.
+macOS and Windows support body activation. Linux offers the action when the
+installed `notify-send` and desktop notification server support actions;
+desktops that ignore notification actions still display the normal preview.
+
+Open the newest retained report or choose an older one from an interactive
+newest-first picker:
+
+```bash
+openmergelens report
+openmergelens report --list
+```
+
+When `--list` is used from a pipe, scheduler, or other non-interactive
+environment, it prints the retained reports instead of waiting for input or
+opening a browser. Reports use private file permissions and are retained for
+30 days, with at most 100 active snapshots. An old notification whose snapshot
+was pruned opens a small expiry page rather than a newer report.
+
 No notification is sent when there is no work or when another poll owns the
 operation lock. Notification delivery is best-effort: helper launches are
 bounded, failures are logged to `~/.openmergelens/poll.log`, and notification
@@ -355,7 +379,9 @@ for the security model and private reporting process.
   when the schedule fires.
 - Only explicitly selected repositories are searched.
 - Notifications require a logged-in graphical session; Linux also requires
-  `notify-send`.
+  `notify-send`. Notification activation on Linux depends on the desktop
+  notification server supporting actions; use `openmergelens report` as the
+  fallback.
 - Reviewer quality, latency, context limits, and cost depend on the configured
   reviewer.
 - OpenMergeLens supports maintained Node.js 22 and 24 releases. EOL Node.js
@@ -405,6 +431,10 @@ for the security model and private reporting process.
   to send a test notification and get platform-specific recovery steps. On
   Linux, install `notify-send`; then check `~/.openmergelens/poll.log` for a
   `[notification]` warning.
+- **A notification does not open its report** — run `openmergelens report` to
+  open the latest retained snapshot or `openmergelens report --list` to choose
+  one. On Linux, the desktop notification server may not support actions even
+  when `notify-send` is installed.
 - **A review didn't fully post** — OpenMergeLens validates finding line numbers
   against the actual diff before posting; anything it can't anchor to a real
   line gets folded into the review's summary text instead of being dropped

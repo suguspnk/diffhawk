@@ -30,8 +30,10 @@
   },
   "files": [
     "bin/init.mjs",
+    "bin/linux-notification.mjs",
     "bin/openmergelens.mjs",
     "bin/poll.mjs",
+    "bin/report.mjs",
     "bin/scheduled.mjs",
     "bin/scheduled-win32.vbs",
     "lib",

@@ -14,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const usage = [
   'Usage: openmergelens [--dry-run] [--account USERNAME@HOSTNAME]',
   '       openmergelens init',
+  '       openmergelens report [--list | REPORT_ID]',
   '       openmergelens --help',
   '       openmergelens --version',
 ].join('\n');

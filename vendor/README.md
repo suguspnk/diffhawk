@@ -17,15 +17,15 @@
 - Minimum macOS deployment target: 13.0
 - Application bundle identifier:
   `io.github.suguspnk.openmergelens.notifier`
-- Application bundle build version: `2` (refreshes registrations created
-  before the official icon was added)
+- Application bundle build version: `3` (adds report activation handling and
+  refreshes earlier bundle registrations)
 - Official mark source (`docs/openmergelens-mark.svg`, LF line endings) SHA-256:
   `f8ee81382daf5b506396c7a0e557a24f3fdb278f7ad7ace272bf8eec73b06221`
 - Generated `OpenMergeLens.icns` SHA-256:
   `2cf31849a3d209cbcd929bdf9e0680b8cfe8eb2f005d395c1b3c6548b91ba36b`
 - Bundled executable SHA-256 after stripping, UUID normalization, and ad-hoc
   bundle signing:
-  `8c7a0d917a3166ff9e31318fb5734a872677e83737421aaf8cd4ae3328d10594`
+  `d6bab1fb33b4bcf9a12c98df24244cb323ce2890017304e7e2e60a13f9a83854`
 - License: `alerter-LICENSE.md`
 
 The official upstream ZIP is arm64-only, so OpenMergeLens reproducibly builds
@@ -93,7 +93,10 @@ shasum -a 256 "$notifier_bundle/Contents/MacOS/alerter"
 OpenMergeLens uses Alerter on macOS 13 and later. It runs from the signed
 `OpenMergeLensNotifier.app` bundle and selects that bundle's dedicated
 identifier, so Notification Center attributes PR-derived content to
-OpenMergeLens instead of impersonating another installed application.
+OpenMergeLens instead of impersonating another installed application. Report
+notifications store only a private local `file:` URL in their activation
+metadata. The helper opens that URL when the notification body or its
+**View results** action is selected; dismissals do not open it.
 
 ## terminal-notifier
 
