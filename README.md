@@ -251,7 +251,9 @@ title, a short failure note when relevant, and the GitHub link when available.
 They never include review bodies, diffs, findings, credentials, or tokens.
 macOS and Windows support body activation. Linux offers the action when the
 installed `notify-send` and desktop notification server support actions;
-desktops that ignore notification actions still display the normal preview.
+the activation listener remains available for up to 15 minutes so recurring
+polls cannot accumulate long-lived processes. Desktops that ignore
+notification actions still display the normal preview.
 
 Open the newest retained report or choose an older one from an interactive
 newest-first picker:

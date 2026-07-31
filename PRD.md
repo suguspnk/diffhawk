@@ -206,9 +206,10 @@ poller as a `pnpm` script / bin.
    prioritize failures in mixed results. Eligible notifications carry a
    private, bounded local HTML snapshot of that exact poll. Body activation
    and a View-results action open the snapshot on macOS and Windows; Linux
-   exposes the action when the desktop notification server supports it, with
-   `openmergelens report` as the fallback. Reports retain only display metadata
-   and canonical PR links, never review bodies, diffs, findings, or secrets.
+   exposes the action for a bounded 15-minute listener window when the desktop
+   notification server supports it, with `openmergelens report` as the
+   fallback. Reports retain only display metadata and canonical PR links,
+   never review bodies, diffs, findings, or secrets.
    Notification delivery is best-effort, limited at its launch boundary, and
    can never change review state or the poll exit status.
 

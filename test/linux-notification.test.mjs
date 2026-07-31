@@ -11,6 +11,10 @@ const REPORT_ID = '11111111-1111-4111-8111-111111111111';
 const REPORTS_DIRECTORY = path.resolve('/tmp/openmergelens/reports');
 const REPORT_PATH = path.join(REPORTS_DIRECTORY, `${REPORT_ID}.html`);
 
+test('Linux notification action listeners have a tightly bounded lifetime', () => {
+  assert.equal(NOTIFICATION_ACTION_WAIT_TIMEOUT_MS, 15 * 60 * 1_000);
+});
+
 function encodedPayload(overrides = {}) {
   return Buffer.from(JSON.stringify({
     title: 'OpenMergeLens review complete',

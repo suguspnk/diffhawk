@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  atomicWrite,
   createPollReport,
   formatReportChoice,
   listReports,
@@ -23,6 +24,35 @@ import {
 
 const FIRST_ID = '11111111-1111-4111-8111-111111111111';
 const SECOND_ID = '22222222-2222-4222-8222-222222222222';
+
+function virtualFileOperations(initialFiles) {
+  const files = new Map(initialFiles);
+  return {
+    files,
+    async write(filePath, contents) {
+      assert.equal(files.has(filePath), false);
+      files.set(filePath, contents);
+    },
+    async move(sourcePath, targetPath) {
+      if (!files.has(sourcePath)) {
+        const error = new Error(`missing ${sourcePath}`);
+        error.code = 'ENOENT';
+        throw error;
+      }
+      if (files.has(targetPath)) {
+        const error = new Error(`existing ${targetPath}`);
+        error.code = 'EEXIST';
+        throw error;
+      }
+      files.set(targetPath, files.get(sourcePath));
+      files.delete(sourcePath);
+    },
+    async remove(filePath) {
+      files.delete(filePath);
+    },
+    async secure() {},
+  };
+}
 
 function result(status = 'reviewed', overrides = {}) {
   return {
@@ -113,6 +143,57 @@ test('report rendering rejects HTTPS links outside the expected host and PR path
     assert.doesNotMatch(html, /href=/);
     assert.match(html, /Link unavailable/);
   }
+});
+
+test('atomic report writes replace existing Windows files through a private backup', async () => {
+  const targetPath = 'C:\\reports\\report.html';
+  const operations = virtualFileOperations([[targetPath, 'original']]);
+
+  await atomicWrite(targetPath, 'replacement', {
+    platform: 'win32',
+    ...operations,
+  });
+
+  assert.equal(operations.files.get(targetPath), 'replacement');
+  assert.equal(
+    [...operations.files.keys()].some((filePath) => filePath.includes('.backup-')),
+    false,
+  );
+});
+
+test('failed Windows report replacement restores the original file', async () => {
+  const targetPath = 'C:\\reports\\report.html';
+  const operations = virtualFileOperations([[targetPath, 'original']]);
+  const move = operations.move;
+  let replacementAttempts = 0;
+  operations.move = async (sourcePath, destinationPath) => {
+    if (
+      sourcePath.includes('.tmp-') &&
+      destinationPath === targetPath
+    ) {
+      replacementAttempts += 1;
+      if (replacementAttempts === 2) {
+        const error = new Error('replacement failed');
+        error.code = 'EIO';
+        throw error;
+      }
+    }
+    return move(sourcePath, destinationPath);
+  };
+
+  await assert.rejects(
+    atomicWrite(targetPath, 'replacement', {
+      platform: 'win32',
+      ...operations,
+    }),
+    /replacement failed/,
+  );
+
+  assert.equal(operations.files.get(targetPath), 'original');
+  assert.equal(
+    [...operations.files.keys()].some((filePath) => filePath.includes('.backup-')),
+    false,
+  );
 });
 
 test('creating a report writes private paired files and lists it newest first', async (t) => {
@@ -261,10 +342,15 @@ test('pruning cleans partial, temporary, and symlinked report artifacts', async 
     directory,
     `${SECOND_ID}.json.tmp-123-44444444-4444-4444-8444-444444444444`,
   );
+  const backup = path.join(
+    directory,
+    `${SECOND_ID}.html.backup-123-55555555-5555-4555-8555-555555555555`,
+  );
   await writeFile(partialJson, '{}');
   await writeFile(orphanHtml, '<script>unsafe()</script>');
   await symlink('/tmp/outside.html', symlinkHtml);
   await writeFile(temporary, 'partial');
+  await writeFile(backup, 'stale backup');
 
   await pruneReports(directory, {
     now: new Date('2026-07-31T08:00:00.000Z'),
@@ -273,6 +359,7 @@ test('pruning cleans partial, temporary, and symlinked report artifacts', async 
   await assert.rejects(lstat(partialJson));
   await assert.rejects(lstat(symlinkHtml));
   await assert.rejects(lstat(temporary));
+  await assert.rejects(lstat(backup));
   assert.match(await readFile(orphanHtml, 'utf8'), /Report expired/);
   assert.doesNotMatch(await readFile(orphanHtml, 'utf8'), /unsafe\(\)/);
 });
