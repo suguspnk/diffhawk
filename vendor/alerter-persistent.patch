@@ -1,5 +1,5 @@
 diff --git a/Sources/Alerter/AlerterCommand.swift b/Sources/Alerter/AlerterCommand.swift
-index 11b4bdb..b3e423b 100644
+index 11b4bdb..7372540 100644
 --- a/Sources/Alerter/AlerterCommand.swift
 +++ b/Sources/Alerter/AlerterCommand.swift
 @@ -50,8 +50,8 @@ struct AlerterCommand: ParsableCommand {
@@ -13,8 +13,26 @@ index 11b4bdb..b3e423b 100644
  
      @Option(help: "URL or path of an image to use as app icon.")
      var appIcon: String?
+@@ -59,6 +59,9 @@ struct AlerterCommand: ParsableCommand {
+     @Option(help: "URL or path of an image attached to the notification.")
+     var contentImage: String?
+ 
++    @Option(help: "Local file URL to open when the notification is activated.")
++    var open: String?
++
+     @Option(help: "Auto-close the notification after N seconds.")
+     var timeout: Int = 0
+ 
+@@ -142,6 +145,7 @@ struct AlerterCommand: ParsableCommand {
+                 groupID: group,
+                 appIcon: appIcon,
+                 contentImage: contentImage,
++                open: open,
+                 timeout: timeout,
+                 outputJSON: json,
+                 ignoreDnD: ignoreDnd,
 diff --git a/Sources/Alerter/Info.plist b/Sources/Alerter/Info.plist
-index fe8144d..010d004 100644
+index fe8144d..e74146d 100644
 --- a/Sources/Alerter/Info.plist
 +++ b/Sources/Alerter/Info.plist
 @@ -3,9 +3,23 @@
@@ -34,7 +52,7 @@ index fe8144d..010d004 100644
 +	<key>CFBundleShortVersionString</key>
 +	<string>1.0</string>
 +	<key>CFBundleVersion</key>
-+	<string>2</string>
++	<string>3</string>
  	<key>CFBundleIconFile</key>
 -	<string>AppIcon</string>
 +	<string>OpenMergeLens</string>
@@ -44,7 +62,7 @@ index fe8144d..010d004 100644
  	<string>alert</string>
  </dict>
 diff --git a/Sources/Alerter/NotificationManager.swift b/Sources/Alerter/NotificationManager.swift
-index 8a616e1..6bbda47 100644
+index 8a616e1..cb178e9 100644
 --- a/Sources/Alerter/NotificationManager.swift
 +++ b/Sources/Alerter/NotificationManager.swift
 @@ -1,4 +1,5 @@
@@ -53,7 +71,25 @@ index 8a616e1..6bbda47 100644
  
  struct NotificationConfig {
      let title: String
-@@ -30,6 +31,13 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
+@@ -12,14 +13,16 @@ struct NotificationConfig {
+     let groupID: String?
+     let appIcon: String?
+     let contentImage: String?
++    let open: String?
+     let timeout: Int
+     let outputJSON: Bool
+     let ignoreDnD: Bool
+     let uuid: String
+ }
+ 
+-class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
++class NotificationManager: NSObject, NSUserNotificationCenterDelegate, UNUserNotificationCenterDelegate {
+     static let shared = NotificationManager()
++    private static let openReportAction = "OPEN_REPORT"
+ 
+     private var currentNotification: NSUserNotification?
+     private var currentConfig: NotificationConfig?
+@@ -30,6 +33,13 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
      func deliverNotification(config: NotificationConfig) {
          currentConfig = config
  
@@ -67,12 +103,13 @@ index 8a616e1..6bbda47 100644
          // Remove earlier notification with the same group ID
          if let groupID = config.groupID {
              removeNotification(groupID: groupID)
-@@ -99,6 +107,51 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
+@@ -99,6 +109,96 @@ class NotificationManager: NSObject, NSUserNotificationCenterDelegate {
          center.deliver(notification)
      }
  
 +    private func deliverPersistentNotification(config: NotificationConfig) {
 +        let center = UNUserNotificationCenter.current()
++        center.delegate = self
 +        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
 +            if let error = error {
 +                fputs("alerter: \(error.localizedDescription)\n", stderr)
@@ -97,6 +134,22 @@ index 8a616e1..6bbda47 100644
 +            if config.ignoreDnD {
 +                content.interruptionLevel = .timeSensitive
 +            }
++            if let open = config.open {
++                content.userInfo["open"] = open
++                content.categoryIdentifier = "OPENMERGELENS_REPORT"
++                let viewAction = UNNotificationAction(
++                    identifier: Self.openReportAction,
++                    title: "View results",
++                    options: [.foreground]
++                )
++                let category = UNNotificationCategory(
++                    identifier: content.categoryIdentifier,
++                    actions: [viewAction],
++                    intentIdentifiers: [],
++                    options: []
++                )
++                center.setNotificationCategories([category])
++            }
 +
 +            let identifier = config.groupID ?? config.uuid
 +            center.removeDeliveredNotifications(withIdentifiers: [identifier])
@@ -116,6 +169,51 @@ index 8a616e1..6bbda47 100644
 +        }
 +    }
 +
++    func listenForPersistentActivation() {
++        UNUserNotificationCenter.current().delegate = self
++        NSApplication.shared.setActivationPolicy(.accessory)
++    }
++
++    func userNotificationCenter(
++        _ center: UNUserNotificationCenter,
++        didReceive response: UNNotificationResponse,
++        withCompletionHandler completionHandler: @escaping () -> Void
++    ) {
++        defer {
++            completionHandler()
++            DispatchQueue.main.async {
++                NSApplication.shared.terminate(nil)
++            }
++        }
++        guard
++            response.actionIdentifier == UNNotificationDefaultActionIdentifier ||
++                response.actionIdentifier == Self.openReportAction,
++            let value = response.notification.request.content.userInfo["open"] as? String,
++            let url = URL(string: value),
++            url.isFileURL
++        else {
++            return
++        }
++        NSWorkspace.shared.open(url)
++    }
++
      // MARK: - Remove
  
      func removeNotification(groupID: String) {
+diff --git a/Sources/Alerter/main.swift b/Sources/Alerter/main.swift
+index aaf379b..79ad8e2 100644
+--- a/Sources/Alerter/main.swift
++++ b/Sources/Alerter/main.swift
+@@ -12,4 +12,11 @@ signal(SIGINT) { _ in
+     exit(EXIT_FAILURE)
+ }
+ 
+-AlerterCommand.main()
++let launchArguments = CommandLine.arguments.dropFirst()
++if launchArguments.isEmpty ||
++    launchArguments.allSatisfy({ $0.hasPrefix("-psn_") }) {
++    notificationManager.listenForPersistentActivation()
++    NSApplication.shared.run()
++} else {
++    AlerterCommand.main()
++}

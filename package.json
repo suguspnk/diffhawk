@@ -30,8 +30,10 @@
   },
   "files": [
     "bin/init.mjs",
+    "bin/linux-notification.mjs",
     "bin/openmergelens.mjs",
     "bin/poll.mjs",
+    "bin/report.mjs",
     "bin/scheduled.mjs",
     "bin/scheduled-win32.vbs",
     "lib",
@@ -44,6 +46,7 @@
   "scripts": {
     "poll": "node bin/poll.mjs",
     "init": "node bin/init.mjs",
+    "report": "node bin/openmergelens.mjs report",
     "test": "node --test",
     "pack:check": "npm pack --dry-run",
     "release:check": "pnpm test && pnpm audit --prod --audit-level low && pnpm run pack:check",
