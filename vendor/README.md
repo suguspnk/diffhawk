@@ -19,7 +19,7 @@
   `io.github.suguspnk.openmergelens.notifier`
 - Application bundle build version: `3` (adds report activation handling and
   refreshes earlier bundle registrations)
-- Official mark source (`docs/openmergelens-mark.svg`, LF line endings) SHA-256:
+- Official mark source (`docs/assets/openmergelens-mark.svg`, LF line endings) SHA-256:
   `f8ee81382daf5b506396c7a0e557a24f3fdb278f7ad7ace272bf8eec73b06221`
 - Generated `OpenMergeLens.icns` SHA-256:
   `2cf31849a3d209cbcd929bdf9e0680b8cfe8eb2f005d395c1b3c6548b91ba36b`
@@ -61,7 +61,7 @@ cp "$alerter_source_dir/Sources/Alerter/Info.plist" \
   "$notifier_bundle/Contents/Info.plist"
 icon_work_dir=$(mktemp -d /tmp/openmergelens-icon.XXXXXX)
 qlmanage -t -s 1024 -o "$icon_work_dir" \
-  "$openmergelens_root/docs/openmergelens-mark.svg"
+  "$openmergelens_root/docs/assets/openmergelens-mark.svg"
 icon_png="$icon_work_dir/openmergelens-mark.svg.png"
 for icon_size in 16 32 48 128 256 512 1024; do
   sips -s format tiff -z "$icon_size" "$icon_size" "$icon_png" \

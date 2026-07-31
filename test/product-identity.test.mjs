@@ -116,33 +116,33 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
 test('GitHub Pages motion is local, pinned, and progressively enhanced', async () => {
   const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
   const motionSource = await readFile(
-    path.join(projectRoot, 'docs/site-motion.js'),
+    path.join(projectRoot, 'docs/assets/site-motion.js'),
     'utf8',
   );
   const motionBundle = await readFile(
     path.join(
       projectRoot,
-      'docs/vendor/motion-mini-12.43.0.js',
+      'docs/assets/vendor/motion-mini-12.43.0.js',
     ),
     'utf8',
   );
   const motionLicense = await readFile(
-    path.join(projectRoot, 'docs/vendor/MOTION-LICENSE.md'),
+    path.join(projectRoot, 'docs/assets/vendor/MOTION-LICENSE.md'),
     'utf8',
   );
   const motionProvenance = await readFile(
-    path.join(projectRoot, 'docs/vendor/README.md'),
+    path.join(projectRoot, 'docs/assets/vendor/README.md'),
     'utf8',
   );
   const pageStyles = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
 
   assert.match(
     html,
-    /<script type="module" src="\.\/site-motion\.js"><\/script>/,
+    /<script type="module" src="\.\/assets\/site-motion\.js"><\/script>/,
   );
   assert.match(
     html,
-    /href="\.\/vendor\/motion-mini-12\.43\.0\.js"/,
+    /href="\.\/assets\/vendor\/motion-mini-12\.43\.0\.js"/,
   );
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net|unpkg\.com/);
   assert.match(
