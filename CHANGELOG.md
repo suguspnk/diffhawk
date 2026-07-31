@@ -4,6 +4,10 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Replaced reviewer-supplied GitHub command arrays with fixed semantic
+  metadata plus paginated cumulative-diff and raw file-context operations.
+  Incomplete inspection passes now report sanitized coverage diagnostics and
+  retry once before the review fails closed.
 - Added private per-poll HTML review reports that open from supported
   notification body/actions, with a cross-platform `openmergelens report`
   command, interactive `--list` picker, bounded retention, and Linux fallback

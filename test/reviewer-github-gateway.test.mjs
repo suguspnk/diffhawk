@@ -5,8 +5,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  chunkUtf8Text,
+  reviewerGitHubArgsForInspection,
   startReviewerGitHubGateway,
-  validateReviewerGitHubArgs,
 } from '../lib/reviewer-github-gateway.mjs';
 
 const target = {
@@ -16,39 +17,99 @@ const target = {
   headRefOid: 'abc123',
 };
 
-test('the reviewer GitHub gateway permits only fixed-PR, same-repo GET operations', () => {
-  for (const args of [
-    ['pr', 'view', target.url, '--json', 'files,headRefOid'],
+test('semantic reviewer operations map only to fixed-PR read commands', () => {
+  assert.deepEqual(
+    reviewerGitHubArgsForInspection({ operation: 'metadata' }, target),
+    [
+      'pr',
+      'view',
+      target.url,
+      '--json',
+      'number,title,body,baseRefName,headRefName,headRefOid,files,commits',
+    ],
+  );
+  assert.deepEqual(
+    reviewerGitHubArgsForInspection({
+      operation: 'cumulative_diff',
+      cursor: 2,
+    }, target),
     ['pr', 'diff', target.url],
-    ['api', '--method', 'GET', 'repos/owner/repo/pulls/7/files', '--paginate'],
-    ['api', '--method', 'GET', 'repos/owner/repo/contents/src/a.js?ref=abc123'],
-  ]) {
-    assert.equal(validateReviewerGitHubArgs(args, target), true, args.join(' '));
-  }
+  );
+  assert.deepEqual(
+    reviewerGitHubArgsForInspection({
+      operation: 'file_context',
+      path: 'src/a file.js',
+    }, target),
+    [
+      'api',
+      '--method',
+      'GET',
+      '--header',
+      'Accept: application/vnd.github.raw+json',
+      'repos/owner/repo/contents/src%2Fa%20file.js?ref=abc123',
+    ],
+  );
 
-  for (const args of [
-    ['pr', 'view', 'https://github.com/other/repo/pull/7'],
-    ['pr', 'review', target.url, '--approve'],
-    ['api', '--method', 'POST', 'repos/owner/repo/issues'],
-    ['api', '--method', 'GET', 'repos/other/repo/contents/secret'],
-    ['api', '--method', 'GET', 'repos/owner/repo/issues'],
-    ['api', '--method', 'GET', 'repos/owner/repo/contents/a?ref=other-sha'],
-    ['api', '--method', 'GET', 'repos/owner/repo/contents/a?ref=abc123?ignored=true'],
+  for (const request of [
+    null,
+    { operation: 'metadata', path: 'ignored' },
+    { operation: 'cumulative_diff', cursor: -1 },
+    { operation: 'cumulative_diff', cursor: 1.5 },
+    { operation: 'file_context', path: 'src/a.js', cursor: -1 },
+    { operation: 'file_context', path: 'src/a.js', cursor: 1.5 },
+    { operation: 'file_context', path: '../secret' },
+    { operation: 'file_context', path: '/absolute' },
+    { operation: 'file_context', path: 'src\\ambiguous.js' },
+    { operation: 'mutation' },
+    { args: ['pr', 'diff', target.url] },
   ]) {
-    assert.equal(validateReviewerGitHubArgs(args, target), false, args.join(' '));
+    assert.equal(reviewerGitHubArgsForInspection(request, target), null);
   }
 });
 
-test('the generated MCP tool delegates allowed calls and rejects mutations', async (t) => {
+test('UTF-8 diff pagination preserves the complete text without replacement characters', () => {
+  const source = 'ab😀cdéfg';
+  const pages = chunkUtf8Text(source, 6);
+
+  assert.equal(pages.join(''), source);
+  assert.equal(pages.some((page) => page.includes('\uFFFD')), false);
+  assert.ok(pages.every((page) => Buffer.byteLength(page, 'utf8') <= 6));
+  assert.throws(() => chunkUtf8Text(source, 3), /at least 4 bytes/);
+});
+
+test('pagination prefers complete lines when one fits within the byte limit', () => {
+  const source = 'first line\nsecond line\nthird';
+  const pages = chunkUtf8Text(source, 12);
+
+  assert.deepEqual(pages, ['first line\n', 'second line\n', 'third']);
+  assert.equal(pages.join(''), source);
+});
+
+test('default inspection pages stay within 64 KiB', () => {
+  const source = `${'a'.repeat(65_000)}\n${'b'.repeat(10_000)}`;
+  const pages = chunkUtf8Text(source);
+
+  assert.equal(pages.length, 2);
+  assert.equal(pages.join(''), source);
+  assert.ok(pages.every(
+    (page) => Buffer.byteLength(page, 'utf8') <= 64 * 1024,
+  ));
+});
+
+test('the generated MCP tool enforces semantic reads and complete diff pagination', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const calls = [];
+  const diff = 'first😀page\nsecond page';
   const gateway = await startReviewerGitHubGateway({
     directory,
     target,
     githubEnvironment: {},
+    inspectionPageBytes: 16,
     runGitHub: async (args) => {
       calls.push(args);
+      if (args[0] === 'pr' && args[1] === 'diff') return diff;
+      if (args[0] === 'api') return 'first file line\nsecond file line';
       return 'safe output';
     },
   });
@@ -93,63 +154,135 @@ test('the generated MCP tool delegates allowed calls and rejects mutations', asy
       responseWaiters.delete(response.id);
     }
   });
-  const call = (id, args) => child.stdin.write(`${JSON.stringify({
+  const call = (id, input) => child.stdin.write(`${JSON.stringify({
     jsonrpc: '2.0',
     id,
     method: 'tools/call',
-    params: { name: 'inspect_github_pr', arguments: { args } },
+    params: { name: 'inspect_github_pr', arguments: input },
   })}\n`);
-  const initialResponses = [0, 1, 2, 3].map(waitForResponse);
+
+  const toolListResponse = waitForResponse(0);
   child.stdin.write(`${JSON.stringify({
     jsonrpc: '2.0',
     id: 0,
     method: 'tools/list',
   })}\n`);
-  call(1, ['pr', 'diff', target.url, '--name-only']);
-  call(2, ['api', '--method', 'POST', 'repos/owner/repo/issues']);
-  call(3, ['pr', 'diff', target.url]);
-  await withResponseTimeout(
-    Promise.all(initialResponses),
-    'initial MCP responses',
-  );
-
+  await withResponseTimeout(toolListResponse, 'tool list');
   const tool = responses.find(({ id }) => id === 0).result.tools[0];
+  assert.deepEqual(tool.inputSchema.properties.operation.enum, [
+    'metadata',
+    'cumulative_diff',
+    'file_context',
+  ]);
   assert.deepEqual(tool.annotations, {
     readOnlyHint: true,
     destructiveHint: false,
     openWorldHint: true,
     idempotentHint: true,
   });
-  assert.equal(responses.find(({ id }) => id === 1).result.content[0].text, 'safe output');
-  assert.equal(responses.find(({ id }) => id === 2).result.isError, true);
-  assert.deepEqual(calls, [
-    ['pr', 'diff', target.url, '--name-only'],
-    ['pr', 'diff', target.url],
-  ]);
-  assert.throws(
-    () => gateway.assertRequiredInspection(),
-    /missing PR metadata/,
+
+  const invalidResponse = waitForResponse(1);
+  call(1, { operation: 'file_context', path: '../secret' });
+  await withResponseTimeout(invalidResponse, 'invalid operation');
+  assert.equal(responses.find(({ id }) => id === 1).result.isError, true);
+  assert.deepEqual(calls, []);
+
+  const metadataResponse = waitForResponse(2);
+  call(2, { operation: 'metadata' });
+  await withResponseTimeout(metadataResponse, 'metadata');
+  assert.equal(
+    responses.find(({ id }) => id === 2).result.content[0].text,
+    'safe output',
   );
-  const plainViewResponse = waitForResponse(4);
-  call(4, ['pr', 'view', target.url]);
-  await withResponseTimeout(plainViewResponse, 'plain PR metadata response');
   assert.throws(
     () => gateway.assertRequiredInspection(),
-    /missing PR metadata/,
+    /cumulative_diff_pages=0\/not-started/,
   );
 
-  const verifiedViewResponse = waitForResponse(5);
-  call(5, ['pr', 'view', target.url, '--json', 'files,headRefOid']);
-  await withResponseTimeout(
-    verifiedViewResponse,
-    'verified PR metadata response',
+  const firstDiffResponse = waitForResponse(3);
+  call(3, { operation: 'cumulative_diff', cursor: 0 });
+  await withResponseTimeout(firstDiffResponse, 'first diff page');
+  const firstPage = responses.find(({ id }) => id === 3).result.content[0].text;
+  assert.match(firstPage, /page 1\/2/);
+  assert.match(firstPage, /cursor 1/);
+  assert.throws(
+    () => gateway.assertRequiredInspection(),
+    /cumulative_diff_pages=1\/2/,
   );
+
+  const secondDiffResponse = waitForResponse(4);
+  call(4, { operation: 'cumulative_diff', cursor: 1 });
+  await withResponseTimeout(secondDiffResponse, 'second diff page');
+  const secondPage = responses.find(({ id }) => id === 4).result.content[0].text;
+  assert.match(secondPage, /page 2\/2/);
+  assert.match(secondPage, /final page/);
   assert.doesNotThrow(() => gateway.assertRequiredInspection());
-  assert.deepEqual(calls.at(-1), [
+
+  const repeatedDiffResponse = waitForResponse(5);
+  call(5, { operation: 'cumulative_diff', cursor: 0 });
+  await withResponseTimeout(repeatedDiffResponse, 'repeated diff page');
+  assert.equal(
+    calls.filter((args) => args[0] === 'pr' && args[1] === 'diff').length,
+    1,
+  );
+  assert.deepEqual(calls[0], [
     'pr',
     'view',
     target.url,
     '--json',
-    'files,headRefOid',
+    'number,title,body,baseRefName,headRefName,headRefOid,files,commits',
   ]);
+  assert.deepEqual(calls[1], ['pr', 'diff', target.url]);
+
+  const firstFileResponse = waitForResponse(6);
+  call(6, { operation: 'file_context', path: 'src/a file.js', cursor: 0 });
+  await withResponseTimeout(firstFileResponse, 'first file page');
+  const firstFilePage =
+    responses.find(({ id }) => id === 6).result.content[0].text;
+  assert.match(firstFilePage, /page 1\/2/);
+  assert.match(firstFilePage, /same path and cursor 1/);
+
+  const secondFileResponse = waitForResponse(7);
+  call(7, { operation: 'file_context', path: 'src/a file.js', cursor: 1 });
+  await withResponseTimeout(secondFileResponse, 'second file page');
+  const secondFilePage =
+    responses.find(({ id }) => id === 7).result.content[0].text;
+  assert.match(secondFilePage, /page 2\/2/);
+  assert.match(secondFilePage, /final page/);
+  assert.equal(calls.filter((args) => args[0] === 'api').length, 1);
+  assert.deepEqual(calls.at(-1), [
+    'api',
+    '--method',
+    'GET',
+    '--header',
+    'Accept: application/vnd.github.raw+json',
+    'repos/owner/repo/contents/src%2Fa%20file.js?ref=abc123',
+  ]);
+
+  const repeatedMetadataResponse = waitForResponse(8);
+  call(8, { operation: 'metadata' });
+  await withResponseTimeout(repeatedMetadataResponse, 'repeated metadata');
+  assert.equal(
+    calls.filter((args) => args[0] === 'pr' && args[1] === 'view').length,
+    1,
+  );
+
+  for (let index = 1; index < 32; index += 1) {
+    const id = 100 + index;
+    const response = waitForResponse(id);
+    call(id, { operation: 'file_context', path: `src/context-${index}.js` });
+    await withResponseTimeout(response, `file context ${index}`);
+  }
+  const excessiveFileResponse = waitForResponse(200);
+  call(200, { operation: 'file_context', path: 'src/one-too-many.js' });
+  await withResponseTimeout(excessiveFileResponse, 'file context limit');
+  assert.equal(
+    responses.find(({ id }) => id === 200).result.isError,
+    true,
+  );
+  assert.match(
+    responses.find(({ id }) => id === 200).result.content[0].text,
+    /limited to 32 distinct paths/,
+  );
+  assert.equal(calls.filter((args) => args[0] === 'api').length, 32);
 });
