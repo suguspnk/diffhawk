@@ -64,6 +64,10 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
     path.join(projectRoot, 'docs/sitemap.xml'),
     'utf8',
   );
+  const robots = await readFile(
+    path.join(projectRoot, 'docs/robots.txt'),
+    'utf8',
+  );
   const canonicalUrl = packageJson.homepage;
   const metaTags = [...html.matchAll(/<meta\b[^>]*>/g)].map(
     (match) => match[0],
@@ -88,6 +92,11 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
     /<h1\b[^>]*>\s*OpenMergeLens: AI code reviews on your machine\.\s*<\/h1>/,
   );
   assert.equal(sitemap.match(/<loc>([^<]+)<\/loc>/)?.[1], canonicalUrl);
+  assert.match(robots, /^User-agent: \*\nAllow: \/$/m);
+  assert.equal(
+    robots.match(/^Sitemap: (.+)$/m)?.[1],
+    new URL('sitemap.xml', canonicalUrl).href,
+  );
   assert.equal(metaContent('property', 'og:url'), canonicalUrl);
   assert.ok(metaContent('property', 'og:image'));
   assert.equal(
