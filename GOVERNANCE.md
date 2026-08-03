@@ -2,13 +2,14 @@
 
 ## Maintainers
 
-OpenMergeLens currently has a single maintainer, who has final say on scope,
-design, and what gets merged. There is no formal contributor tier with merge
-rights at this time.
+OpenMergeLens currently has a single human maintainer, who has final say on
+scope, design, and what gets merged. There is no formal contributor tier with
+merge rights at this time.
 
-The current maintainer and sole code owner is `@suguspnk`. Repository roles
-used for triage, automation, or collaboration do not confer maintainer status
-and must not satisfy the protected branch's code-owner approval requirement.
+The maintainer controls two authorized GitHub identities, `@suguspnk` and
+`@sera240910`; both are code owners. Repository roles used for triage,
+automation, or collaboration do not confer maintainer status and must not
+satisfy the protected branch's code-owner approval requirement.
 
 External contributions (issues, PRs) are welcome, but merge rights are not
 extended to contributors currently. This may change as the project grows,
@@ -20,12 +21,12 @@ All changes land through a pull request, including changes made by a
 maintainer. This keeps history and diffs reviewable even when no second
 person is available to review.
 
-- With a single maintainer, PRs are self-reviewed and may use the maintainer
-  bypass for the approval requirement after required CI checks pass: check
-  that the change matches the design constraints in [CLAUDE.md](CLAUDE.md) /
-  [PRD.md](PRD.md), that any relevant tests/dry-run checks pass, and
-  that the relevant user, design, and release documentation is updated if
-  behavior changed.
+- While both authorized accounts remain under the same maintainer's control,
+  maintainer-authored PRs use the other authorized account for the required
+  approval after CI passes. The approving account must review the complete
+  diff, must not be the latest pusher, and must confirm that the change matches
+  [CLAUDE.md](CLAUDE.md) / [PRD.md](PRD.md), relevant verification passes, and
+  affected user, design, and release documentation is current.
 - If a second maintainer joins, PRs opened by one maintainer should be
   reviewed and approved by another before merging, rather than self-merged.
 - Direct pushes to `main` are avoided in favor of PRs, even for small changes,

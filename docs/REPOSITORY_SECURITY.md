@@ -7,7 +7,9 @@ permissions.
 
 ## Access model
 
-- `@suguspnk` is the sole maintainer and code owner.
+- One human maintainer controls the authorized `@suguspnk` and `@sera240910`
+  GitHub identities; both are code owners so one identity can approve a pull
+  request authored and pushed by the other.
 - Other collaborators may receive the least repository role needed for their
   work, but write access alone must not satisfy required reviews.
 - Adding another maintainer requires a governance pull request that updates
@@ -29,11 +31,10 @@ Configure the branch protection rule for `main` with all of these controls:
 - Block force pushes and branch deletion.
 - Do not allow GitHub Actions to approve pull requests.
 
-The single-maintainer project currently retains administrator bypass only for
-account-recovery and broken-protection emergencies. Every use must be recorded
-in the pull request with the reason and the verification performed. Once a
-second maintainer is added, enable enforcement for administrators and require
-normal peer approval instead of bypass.
+Administrator bypass is reserved for account-recovery and broken-protection
+emergencies. Every use must be recorded in the pull request with the reason and
+verification performed. Ordinary maintainer changes use the other authorized
+identity for approval; they do not use bypass.
 
 ## Sensitive changes
 

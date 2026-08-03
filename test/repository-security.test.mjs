@@ -13,14 +13,14 @@ async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), 'utf8');
 }
 
-test('only the documented maintainer owns repository changes', async () => {
+test('only the documented maintainer identities own repository changes', async () => {
   const codeowners = await readProjectFile('.github/CODEOWNERS');
   const ownershipRules = codeowners
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
 
-  assert.deepEqual(ownershipRules, ['* @suguspnk']);
+  assert.deepEqual(ownershipRules, ['* @suguspnk @sera240910']);
 });
 
 test('repository security baseline requires the critical branch controls', async () => {

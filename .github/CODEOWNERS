@@ -1,4 +1,4 @@
 # Security boundary: only maintainers named in GOVERNANCE.md may approve
 # repository changes as code owners. Repository write access alone must not
 # satisfy the protected-branch review requirement.
-* @suguspnk
+* @suguspnk @sera240910
