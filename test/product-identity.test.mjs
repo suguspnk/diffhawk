@@ -179,6 +179,60 @@ test('GitHub Pages motion is local, pinned, and progressively enhanced', async (
   );
 });
 
+test('GitHub Pages blocks unapproved active content and outbound destinations', async () => {
+  const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
+  const contentSecurityPolicy = html.match(
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
+  )?.[1];
+  const structuredDataSource = html.match(
+    /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
+  )?.[1];
+
+  assert.ok(contentSecurityPolicy, 'the page declares a content security policy');
+  assert.ok(structuredDataSource, 'the page includes its structured data');
+
+  const structuredDataHash = createHash('sha256')
+    .update(structuredDataSource)
+    .digest('base64');
+  const requiredDirectives = [
+    "default-src 'none'",
+    `script-src 'self' 'sha256-${structuredDataHash}'`,
+    "connect-src 'none'",
+    "frame-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ];
+
+  for (const directive of requiredDirectives) {
+    assert.ok(
+      contentSecurityPolicy.split(';').map((value) => value.trim()).includes(directive),
+      `content security policy includes ${directive}`,
+    );
+  }
+
+  assert.match(html, /<meta name="referrer" content="no-referrer">/);
+  assert.doesNotMatch(html, /<(?:script|img|iframe)\b[^>]*\bsrc="https?:\/\//i);
+  assert.doesNotMatch(
+    html,
+    /<link\b[^>]*\brel="(?:modulepreload|preload|stylesheet|icon)"[^>]*\bhref="https?:\/\//i,
+  );
+  assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
+  assert.doesNotMatch(html, /(?:href|src)="javascript:/i);
+
+  const allowedOutboundHosts = new Set(['github.com', 'www.npmjs.com']);
+  const outboundLinks = [...html.matchAll(/<a\b[^>]*\bhref="(https?:\/\/[^"#]+)[^"]*"/gi)]
+    .map((match) => new URL(match[1]));
+
+  assert.ok(outboundLinks.length > 0, 'the page includes approved outbound links');
+  for (const link of outboundLinks) {
+    assert.ok(
+      allowedOutboundHosts.has(link.hostname),
+      `outbound link host is approved: ${link.hostname}`,
+    );
+  }
+});
+
 test('relative links in the installed README target packaged files', async () => {
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
