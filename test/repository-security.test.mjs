@@ -35,4 +35,13 @@ test('repository security baseline requires the critical branch controls', async
   ]) {
     assert.match(baseline, new RegExp(requirement.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+
+  assert.match(
+    baseline,
+    /administrator bypass is the temporary normal path for maintainer-authored pull\s+requests/i,
+  );
+  assert.match(
+    baseline,
+    /required CI gate passes[\s\S]*all\s+conversations are resolved[\s\S]*current head SHA/,
+  );
 });

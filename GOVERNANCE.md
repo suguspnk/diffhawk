@@ -21,12 +21,13 @@ All changes land through a pull request, including changes made by a
 maintainer. This keeps history and diffs reviewable even when no second
 person is available to review.
 
-- While both authorized accounts remain under the same maintainer's control,
-  maintainer-authored PRs use the other authorized account for the required
-  approval after CI passes. The approving account must review the complete
-  diff, must not be the latest pusher, and must confirm that the change matches
-  [CLAUDE.md](CLAUDE.md) / [PRD.md](PRD.md), relevant verification passes, and
-  affected user, design, and release documentation is current.
+- While the project has one human maintainer, maintainer-authored PRs normally
+  use the maintainer bypass after required CI passes. Before bypassing, the
+  maintainer must review the complete diff and current head SHA, confirm that
+  the change matches [CLAUDE.md](CLAUDE.md) / [PRD.md](PRD.md), verify affected
+  tests and documentation, and record the bypass checklist in the pull request.
+  The alternate authorized identity may approve instead, but cross-account
+  approval is not required for the normal single-maintainer workflow.
 - If a second maintainer joins, PRs opened by one maintainer should be
   reviewed and approved by another before merging, rather than self-merged.
 - Direct pushes to `main` are avoided in favor of PRs, even for small changes,
@@ -36,8 +37,9 @@ The repository protection settings are part of this governance contract. They
 must match [docs/REPOSITORY_SECURITY.md](docs/REPOSITORY_SECURITY.md). In
 particular, `main` requires a current code-owner approval and a current CI
 gate; an approval from an account with generic write access is insufficient.
-Administrative bypass is reserved for documented break-glass recovery and is
-not the normal merge path.
+Administrative bypass is the documented normal path for maintainer-authored
+changes while the project has only one human maintainer. It is allowed only
+after the required checks and bypass checklist are complete.
 
 ## Decision-making
 

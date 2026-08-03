@@ -31,10 +31,17 @@ Configure the branch protection rule for `main` with all of these controls:
 - Block force pushes and branch deletion.
 - Do not allow GitHub Actions to approve pull requests.
 
-Administrator bypass is reserved for account-recovery and broken-protection
-emergencies. Every use must be recorded in the pull request with the reason and
-verification performed. Ordinary maintainer changes use the other authorized
-identity for approval; they do not use bypass.
+Because both authorized identities belong to one human maintainer,
+administrator bypass is the temporary normal path for maintainer-authored pull
+requests. It may be used only after the required CI gate passes, all
+conversations are resolved, the complete diff and current head SHA are checked,
+and the pull request records the verification performed. The alternate account
+may provide an approval instead, but it is not required. Account recovery and
+broken-protection emergencies must additionally record why normal checks could
+not be completed.
+
+When an independent second maintainer joins, stop using routine bypass, enforce
+the rule for administrators, and require approval from that maintainer.
 
 ## Sensitive changes
 
