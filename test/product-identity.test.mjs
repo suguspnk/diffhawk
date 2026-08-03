@@ -192,7 +192,9 @@ test('GitHub Pages blocks unapproved active content and outbound destinations', 
   assert.ok(structuredDataSource, 'the page includes its structured data');
 
   const structuredDataHash = createHash('sha256')
-    .update(structuredDataSource)
+    // GitHub Pages serves the repository blob with LF endings even when a
+    // Windows checkout materializes this test fixture as CRLF.
+    .update(structuredDataSource.replaceAll('\r\n', '\n'))
     .digest('base64');
   const requiredDirectives = [
     "default-src 'none'",
