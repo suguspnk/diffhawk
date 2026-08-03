@@ -19,6 +19,8 @@ jobs:
   verify:
     name: Verify release tag without publishing credentials
     runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.release.outputs.sha }}
     steps:
       - name: Check out the release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,6 +28,22 @@ jobs:
           ref: ${{ inputs.release_tag }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve and validate immutable release commit
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          node --input-type=module -e "
+            import packageJson from './package.json' with { type: 'json' };
+            const expected = 'v' + packageJson.version;
+            if (process.env.RELEASE_TAG !== expected) {
+              throw new Error('release tag ' + process.env.RELEASE_TAG + ' must equal ' + expected);
+            }
+          "
+          tag_commit="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          test "$head_commit" = "$tag_commit"
+          echo "sha=$head_commit" >> "$GITHUB_OUTPUT"
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
@@ -49,10 +67,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Check out the release tag
+      - name: Check out the verified release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: ${{ needs.verify.outputs.release_sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Node.js
@@ -61,19 +79,14 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Verify tag and package version
+      - name: Confirm the release tag still identifies the verified commit
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.release_sha }}
         run: |
-          node --input-type=module -e "
-            import packageJson from './package.json' with { type: 'json' };
-            const expected = 'v' + packageJson.version;
-            if (process.env.RELEASE_TAG !== expected) {
-              throw new Error('release tag ' + process.env.RELEASE_TAG + ' must equal ' + expected);
-            }
-          "
           tag_commit="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
-          test "$(git rev-parse HEAD)" = "$tag_commit"
+          test "$tag_commit" = "$VERIFIED_SHA"
+          test "$(git rev-parse HEAD)" = "$VERIFIED_SHA"
       - name: Choose npm distribution tag
         id: dist
         run: |
