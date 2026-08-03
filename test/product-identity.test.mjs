@@ -17,6 +17,9 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
   );
+  const shrinkwrap = JSON.parse(
+    await readFile(path.join(projectRoot, 'npm-shrinkwrap.json'), 'utf8'),
+  );
 
   assert.equal(packageJson.name, 'openmergelens');
   assert.equal(
@@ -44,6 +47,15 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
     'pnpm release:check',
     'interactive publishes must run the same audit and package gate as CI',
   );
+  assert.equal(
+    packageJson.dependencies['@clack/prompts'],
+    '1.7.0',
+    'published production dependencies must not float after release',
+  );
+  assert.equal(shrinkwrap.packages[''].dependencies['@clack/prompts'], '1.7.0');
+  assert.equal(shrinkwrap.packages['node_modules/@clack/prompts'].version, '1.7.0');
+  assert.equal(shrinkwrap.packages['node_modules/@clack/core'].version, '1.4.3');
+  assert.ok(packageJson.files.includes('npm-shrinkwrap.json'));
 });
 
 test('the bundled manual config requires init to record bulk consent', async () => {

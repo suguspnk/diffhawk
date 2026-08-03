@@ -39,6 +39,7 @@
     "lib",
     "vendor",
     "docs/review-prompt.default.md",
+    "npm-shrinkwrap.json",
     "CHANGELOG.md",
     "PRD.md",
     "config.example.json"
@@ -59,6 +60,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@clack/prompts": "^1.7.0"
+    "@clack/prompts": "1.7.0"
   }
 }
