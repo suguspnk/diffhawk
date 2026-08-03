@@ -41,6 +41,10 @@ generated directly from the website's SVG mark with macOS system tools.
 
 The executable was built with Xcode 26.3 and Swift 6.1:
 
+Executable changes are accepted only when the pinned-source rebuild performed
+by `rebuild-alerter.sh` matches byte-for-byte. The native-binary provenance
+workflow runs that comparison whenever the checked-in executable changes.
+
 ```sh
 openmergelens_root=$(pwd)
 alerter_source_dir=/tmp/openmergelens-alerter-26.5
@@ -111,6 +115,11 @@ metadata. The helper opens that URL when the notification body or its
   `2c50bb38ae9e8d73b52dc19762374f26f693377eb3e52c24add49de119a8e10c`
 
 The universal app was built with:
+
+Executable changes are accepted only when `rebuild-terminal-notifier.sh`
+rebuilds the pinned upstream commit with Xcode 26.3, normalizes its Mach-O
+UUIDs, ad-hoc signs it, and produces identical bytes. The native-binary
+provenance workflow enforces that comparison.
 
 ```sh
 xcodebuild \

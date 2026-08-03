@@ -1,0 +1,47 @@
+name: Native binary provenance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/native-binary-provenance.yml'
+      - 'vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter'
+      - 'vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier'
+      - 'vendor/alerter-Package.resolved'
+      - 'vendor/alerter-persistent.patch'
+      - 'vendor/normalize-macho-uuids.mjs'
+      - 'vendor/rebuild-alerter.sh'
+      - 'vendor/rebuild-terminal-notifier.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Rebuild changed native executables
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select pinned Xcode
+        run: echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
+      - name: Rebuild changed executables from pinned source
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ]; then
+            vendor/rebuild-alerter.sh
+            vendor/rebuild-terminal-notifier.sh
+            exit
+          fi
+          if ! git diff --quiet "$BASE_SHA" HEAD -- \
+            vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter; then
+            vendor/rebuild-alerter.sh
+          fi
+          if ! git diff --quiet "$BASE_SHA" HEAD -- \
+            vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier; then
+            vendor/rebuild-terminal-notifier.sh
+          fi

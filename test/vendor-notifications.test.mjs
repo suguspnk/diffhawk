@@ -27,6 +27,8 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     license,
     dependencyLock,
     persistentPatch,
+    alerterRebuild,
+    terminalNotifierRebuild,
   ] = await Promise.all([
     readFile(path.join(notifierBundle, 'MacOS', 'alerter')),
     readFile(path.join(notifierBundle, 'Info.plist'), 'utf8'),
@@ -41,6 +43,8 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     readFile(path.join(projectRoot, 'vendor', 'alerter-LICENSE.md'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-Package.resolved'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-persistent.patch'), 'utf8'),
+    readFile(path.join(projectRoot, 'vendor', 'rebuild-alerter.sh'), 'utf8'),
+    readFile(path.join(projectRoot, 'vendor', 'rebuild-terminal-notifier.sh'), 'utf8'),
   ]);
   const checksum = createHash('sha256').update(binary).digest('hex');
   const iconChecksum = createHash('sha256').update(bundleIcon).digest('hex');
@@ -101,6 +105,12 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.equal(bundleIcon.readUInt32BE(4), bundleIcon.length);
   assert.match(license, /The MIT License \(MIT\)/);
   assert.match(license, /Copyright \(c\) 2015 Valere JEANTET/);
+  assert.match(alerterRebuild, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
+  assert.match(alerterRebuild, /Xcode 26\.3/);
+  assert.match(alerterRebuild, /cmp -s/);
+  assert.match(terminalNotifierRebuild, /8efbb0e977f57d7430e8f1e42e874a426080a8f3/);
+  assert.match(terminalNotifierRebuild, /normalize-macho-uuids\.mjs/);
+  assert.match(terminalNotifierRebuild, /cmp -s/);
 
   const normalizedCopy = Buffer.from(binary);
   assert.equal(normalizeMachOUuids(normalizedCopy), 2);
