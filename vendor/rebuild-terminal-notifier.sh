@@ -2,6 +2,7 @@
 set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+expected_root=${OPENMERGELENS_EXPECTED_ROOT:-$project_root}
 upstream_commit=8efbb0e977f57d7430e8f1e42e874a426080a8f3
 expected_xcode_version='Xcode 26.3'
 default_developer_dir=/Applications/Xcode_26.3.app/Contents/Developer
@@ -45,11 +46,11 @@ codesign --force --sign - "$rebuilt"
 
 if ! cmp -s \
   "$rebuilt" \
-  "$project_root/vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier"; then
+  "$expected_root/vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier"; then
   echo 'vendored terminal-notifier does not match the pinned-source reproducible build' >&2
   shasum -a 256 \
     "$rebuilt" \
-    "$project_root/vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier" >&2
+    "$expected_root/vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier" >&2
   exit 1
 fi
 

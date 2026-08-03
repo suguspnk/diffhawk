@@ -2,6 +2,7 @@
 set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+expected_root=${OPENMERGELENS_EXPECTED_ROOT:-$project_root}
 upstream_commit=6070136eb72a0f63a10abfe350c51e0007fd8341
 expected_xcode_version='Xcode 26.3'
 default_developer_dir=/Applications/Xcode_26.3.app/Contents/Developer
@@ -45,11 +46,11 @@ codesign --force --sign - "$bundle_dir/Contents/MacOS/alerter"
 
 if ! cmp -s \
   "$bundle_dir/Contents/MacOS/alerter" \
-  "$project_root/vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter"; then
+  "$expected_root/vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter"; then
   echo 'vendored alerter does not match the pinned-source reproducible build' >&2
   shasum -a 256 \
     "$bundle_dir/Contents/MacOS/alerter" \
-    "$project_root/vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter" >&2
+    "$expected_root/vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter" >&2
   exit 1
 fi
 

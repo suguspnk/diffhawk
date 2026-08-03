@@ -29,6 +29,7 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     persistentPatch,
     alerterRebuild,
     terminalNotifierRebuild,
+    provenanceWorkflow,
   ] = await Promise.all([
     readFile(path.join(notifierBundle, 'MacOS', 'alerter')),
     readFile(path.join(notifierBundle, 'Info.plist'), 'utf8'),
@@ -45,6 +46,15 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     readFile(path.join(projectRoot, 'vendor', 'alerter-persistent.patch'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'rebuild-alerter.sh'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'rebuild-terminal-notifier.sh'), 'utf8'),
+    readFile(
+      path.join(
+        projectRoot,
+        '.github',
+        'workflows',
+        'native-binary-provenance.yml',
+      ),
+      'utf8',
+    ),
   ]);
   const checksum = createHash('sha256').update(binary).digest('hex');
   const iconChecksum = createHash('sha256').update(bundleIcon).digest('hex');
@@ -108,9 +118,26 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(alerterRebuild, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
   assert.match(alerterRebuild, /Xcode 26\.3/);
   assert.match(alerterRebuild, /cmp -s/);
+  assert.match(alerterRebuild, /OPENMERGELENS_EXPECTED_ROOT/);
   assert.match(terminalNotifierRebuild, /8efbb0e977f57d7430e8f1e42e874a426080a8f3/);
   assert.match(terminalNotifierRebuild, /normalize-macho-uuids\.mjs/);
   assert.match(terminalNotifierRebuild, /cmp -s/);
+  assert.match(terminalNotifierRebuild, /OPENMERGELENS_EXPECTED_ROOT/);
+  assert.match(provenanceWorkflow, /pull_request_target:/);
+  assert.match(provenanceWorkflow, /path: trusted/);
+  assert.match(provenanceWorkflow, /path: candidate/);
+  assert.match(
+    provenanceWorkflow,
+    /native executables and their verification logic must change in separate pull requests/,
+  );
+  assert.match(provenanceWorkflow, /trusted\/vendor\/rebuild-alerter\.sh/);
+  assert.match(
+    provenanceWorkflow,
+    /trusted\/vendor\/rebuild-terminal-notifier\.sh/,
+  );
+  assert.match(provenanceWorkflow, /vendor\/alerter-Package\.resolved/);
+  assert.match(provenanceWorkflow, /vendor\/alerter-persistent\.patch/);
+  assert.match(provenanceWorkflow, /env -i/);
 
   const normalizedCopy = Buffer.from(binary);
   assert.equal(normalizeMachOUuids(normalizedCopy), 2);

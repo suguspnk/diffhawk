@@ -1,7 +1,7 @@
 name: Native binary provenance
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - '.github/workflows/native-binary-provenance.yml'
       - 'vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter'
@@ -18,30 +18,101 @@ permissions:
 
 jobs:
   verify:
-    name: Rebuild changed native executables
+    name: Rebuild native executables from trusted verification logic
     runs-on: macos-26
     steps:
-      - name: Check out repository
+      - name: Check out trusted base revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
           persist-credentials: false
+      - name: Check out candidate revision without credentials
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Use trusted tree for manual verification
+        if: github.event_name == 'workflow_dispatch'
+        run: cp -R trusted candidate
       - name: Select pinned Xcode
         run: echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
-      - name: Rebuild changed executables from pinned source
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: Reject coupled verifier and executable changes
+        id: changes
+        shell: bash
         run: |
-          if [ -z "$BASE_SHA" ]; then
-            vendor/rebuild-alerter.sh
-            vendor/rebuild-terminal-notifier.sh
-            exit
+          set -euo pipefail
+
+          changed() {
+            ! cmp -s "trusted/$1" "candidate/$1"
+          }
+
+          alerter_binary=false
+          terminal_binary=false
+          alerter_recipe=false
+          terminal_recipe=false
+
+          changed vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter && alerter_binary=true
+          changed vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier && terminal_binary=true
+
+          for path in \
+            .github/workflows/native-binary-provenance.yml \
+            vendor/rebuild-alerter.sh \
+            vendor/alerter-Package.resolved \
+            vendor/alerter-persistent.patch \
+            vendor/normalize-macho-uuids.mjs; do
+            changed "$path" && alerter_recipe=true
+          done
+
+          for path in \
+            .github/workflows/native-binary-provenance.yml \
+            vendor/rebuild-terminal-notifier.sh \
+            vendor/normalize-macho-uuids.mjs; do
+            changed "$path" && terminal_recipe=true
+          done
+
+          if { [ "$alerter_binary" = true ] && [ "$alerter_recipe" = true ]; } ||
+             { [ "$terminal_binary" = true ] && [ "$terminal_recipe" = true ]; }; then
+            echo 'native executables and their verification logic must change in separate pull requests' >&2
+            exit 1
           fi
-          if ! git diff --quiet "$BASE_SHA" HEAD -- \
-            vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter; then
-            vendor/rebuild-alerter.sh
-          fi
-          if ! git diff --quiet "$BASE_SHA" HEAD -- \
-            vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier; then
-            vendor/rebuild-terminal-notifier.sh
-          fi
+
+          {
+            echo "alerter_binary=$alerter_binary"
+            echo "terminal_binary=$terminal_binary"
+            echo "alerter_recipe=$alerter_recipe"
+            echo "terminal_recipe=$terminal_recipe"
+          } >> "$GITHUB_OUTPUT"
+      - name: Verify Alerter executable change with trusted base verifier
+        if: steps.changes.outputs.alerter_binary == 'true'
+        env:
+          OPENMERGELENS_EXPECTED_ROOT: ${{ github.workspace }}/candidate
+        run: trusted/vendor/rebuild-alerter.sh
+      - name: Verify terminal-notifier executable change with trusted base verifier
+        if: steps.changes.outputs.terminal_binary == 'true'
+        env:
+          OPENMERGELENS_EXPECTED_ROOT: ${{ github.workspace }}/candidate
+        run: trusted/vendor/rebuild-terminal-notifier.sh
+      - name: Exercise changed Alerter recipe against the shipped executable
+        if: steps.changes.outputs.alerter_recipe == 'true'
+        run: |
+          env -i \
+            PATH="$PATH" \
+            HOME="$RUNNER_TEMP/candidate-home" \
+            TMPDIR="$RUNNER_TEMP" \
+            DEVELOPER_DIR="$DEVELOPER_DIR" \
+            OPENMERGELENS_EXPECTED_ROOT="${{ github.workspace }}/candidate" \
+            candidate/vendor/rebuild-alerter.sh
+      - name: Exercise changed terminal-notifier recipe against the shipped executable
+        if: steps.changes.outputs.terminal_recipe == 'true'
+        run: |
+          env -i \
+            PATH="$PATH" \
+            HOME="$RUNNER_TEMP/candidate-home" \
+            TMPDIR="$RUNNER_TEMP" \
+            DEVELOPER_DIR="$DEVELOPER_DIR" \
+            OPENMERGELENS_EXPECTED_ROOT="${{ github.workspace }}/candidate" \
+            candidate/vendor/rebuild-terminal-notifier.sh
