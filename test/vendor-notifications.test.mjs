@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { normalizeMachOUuids } from '../vendor/normalize-macho-uuids.mjs';
 
@@ -10,6 +12,7 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
+const execFileAsync = promisify(execFile);
 
 test('vendored Alerter is pinned, patched, licensed, normalized, and universal', async () => {
   const notifierBundle = path.join(
@@ -20,6 +23,7 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   );
   const [
     binary,
+    terminalNotifierBinary,
     bundleInfo,
     bundleIcon,
     siteMark,
@@ -27,8 +31,19 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     license,
     dependencyLock,
     persistentPatch,
+    alerterRebuild,
+    terminalNotifierRebuild,
+    provenanceWorkflow,
   ] = await Promise.all([
     readFile(path.join(notifierBundle, 'MacOS', 'alerter')),
+    readFile(path.join(
+      projectRoot,
+      'vendor',
+      'terminal-notifier.app',
+      'Contents',
+      'MacOS',
+      'terminal-notifier',
+    )),
     readFile(path.join(notifierBundle, 'Info.plist'), 'utf8'),
     readFile(path.join(notifierBundle, 'Resources', 'OpenMergeLens.icns')),
     readFile(path.join(
@@ -41,8 +56,22 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     readFile(path.join(projectRoot, 'vendor', 'alerter-LICENSE.md'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-Package.resolved'), 'utf8'),
     readFile(path.join(projectRoot, 'vendor', 'alerter-persistent.patch'), 'utf8'),
+    readFile(path.join(projectRoot, 'vendor', 'rebuild-alerter.sh'), 'utf8'),
+    readFile(path.join(projectRoot, 'vendor', 'rebuild-terminal-notifier.sh'), 'utf8'),
+    readFile(
+      path.join(
+        projectRoot,
+        '.github',
+        'workflows',
+        'native-binary-provenance.yml',
+      ),
+      'utf8',
+    ),
   ]);
   const checksum = createHash('sha256').update(binary).digest('hex');
+  const terminalNotifierChecksum = createHash('sha256')
+    .update(terminalNotifierBinary)
+    .digest('hex');
   const iconChecksum = createHash('sha256').update(bundleIcon).digest('hex');
   const canonicalSiteMark = siteMark
     .toString('utf8')
@@ -66,6 +95,7 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(provenance, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
   assert.match(provenance, /11f63cddc9bb3f8554ed9b762632a120cfa7bee05e3c09d65734823e09d24f10/);
   assert.match(provenance, new RegExp(checksum));
+  assert.match(provenance, new RegExp(terminalNotifierChecksum));
   assert.match(provenance, new RegExp(iconChecksum));
   assert.match(provenance, new RegExp(siteMarkChecksum));
   assert.match(provenance, /SWIFT_DETERMINISTIC_HASHING=1/);
@@ -101,6 +131,63 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.equal(bundleIcon.readUInt32BE(4), bundleIcon.length);
   assert.match(license, /The MIT License \(MIT\)/);
   assert.match(license, /Copyright \(c\) 2015 Valere JEANTET/);
+  assert.match(alerterRebuild, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
+  assert.match(alerterRebuild, /Xcode 26\.3/);
+  assert.match(alerterRebuild, /--jobs 1/);
+  assert.match(alerterRebuild, /-Xlinker -ld_classic/);
+  assert.match(alerterRebuild, /OPENMERGELENS_EXPECTED_ROOT/);
+  assert.match(alerterRebuild, /CFBundleExecutable/);
+  assert.match(alerterRebuild, /find .* -type l/);
+  assert.match(alerterRebuild, /codesign --verify --deep --strict/);
+  assert.match(alerterRebuild, /diff -qr/);
+  assert.match(terminalNotifierRebuild, /8efbb0e977f57d7430e8f1e42e874a426080a8f3/);
+  assert.match(terminalNotifierRebuild, /normalize-macho-uuids\.mjs/);
+  assert.match(terminalNotifierRebuild, /OPENMERGELENS_EXPECTED_ROOT/);
+  assert.match(terminalNotifierRebuild, /CFBundleExecutable/);
+  assert.match(terminalNotifierRebuild, /find .* -type l/);
+  assert.match(terminalNotifierRebuild, /codesign --verify --deep --strict/);
+  assert.match(terminalNotifierRebuild, /diff -qr/);
+  assert.match(provenanceWorkflow, /pull_request_target:/);
+  assert.match(provenanceWorkflow, /path: trusted/);
+  assert.match(provenanceWorkflow, /path: candidate/);
+  assert.match(provenanceWorkflow, /OpenMergeLensNotifier\.app\/\*\*/);
+  assert.match(provenanceWorkflow, /terminal-notifier\.app\/\*\*/);
+  assert.match(provenanceWorkflow, /changed_tree\(\)/);
+  assert.match(
+    provenanceWorkflow,
+    /native executables and their verification logic must change in separate pull requests/,
+  );
+  assert.match(provenanceWorkflow, /trusted\/vendor\/rebuild-alerter\.sh/);
+  assert.match(
+    provenanceWorkflow,
+    /trusted\/vendor\/rebuild-terminal-notifier\.sh/,
+  );
+  assert.match(provenanceWorkflow, /vendor\/alerter-Package\.resolved/);
+  assert.match(provenanceWorkflow, /vendor\/alerter-persistent\.patch/);
+  assert.match(provenanceWorkflow, /env -i/);
+  assert.match(
+    provenanceWorkflow,
+    /EVENT_NAME: \$\{\{ github\.event_name }}/,
+  );
+  assert.match(
+    provenanceWorkflow,
+    /\[ "\$EVENT_NAME" = 'workflow_dispatch' \][\s\S]*echo 'alerter_binary=true'[\s\S]*echo 'terminal_binary=true'/,
+  );
+
+  if (process.platform === 'darwin') {
+    await execFileAsync('codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      path.join(projectRoot, 'vendor', 'OpenMergeLensNotifier.app'),
+    ]);
+    await execFileAsync('codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      path.join(projectRoot, 'vendor', 'terminal-notifier.app'),
+    ]);
+  }
 
   const normalizedCopy = Buffer.from(binary);
   assert.equal(normalizeMachOUuids(normalizedCopy), 2);
