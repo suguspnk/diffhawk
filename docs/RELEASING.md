@@ -32,8 +32,10 @@ stable release only:
 ## Normal release
 
 1. Update `CHANGELOG.md` and choose the version.
-2. Update `package.json`; run `pnpm install --lockfile-only` if the lockfile
-   records package metadata changes.
+2. Update `package.json`; run `pnpm install --lockfile-only` if the pnpm
+   lockfile records package metadata changes. Then run
+   `npm install --package-lock-only --ignore-scripts` to keep the published
+   `npm-shrinkwrap.json` package version and dependency graph synchronized.
 3. Run:
 
    ```bash

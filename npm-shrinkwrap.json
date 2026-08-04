@@ -7,8 +7,15 @@
     "": {
       "name": "openmergelens",
       "version": "1.2.0",
+      "license": "MIT",
       "dependencies": {
         "@clack/prompts": "1.7.0"
+      },
+      "bin": {
+        "openmergelens": "bin/openmergelens.mjs"
+      },
+      "engines": {
+        "node": "^22.14.0 || ^24.0.0"
       }
     },
     "node_modules/@clack/core": {

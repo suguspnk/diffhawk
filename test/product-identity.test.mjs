@@ -52,9 +52,18 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
     '1.7.0',
     'published production dependencies must not float after release',
   );
-  assert.equal(shrinkwrap.packages[''].dependencies['@clack/prompts'], '1.7.0');
+  assert.equal(shrinkwrap.name, packageJson.name);
+  assert.equal(shrinkwrap.version, packageJson.version);
+  assert.equal(shrinkwrap.packages[''].name, packageJson.name);
+  assert.equal(shrinkwrap.packages[''].version, packageJson.version);
+  assert.deepEqual(shrinkwrap.packages[''].dependencies, packageJson.dependencies);
   assert.equal(shrinkwrap.packages['node_modules/@clack/prompts'].version, '1.7.0');
   assert.equal(shrinkwrap.packages['node_modules/@clack/core'].version, '1.4.3');
+  assert.equal(
+    Object.keys(shrinkwrap.packages).some((entry) => entry.includes('/.pnpm/')),
+    false,
+    'the published npm lock must not contain pnpm store paths',
+  );
   assert.ok(packageJson.files.includes('npm-shrinkwrap.json'));
 });
 
