@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -40,6 +40,44 @@ test('review state remains independent for two accounts reviewing one PR', () =>
     ),
     true,
   );
+});
+
+test('loading malformed state roots fails closed', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+
+  for (const malformed of ['[]', 'null', '"state"', '42']) {
+    await writeFile(stateFile, `${malformed}\n`);
+    await assert.rejects(loadState(stateFile), /Invalid review state.*expected a JSON object/);
+  }
+});
+
+test('loading malformed review entries fails closed', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      'owner/repo#1': { lastReviewedSha: 'sha-1' },
+    }),
+  );
+
+  await assert.rejects(
+    loadState(stateFile),
+    /Invalid review state entry.*expected lastReviewedSha and lastReviewedAt strings/,
+  );
+});
+
+test('saving malformed state is rejected before writing', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+
+  await assert.rejects(saveState(stateFile, []), /Invalid review state.*expected a JSON object/);
+  await assert.rejects(saveState(stateFile, { 'owner/repo#1': null }), /Invalid review state entry/);
+  await assert.rejects(stat(stateFile), { code: 'ENOENT' });
 });
 
 test('state saves atomically without leaving temporary files', async (t) => {

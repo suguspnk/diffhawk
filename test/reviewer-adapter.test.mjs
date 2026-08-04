@@ -231,6 +231,63 @@ test('invokeReviewer rejects a gateway that cannot verify required inspections',
   assert.equal(gatewayClosed, true);
 });
 
+test('invokeReviewer closes the gateway when command preparation fails', async () => {
+  let gatewayClosed = false;
+  let temporaryDirectoryRemoved = false;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand: 'custom-reviewer {{mcp_config}} {{mcp_tool}}',
+      prompt: '',
+      githubAccess: {
+        repo: 'example/repo',
+        number: pr.number,
+        url: pr.url,
+        headRefOid: pr.headRefOid,
+        environment: {},
+      },
+      makeTemporaryDirectory: async () => '/tmp/openmergelens-review-qa004',
+      removeTemporaryDirectory: async () => {
+        temporaryDirectoryRemoved = true;
+      },
+      startGitHubGateway: async () => ({
+        mcpConfigPath: '/tmp/reviewer-mcp.json',
+        mcpServerPath: '/tmp/reviewer-mcp.mjs',
+        assertRequiredInspection() {},
+        async close() {
+          gatewayClosed = true;
+        },
+      }),
+      prepare: async () => {
+        throw new Error('prepare failed');
+      },
+    }),
+    /failed to launch "custom-reviewer \{\{mcp_config\}\} \{\{mcp_tool\}\}": prepare failed/,
+  );
+  assert.equal(gatewayClosed, true);
+  assert.equal(temporaryDirectoryRemoved, true);
+});
+
+test('invokeReviewer removes its temporary directory when model command derivation fails', async () => {
+  let temporaryDirectoryRemoved = false;
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand: 'codex exec',
+      model: { id: 'bad"model' },
+      prompt: '',
+      makeTemporaryDirectory: async () => '/tmp/openmergelens-review-f2',
+      removeTemporaryDirectory: async (directory, options) => {
+        temporaryDirectoryRemoved = directory === '/tmp/openmergelens-review-f2' &&
+          options?.recursive === true &&
+          options?.force === true;
+      },
+    }),
+    /model ID cannot be represented safely in reviewerCommand/,
+  );
+  assert.equal(temporaryDirectoryRemoved, true);
+});
+
 test('buildPrompt sends a PR link and tool-based inspection contract instead of the diff', () => {
   const template = [
     'Review #{{pr_number}} at {{pr_url}}.',
@@ -399,6 +456,64 @@ test('parseFindings still parses valid JSON output produced from a custom templa
   assert.deepEqual(findings, [{ path: 'a.js', line: 3, severity: 'nit', comment: 'unused var' }]);
 });
 
+test('parseFindings skips prose braces before a valid JSON response', () => {
+  const rawOutput = [
+    'I reviewed the change; the placeholder {not JSON} is only prose.',
+    JSON.stringify({
+      summary: 'Looks fine overall.',
+      findings: [{ path: 'a.js', line: 3, severity: 'nit', comment: 'unused var' }],
+    }),
+  ].join('\n');
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'Looks fine overall.',
+    findings: [{ path: 'a.js', line: 3, severity: 'nit', comment: 'unused var' }],
+  });
+});
+
+test('parseFindings skips parseable non-review objects before a valid response', () => {
+  const rawOutput = [
+    'Context: {"foo":"bar"}',
+    JSON.stringify({ summary: 'Looks fine overall.', findings: [] }),
+  ].join(' then ');
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'Looks fine overall.',
+    findings: [],
+  });
+});
+
+test('parseFindings does not cap valid extraction after many invalid schema-shaped objects', () => {
+  const invalid = '{"summary":1,"findings":[]}';
+  const rawOutput = `${invalid.repeat(129)}{"summary":"valid","findings":[]}`;
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'valid',
+    findings: [],
+  });
+});
+
+test('parseFindings handles a malformed brace flood in bounded time', { timeout: 1_000 }, () => {
+  const result = parseFindings('{'.repeat(50_000) + 'x');
+  assert.deepEqual(result.findings, []);
+});
+
+test('parseFindings handles fenced JSON and braces inside JSON strings', () => {
+  const rawOutput = [
+    '```json',
+    JSON.stringify({
+      summary: 'The message contains {braces} and a " quote.',
+      findings: [],
+    }),
+    '```',
+  ].join('\n');
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'The message contains {braces} and a " quote.',
+    findings: [],
+  });
+});
+
 test('review focus count defaults to all categories and validates bounds', () => {
   assert.equal(DEFAULT_REVIEW_FOCUS_COUNT, 4);
   assert.equal(resolveReviewFocusCount(undefined), 4);
@@ -419,6 +534,7 @@ test('dedupeFindings removes exact duplicates while preserving distinct findings
 
 test('invokeMultiPassReview runs independent passes then one synthesis pass', async () => {
   const prompts = [];
+  const models = [];
   let invocation = 0;
   const finalFinding = {
     path: 'lib/lock.mjs',
@@ -432,8 +548,10 @@ test('invokeMultiPassReview runs independent passes then one synthesis pass', as
     learnings: '',
     pr,
     reviewFocusCount: 2,
-    invoke: async ({ prompt }) => {
+    model: { id: 'gpt-5.6', reasoningEffort: 'high' },
+    invoke: async ({ prompt, model }) => {
       prompts.push(prompt);
+      models.push(model);
       invocation += 1;
       if (invocation < 3) {
         return JSON.stringify({
@@ -446,6 +564,11 @@ test('invokeMultiPassReview runs independent passes then one synthesis pass', as
   });
 
   assert.equal(prompts.length, 3);
+  assert.deepEqual(models, [
+    { id: 'gpt-5.6', reasoningEffort: 'high' },
+    { id: 'gpt-5.6', reasoningEffort: 'high' },
+    { id: 'gpt-5.6', reasoningEffort: 'high' },
+  ]);
   assert.match(prompts[0], /behavior and correctness/);
   assert.match(prompts[1], /security and trust boundaries/);
   assert.match(prompts[2], /Final synthesis pass/);

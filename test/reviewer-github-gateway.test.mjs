@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
+import net from 'node:net';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -16,6 +18,32 @@ const target = {
   url: 'https://github.com/owner/repo/pull/7',
   headRefOid: 'abc123',
 };
+
+function gatewayRequest(gateway, capability, input) {
+  const payload = JSON.stringify(input);
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      socketPath: gateway.socketPath,
+      path: '/',
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${capability}`,
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(payload),
+      },
+    }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { body += chunk; });
+      response.on('end', () => resolve({
+        statusCode: response.statusCode,
+        body,
+      }));
+    });
+    request.on('error', reject);
+    request.end(payload);
+  });
+}
 
 test('semantic reviewer operations map only to fixed-PR read commands', () => {
   assert.deepEqual(
@@ -94,6 +122,164 @@ test('default inspection pages stay within 64 KiB', () => {
   assert.ok(pages.every(
     (page) => Buffer.byteLength(page, 'utf8') <= 64 * 1024,
   ));
+});
+
+test('file context enforces an aggregate byte budget and does not retry rejected fetches', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-budget-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const calls = [];
+  const gateway = await startReviewerGitHubGateway({
+    directory,
+    target,
+    githubEnvironment: {},
+    inspectionPageBytes: 8,
+    fileContextCacheBytes: 10,
+    runGitHub: async (args) => {
+      calls.push(args);
+      return '1234567';
+    },
+  });
+  t.after(() => gateway.close());
+  const source = await readFile(gateway.mcpServerPath, 'utf8');
+  const capability = source.match(/authorization: "Bearer ([a-f0-9]+)"/u)?.[1];
+  assert.ok(capability);
+
+  const first = await gatewayRequest(gateway, capability, {
+    operation: 'file_context',
+    path: 'src/first.js',
+  });
+  assert.equal(first.statusCode, 200);
+  assert.match(first.body, /page 1\/1/);
+
+  const rejected = await gatewayRequest(gateway, capability, {
+    operation: 'file_context',
+    path: 'src/second.js',
+  });
+  assert.equal(rejected.statusCode, 429);
+  assert.match(rejected.body, /aggregate output is limited to 10 bytes per review/);
+
+  const repeated = await gatewayRequest(gateway, capability, {
+    operation: 'file_context',
+    path: 'src/second.js',
+  });
+  assert.equal(repeated.statusCode, 429);
+  assert.equal(calls.length, 1);
+});
+
+test('file context rejects an oversized source and remembers the attempted bytes', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-oversized-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let calls = 0;
+  const gateway = await startReviewerGitHubGateway({
+    directory,
+    target,
+    githubEnvironment: {},
+    fileContextCacheBytes: 64,
+    runGitHub: async () => {
+      calls += 1;
+      return 'x'.repeat(65);
+    },
+  });
+  t.after(() => gateway.close());
+  const source = await readFile(gateway.mcpServerPath, 'utf8');
+  const capability = source.match(/authorization: "Bearer ([a-f0-9]+)"/u)?.[1];
+  assert.ok(capability);
+
+  const first = await gatewayRequest(gateway, capability, {
+    operation: 'file_context',
+    path: 'src/oversized.js',
+  });
+  assert.equal(first.statusCode, 429);
+  assert.match(first.body, /aggregate output is limited to 64 bytes per review/);
+
+  const repeated = await gatewayRequest(gateway, capability, {
+    operation: 'file_context',
+    path: 'src/oversized.js',
+  });
+  assert.equal(repeated.statusCode, 429);
+  assert.equal(calls, 1);
+});
+
+test('gateway setup failures close the listener before rejecting', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-setup-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(path.join(directory, 'github-mcp-server.mjs'));
+
+  // Run setup in a child so a regression that leaves the listener open cannot
+  // keep the test runner alive indefinitely.
+  const gatewayModule = new URL('../lib/reviewer-github-gateway.mjs', import.meta.url).href;
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { startReviewerGitHubGateway } from ${JSON.stringify(gatewayModule)};
+try {
+  await startReviewerGitHubGateway({
+    directory: process.env.OPENMERGELENS_GATEWAY_TEST_DIR,
+    target: ${JSON.stringify(target)},
+    githubEnvironment: {},
+  });
+  process.exitCode = 1;
+} catch (error) {
+  if (error?.code !== 'EISDIR') {
+    console.error(error);
+    process.exitCode = 1;
+  }
+}`,
+    ],
+    {
+      env: {
+        ...process.env,
+        OPENMERGELENS_GATEWAY_TEST_DIR: directory,
+      },
+      encoding: 'utf8',
+      timeout: 2_000,
+    },
+  );
+
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('gateway close destroys sockets with incomplete requests and is idempotent', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-close-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const gateway = await startReviewerGitHubGateway({
+    directory,
+    target,
+    githubEnvironment: {},
+    runGitHub: async () => 'safe output',
+  });
+  const source = await readFile(gateway.mcpServerPath, 'utf8');
+  const capability = source.match(/authorization: "Bearer ([a-f0-9]+)"/u)?.[1];
+  assert.ok(capability);
+
+  const socket = net.createConnection(gateway.socketPath);
+  t.after(() => {
+    socket.destroy();
+    return gateway.close();
+  });
+  await new Promise((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('error', reject);
+  });
+  const lineBreak = String.fromCharCode(13, 10);
+  socket.write([
+    'POST / HTTP/1.1',
+    'Host: localhost',
+    `Authorization: Bearer ${capability}`,
+    'Content-Length: 100',
+    '',
+    '{}',
+  ].join(lineBreak) + lineBreak);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const closeResult = await Promise.race([
+    Promise.all([gateway.close(), gateway.close()]).then(() => 'closed'),
+    new Promise((resolve) => setTimeout(() => resolve('timed out'), 1_000)),
+  ]);
+  assert.equal(closeResult, 'closed');
 });
 
 test('the generated MCP tool enforces semantic reads and complete diff pagination', async (t) => {

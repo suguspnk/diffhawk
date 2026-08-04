@@ -17,6 +17,7 @@ import {
   CODEX_REVIEWER_COMMAND,
   PREVIOUS_CODEX_REVIEWER_COMMAND,
   PR_LINK_CODEX_REVIEWER_COMMAND,
+  reviewerCommandForModel,
   reviewerCommandForGitHubGateway,
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
@@ -41,7 +42,7 @@ const validAccounts = [
   },
 ];
 const validConfig = {
-  configVersion: 3,
+  configVersion: 4,
   githubAccounts: validAccounts,
   aiProcessingConsent: createAiProcessingConsent(
     CODEX_REVIEWER_COMMAND,
@@ -53,9 +54,10 @@ const validConfig = {
   stateFile: './state.json',
 };
 
-test('validates and normalizes a version 3 multi-account config', () => {
+test('validates and normalizes a version 4 multi-account config', () => {
   assert.deepEqual(validateConfig(validConfig), {
     ...validConfig,
+    model: null,
     githubAccounts: validConfig.githubAccounts,
     reviewerCommand: CODEX_REVIEWER_COMMAND,
     reviewerInputMode: 'stdin',
@@ -148,6 +150,118 @@ test('the generated Codex command grants no direct GitHub network access', () =>
   );
 });
 
+test('the generated Codex command preserves quoted and escaped MCP server paths', () => {
+  const paths = [
+    '/tmp/O\'Reilly/server.mjs',
+    "/tmp/O' Reilly/server.mjs",
+    '/tmp/review\\ with-spaces/server.mjs',
+    'C:\\Users\\Review User\\',
+    '/tmp/review"quoted/server.mjs',
+  ];
+
+  for (const mcpServerPath of paths) {
+    const command = reviewerCommandForGitHubGateway(
+      CODEX_REVIEWER_COMMAND,
+      { mcpServerPath },
+    );
+    const parsed = parseCommand(command);
+    const argsConfig = parsed.args.find((arg) =>
+      arg.startsWith('mcp_servers.openmergelens.args='));
+    assert.ok(argsConfig, mcpServerPath);
+    assert.deepEqual(
+      JSON.parse(argsConfig.slice('mcp_servers.openmergelens.args='.length)),
+      [mcpServerPath],
+      mcpServerPath,
+    );
+  }
+});
+
+test('model settings are normalized independently and translated safely', () => {
+  const modelConfig = {
+    id: 'gpt-5.6',
+    reasoningEffort: 'xhigh',
+  };
+  assert.deepEqual(
+    validateConfig({ ...validConfig, model: modelConfig }).model,
+    modelConfig,
+  );
+  assert.deepEqual(
+    validateConfig({
+      ...validConfig,
+      model: { id: null, reasoningEffort: 'high' },
+    }).model,
+    { id: null, reasoningEffort: 'high' },
+  );
+  assert.equal(
+    validateConfig({ ...validConfig, model: { id: null, reasoningEffort: null } }).model,
+    null,
+  );
+
+  const codexCommand = reviewerCommandForModel(CODEX_REVIEWER_COMMAND, modelConfig);
+  assert.deepEqual(parseCommand(codexCommand).args.slice(-4), [
+    '--model',
+    'gpt-5.6',
+    '-c',
+    'model_reasoning_effort="xhigh"',
+  ]);
+  const claudeCommand = reviewerCommandForModel(
+    CLAUDE_REVIEWER_COMMAND,
+    { id: 'opus', reasoningEffort: 'high' },
+  );
+  assert.deepEqual(parseCommand(claudeCommand).args.slice(-4), [
+    '--model',
+    'opus',
+    '--effort',
+    'high',
+  ]);
+  const gatewayCommand = reviewerCommandForGitHubGateway(
+    CODEX_REVIEWER_COMMAND,
+    { mcpServerPath: '/tmp/review/github-mcp-server.mjs' },
+    modelConfig,
+  );
+  assert.deepEqual(parseCommand(gatewayCommand).args.slice(-4), [
+    '--model',
+    'gpt-5.6',
+    '-c',
+    'model_reasoning_effort="xhigh"',
+  ]);
+});
+
+test('custom commands cannot carry generated model settings', () => {
+  assert.equal(
+    validateConfig({
+      ...validConfig,
+      reviewerCommand: 'custom --mcp {{mcp_config}} --tool {{mcp_tool}}',
+      model: null,
+    }).model,
+    null,
+  );
+  assert.throws(
+    () => validateConfig({
+      ...validConfig,
+      reviewerCommand: 'custom --mcp {{mcp_config}} --tool {{mcp_tool}}',
+      model: { id: 'gpt-5.6', reasoningEffort: null },
+    }),
+    /model settings require the generated Codex or Claude reviewer command/,
+  );
+  assert.throws(
+    () => validateConfig({
+      ...validConfig,
+      model: { id: 'bad model', reasoningEffort: null },
+    }),
+    /safe model ID/,
+  );
+});
+
+test('version 3 configs migrate to the current schema with CLI defaults', () => {
+  const migrated = validateConfig({
+    ...validConfig,
+    configVersion: 3,
+  });
+  assert.equal(migrated.configVersion, 4);
+  assert.equal(migrated.model, null);
+});
+
 test('custom reviewer commands must explicitly consume the per-review MCP contract', () => {
   const gateway = {
     mcpConfigPath: '/tmp/review with spaces/mcp.json',
@@ -212,7 +326,7 @@ test('rejects legacy, global, empty, and duplicate account shapes', () => {
   );
   assert.throws(
     () => validateConfig({ ...validConfig, configVersion: 1 }),
-    /configVersion 3/,
+    /configVersion 4/,
   );
   assert.throws(
     () => validateConfig({ ...validConfig, searchScope: 'global' }),
@@ -324,7 +438,7 @@ test('AI-processing consent is one explicit config-wide scoped record', () => {
   );
 });
 
-test('version 2 repository consent migrates fail closed to version 3', () => {
+test('version 2 repository consent migrates fail closed to version 4', () => {
   const legacyConfig = {
     ...validConfig,
     configVersion: 2,
@@ -335,7 +449,7 @@ test('version 2 repository consent migrates fail closed to version 3', () => {
     })),
   };
   const fullyConsented = validateConfig(legacyConfig);
-  assert.equal(fullyConsented.configVersion, 3);
+  assert.equal(fullyConsented.configVersion, 4);
   assert.equal(hasAiProcessingConsent(fullyConsented), true);
   assert.equal(
     Object.hasOwn(fullyConsented.githubAccounts[0], 'aiProcessingConsent'),

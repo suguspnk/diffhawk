@@ -34,7 +34,14 @@ import {
 } from '../lib/review-prompts.mjs';
 import {
   validateReviewerCommandContract,
+  reviewerBackendForCommand,
 } from '../lib/reviewer-command-defaults.mjs';
+import {
+  isValidReviewerModelId,
+  reasoningEffortsForModel,
+  reasoningLabelForBackend,
+  reviewerModelOptions,
+} from '../lib/reviewer-models.mjs';
 import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
 import {
   cronPreview, installCron,
@@ -53,6 +60,52 @@ const reviewPromptTemplatePath = path.join(
   'docs',
   'review-prompt.default.md',
 );
+const CLI_DEFAULT_MODEL_VALUE = '\u0000openmergelens-cli-default-model';
+const CLI_DEFAULT_REASONING_VALUE = '\u0000openmergelens-cli-default-reasoning';
+const CUSTOM_MODEL_VALUE = '\u0000openmergelens-custom-model';
+
+export function selectableReviewerAgents(agents) {
+  return agents.filter((agent) => agent.status !== 'not-found');
+}
+
+export function isInteractiveTerminal({ stdin = process.stdin, stdout = process.stdout } = {}) {
+  return stdin?.isTTY === true && stdout?.isTTY === true;
+}
+
+export function reviewerBackendOptions(agents) {
+  const agentOptions = selectableReviewerAgents(agents).map((agent) => {
+    const badge = agent.status === 'ready' ? '✓ ready'
+      : agent.status === 'unauthenticated' ? '✗ found, not authenticated'
+      : agent.status === 'incompatible' ? '✗ update required'
+      : 'not found';
+    return {
+      value: agent.id,
+      label: `${agent.label} (${badge})`,
+      hint: agent.status === 'unauthenticated'
+        ? `run: ${agent.loginCommand}`
+        : agent.status === 'incompatible'
+          ? 'update the CLI to a release with required isolation flags'
+          : undefined,
+    };
+  });
+  agentOptions.push({ value: 'custom', label: 'Custom command...' });
+  return agentOptions;
+}
+
+export async function recheckReviewerAgent({ selectedAgent, detect = detectAgents } = {}) {
+  if (!selectedAgent?.id) return null;
+
+  let agents;
+  try {
+    agents = await detect();
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(agents)) return null;
+  const refreshedAgent = agents.find((agent) => agent.id === selectedAgent.id);
+  return refreshedAgent?.status === 'ready' ? refreshedAgent : null;
+}
 
 function exitCancelled() {
   p.cancel('Setup cancelled. Configuration and review files were not changed.');
@@ -73,6 +126,120 @@ async function readExistingConfig() {
     p.log.warn(`Existing config will not be imported: ${err.message}`);
     return null;
   }
+}
+
+async function selectReviewerModel({ agent, existingConfig, backend }) {
+  const previousBackend = reviewerBackendForCommand(existingConfig?.reviewerCommand);
+  const previousModel = previousBackend === backend ? existingConfig?.model : null;
+  const catalog = reviewerModelOptions(backend);
+  const canSelectModel = agent.modelSelectionSupported !== false;
+  const modelOptions = canSelectModel ? [
+    {
+      value: CLI_DEFAULT_MODEL_VALUE,
+      label: 'CLI default',
+      hint: 'let the selected CLI choose its current default model',
+    },
+    ...catalog.map((model) => ({
+      value: model.id,
+      label: model.label,
+      hint: `${model.id}${model.hint ? ` · ${model.hint}` : ''}`,
+    })),
+  ] : [
+    {
+      value: CLI_DEFAULT_MODEL_VALUE,
+      label: 'CLI default',
+      hint: 'this installed CLI does not expose a model-selection flag',
+    },
+  ];
+
+  if (
+    canSelectModel &&
+    previousModel?.id &&
+    !catalog.some((model) => model.id === previousModel.id)
+  ) {
+    modelOptions.splice(1, 0, {
+      value: previousModel.id,
+      label: `Current: ${previousModel.id}`,
+      hint: 'saved custom model ID',
+    });
+  }
+  if (canSelectModel) {
+    modelOptions.push({
+      value: CUSTOM_MODEL_VALUE,
+      label: 'Enter model ID…',
+      hint: 'use a provider, preview, enterprise, or deployment-specific ID',
+    });
+  }
+
+  const selectedModelValue = await p.select({
+    message: `Which ${agent.label} model should review PRs?`,
+    options: modelOptions,
+    initialValue: canSelectModel
+      ? previousModel?.id || CLI_DEFAULT_MODEL_VALUE
+      : CLI_DEFAULT_MODEL_VALUE,
+  });
+  if (p.isCancel(selectedModelValue)) exitCancelled();
+
+  let modelId = selectedModelValue === CLI_DEFAULT_MODEL_VALUE
+    ? null
+    : selectedModelValue;
+  if (selectedModelValue === CUSTOM_MODEL_VALUE) {
+    const customModel = await p.text({
+      message: 'Model ID:',
+      initialValue: previousModel?.id || undefined,
+      placeholder: backend === 'claude' ? 'claude-opus-4-7' : 'gpt-5.6',
+      validate: (value) => isValidReviewerModelId(value?.trim())
+        ? undefined
+        : 'Use a non-empty model ID without whitespace, quotes, or shell separators',
+    });
+    if (p.isCancel(customModel)) exitCancelled();
+    modelId = customModel.trim();
+  } else if (!canSelectModel && previousModel?.id) {
+    p.log.warn(
+      `${agent.label} does not expose a model-selection flag in this installed version; using its default.`,
+    );
+  }
+
+  const preserveReasoning = previousModel && previousModel.id === modelId;
+  const previousReasoning = preserveReasoning
+    ? previousModel.reasoningEffort
+    : null;
+  const reasoningLabel = reasoningLabelForBackend(backend);
+  let reasoningEffort = null;
+  if (agent.reasoningSelectionSupported !== false) {
+    const reasoningOptions = [
+      {
+        value: CLI_DEFAULT_REASONING_VALUE,
+        label: 'CLI default',
+        hint: `use the selected ${agent.label} model's default ${reasoningLabel.toLowerCase()}`,
+      },
+      ...reasoningEffortsForModel(backend, modelId).map((effort) => ({
+        value: effort,
+        label: effort,
+      })),
+    ];
+    const initialReasoning = previousReasoning === null
+      ? CLI_DEFAULT_REASONING_VALUE
+      : reasoningOptions.some((option) => option.value === previousReasoning)
+        ? previousReasoning
+        : CLI_DEFAULT_REASONING_VALUE;
+    const selectedReasoning = await p.select({
+      message: `Which ${reasoningLabel.toLowerCase()} should it use?`,
+      options: reasoningOptions,
+      initialValue: initialReasoning,
+    });
+    if (p.isCancel(selectedReasoning)) exitCancelled();
+    reasoningEffort = selectedReasoning === CLI_DEFAULT_REASONING_VALUE
+      ? null
+      : selectedReasoning;
+  } else {
+    p.log.warn(
+      `${agent.label} does not expose a ${reasoningLabel.toLowerCase()} flag in this installed version; using its default.`,
+    );
+  }
+
+  if (modelId === null && reasoningEffort === null) return null;
+  return { id: modelId, reasoningEffort };
 }
 
 async function verifyConfiguredNotifications() {
@@ -97,6 +264,15 @@ async function verifyConfiguredNotifications() {
 }
 
 async function main() {
+  if (!isInteractiveTerminal()) {
+    console.error(
+      'openmergelens init requires an interactive terminal (TTY) on stdin and stdout. ' +
+      'Run it from a terminal instead of a pipe or scheduler.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   console.clear();
   p.intro('OpenMergeLens: configure independent GitHub reviewer accounts');
 
@@ -181,22 +357,7 @@ async function main() {
     const agents = await detectAgents();
     agentSpinner.stop('Done checking reviewer CLIs');
 
-    const agentOptions = agents.map((agent) => {
-      const badge = agent.status === 'ready' ? '✓ ready'
-        : agent.status === 'unauthenticated' ? '✗ found, not authenticated'
-        : agent.status === 'incompatible' ? '✗ update required'
-        : 'not found';
-      return {
-        value: agent.id,
-        label: `${agent.label} (${badge})`,
-        hint: agent.status === 'unauthenticated'
-          ? `run: ${agent.loginCommand}`
-          : agent.status === 'incompatible'
-            ? 'update the CLI to a release with required isolation flags'
-            : undefined,
-      };
-    });
-    agentOptions.push({ value: 'custom', label: 'Custom command...' });
+    const agentOptions = reviewerBackendOptions(agents);
 
     const backendChoice = await p.select({
       message: 'Which shared reviewer backend should all accounts use?',
@@ -205,6 +366,7 @@ async function main() {
     if (p.isCancel(backendChoice)) exitCancelled();
 
     let reviewerCommand;
+    let selectedAgent;
     if (backendChoice === 'custom') {
       const custom = await p.text({
         message: 'Reviewer command (reads stdin and writes JSON to stdout):',
@@ -215,25 +377,49 @@ async function main() {
       if (p.isCancel(custom)) exitCancelled();
       reviewerCommand = custom.trim();
     } else {
-      const agent = agents.find((candidate) => candidate.id === backendChoice);
-      if (agent.status === 'unauthenticated') {
-        p.log.warn(`${agent.label} is installed but not authenticated.`);
+      selectedAgent = agents.find((candidate) => candidate.id === backendChoice);
+      if (selectedAgent.status === 'unauthenticated') {
+        p.log.warn(
+          `${selectedAgent.label} is installed but not authenticated. ` +
+          `Run \`${selectedAgent.loginCommand}\` to sign in before continuing.`,
+        );
         const proceed = await p.confirm({
-          message: 'Continue with this backend anyway?',
+          message: 'Continue and verify this backend is ready?',
           initialValue: false,
         });
         if (p.isCancel(proceed) || !proceed) exitCancelled();
-      } else if (agent.status === 'incompatible') {
+
+        const verifiedAgent = await recheckReviewerAgent({ selectedAgent });
+        if (!verifiedAgent) {
+          p.log.error(
+            `${selectedAgent.label} is still unavailable or not authenticated. ` +
+            'Setup cancelled; no configuration was written.',
+          );
+          exitCancelled();
+        }
+        selectedAgent = verifiedAgent;
+      } else if (selectedAgent.status === 'incompatible') {
         p.log.error(
-          `${agent.label} lacks required reviewer isolation flags: ` +
-          agent.missingCapabilities.join(', '),
+          `${selectedAgent.label} lacks required reviewer isolation flags: ` +
+          selectedAgent.missingCapabilities.join(', '),
         );
         p.log.info('Update the CLI before selecting this backend.');
         exitCancelled();
       }
-      reviewerCommand = agent.reviewerCommand;
+      reviewerCommand = selectedAgent.reviewerCommand;
     }
     reviewerCommand = validateReviewerCommandContract(reviewerCommand);
+
+    const backend = backendChoice === 'custom'
+      ? null
+      : reviewerBackendForCommand(reviewerCommand);
+    const model = backend
+      ? await selectReviewerModel({
+        agent: selectedAgent,
+        existingConfig,
+        backend,
+      })
+      : null;
 
     // Consent covers the complete selected repository set only after the user
     // evaluates one specific shared reviewer backend. A backend change can
@@ -315,6 +501,7 @@ async function main() {
       githubAccounts,
       aiProcessingConsent,
       reviewerCommand,
+      model,
       reviewerInputMode: 'stdin',
       reviewBatchSize: isValidReviewBatchSize(existingConfig?.reviewBatchSize)
         ? existingConfig.reviewBatchSize
@@ -419,7 +606,12 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  if (err.code !== 'ECANCELLED') p.log.error(err.message);
-  process.exitCode = 1;
-});
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+) {
+  main().catch((err) => {
+    if (err.code !== 'ECANCELLED') p.log.error(err.message);
+    process.exitCode = 1;
+  });
+}

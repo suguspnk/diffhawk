@@ -74,6 +74,31 @@ test('reviewer, account, or repository changes invalidate consent', () => {
   }
 });
 
+test('model changes do not invalidate backend consent', () => {
+  const base = {
+    aiProcessingConsent: consent,
+    reviewerCommand,
+    githubAccounts: accounts,
+  };
+  assert.equal(
+    hasAiProcessingConsent({
+      ...base,
+      model: { id: 'gpt-5.6', reasoningEffort: 'high' },
+    }),
+    true,
+  );
+  assert.deepEqual(
+    retainAiProcessingConsent(
+      consent,
+      reviewerCommand,
+      reviewerCommand,
+      accounts,
+      accounts,
+    ),
+    consent,
+  );
+});
+
 test('malformed scope inputs fail closed', () => {
   assert.equal(
     retainAiProcessingConsent(

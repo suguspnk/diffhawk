@@ -576,14 +576,32 @@ test('contention behind an unrelated first-port service still has one winner', a
   for (let attempt = 0; attempt < 100; attempt++) {
     const key = lockKey(`fallback-contention-${attempt}`);
     const server = createServer((socket) => socket.end('not-openmergelens\n'));
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
+    const listenError = await new Promise((resolve) => {
+      const onError = (error) => {
+        server.off('listening', onListening);
+        resolve(error);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve(null);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
       server.listen({
         host: '127.0.0.1',
         port: lockPortFor(key),
         exclusive: true,
-      }, resolve);
+      });
     });
+    if (listenError) {
+      // Windows may reserve a deterministic private-range port, and another
+      // process may already own it. Try the next randomized namespace rather
+      // than failing a lock-election test before OpenMergeLens runs.
+      if (listenError.code === 'EACCES' || listenError.code === 'EADDRINUSE') {
+        continue;
+      }
+      throw listenError;
+    }
 
     try {
       const results = await Promise.all(
