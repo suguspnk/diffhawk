@@ -117,15 +117,26 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(license, /Copyright \(c\) 2015 Valere JEANTET/);
   assert.match(alerterRebuild, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
   assert.match(alerterRebuild, /Xcode 26\.3/);
-  assert.match(alerterRebuild, /cmp -s/);
+  assert.match(alerterRebuild, /--jobs 1/);
+  assert.match(alerterRebuild, /-Xlinker -ld_classic/);
   assert.match(alerterRebuild, /OPENMERGELENS_EXPECTED_ROOT/);
+  assert.match(alerterRebuild, /CFBundleExecutable/);
+  assert.match(alerterRebuild, /find .* -type l/);
+  assert.match(alerterRebuild, /codesign --verify --deep --strict/);
+  assert.match(alerterRebuild, /diff -qr/);
   assert.match(terminalNotifierRebuild, /8efbb0e977f57d7430e8f1e42e874a426080a8f3/);
   assert.match(terminalNotifierRebuild, /normalize-macho-uuids\.mjs/);
-  assert.match(terminalNotifierRebuild, /cmp -s/);
   assert.match(terminalNotifierRebuild, /OPENMERGELENS_EXPECTED_ROOT/);
+  assert.match(terminalNotifierRebuild, /CFBundleExecutable/);
+  assert.match(terminalNotifierRebuild, /find .* -type l/);
+  assert.match(terminalNotifierRebuild, /codesign --verify --deep --strict/);
+  assert.match(terminalNotifierRebuild, /diff -qr/);
   assert.match(provenanceWorkflow, /pull_request_target:/);
   assert.match(provenanceWorkflow, /path: trusted/);
   assert.match(provenanceWorkflow, /path: candidate/);
+  assert.match(provenanceWorkflow, /OpenMergeLensNotifier\.app\/\*\*/);
+  assert.match(provenanceWorkflow, /terminal-notifier\.app\/\*\*/);
+  assert.match(provenanceWorkflow, /changed_tree\(\)/);
   assert.match(
     provenanceWorkflow,
     /native executables and their verification logic must change in separate pull requests/,

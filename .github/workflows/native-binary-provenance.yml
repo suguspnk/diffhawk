@@ -4,8 +4,8 @@ on:
   pull_request_target:
     paths:
       - '.github/workflows/native-binary-provenance.yml'
-      - 'vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter'
-      - 'vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier'
+      - 'vendor/OpenMergeLensNotifier.app/**'
+      - 'vendor/terminal-notifier.app/**'
       - 'vendor/alerter-Package.resolved'
       - 'vendor/alerter-persistent.patch'
       - 'vendor/normalize-macho-uuids.mjs'
@@ -62,13 +62,17 @@ jobs:
             ! cmp -s "trusted/$1" "candidate/$1"
           }
 
+          changed_tree() {
+            ! diff -qr "trusted/$1" "candidate/$1" >/dev/null
+          }
+
           alerter_binary=false
           terminal_binary=false
           alerter_recipe=false
           terminal_recipe=false
 
-          changed vendor/OpenMergeLensNotifier.app/Contents/MacOS/alerter && alerter_binary=true
-          changed vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier && terminal_binary=true
+          changed_tree vendor/OpenMergeLensNotifier.app && alerter_binary=true
+          changed_tree vendor/terminal-notifier.app && terminal_binary=true
 
           for path in \
             .github/workflows/native-binary-provenance.yml \

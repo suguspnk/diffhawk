@@ -25,7 +25,7 @@
   `2cf31849a3d209cbcd929bdf9e0680b8cfe8eb2f005d395c1b3c6548b91ba36b`
 - Bundled executable SHA-256 after stripping, UUID normalization, and ad-hoc
   bundle signing:
-  `d6bab1fb33b4bcf9a12c98df24244cb323ce2890017304e7e2e60a13f9a83854`
+  `fd220daf991651aee271970957a48f10bd6bd4670b9e274a16b04d933a3ae5f2`
 - License: `alerter-LICENSE.md`
 
 The official upstream ZIP is arm64-only, so OpenMergeLens reproducibly builds
@@ -35,9 +35,11 @@ helper OpenMergeLens's dedicated bundle identity and routes timeout-zero alerts
 through Apple's supported UserNotifications framework. The helper exits after
 macOS accepts the request without removing the delivered notification; this
 lets Notification Center retain it while the poll process exits. Swift
-deterministic hashing stabilizes compiler ordering, and the normalization step
-zeros per-link Mach-O UUID fields before ad-hoc signing. The notifier icon is
-generated directly from the website's SVG mark with macOS system tools.
+deterministic hashing and a single build worker stabilize compiler ordering.
+Xcode 26.3's new linker alternates between equivalent arm64 Objective-C stub
+layouts, so this pinned Xcode build uses its classic linker; the normalization
+step then zeros per-link Mach-O UUID fields before ad-hoc signing. The notifier
+icon is generated directly from the website's SVG mark with macOS system tools.
 
 The executable was built with Xcode 26.3 and Swift 6.1:
 
@@ -57,6 +59,8 @@ git -C "$alerter_source_dir" apply \
   "$openmergelens_root/vendor/alerter-persistent.patch"
 env SWIFT_DETERMINISTIC_HASHING=1 swift build \
   --package-path "$alerter_source_dir" \
+  --jobs 1 \
+  -Xlinker -ld_classic \
   -c release --arch arm64 --arch x86_64
 notifier_bundle="$openmergelens_root/vendor/OpenMergeLensNotifier.app"
 mkdir -p "$notifier_bundle/Contents/MacOS" \
@@ -112,7 +116,7 @@ metadata. The helper opens that URL when the notification body or its
 - Architectures: `x86_64` and `arm64`
 - Minimum macOS deployment target: 11.0
 - Executable SHA-256 after ad-hoc signing:
-  `2c50bb38ae9e8d73b52dc19762374f26f693377eb3e52c24add49de119a8e10c`
+  `ac10bdc8815bacde9144b12cc274c9ae9a086448cfe1320fb2bf9480456eca4b`
 
 The universal app was built with:
 

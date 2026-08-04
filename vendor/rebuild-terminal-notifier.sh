@@ -9,6 +9,8 @@ default_developer_dir=/Applications/Xcode_26.3.app/Contents/Developer
 work_root=$(mktemp -d "${TMPDIR:-/tmp}/openmergelens-terminal-notifier.XXXXXX")
 source_dir="$work_root/source"
 build_dir="$work_root/build"
+bundle_dir="$work_root/terminal-notifier.app"
+expected_bundle="$expected_root/vendor/terminal-notifier.app"
 
 cleanup() {
   rm -rf "$work_root"
@@ -22,6 +24,25 @@ fi
 
 if [ "$(xcodebuild -version | sed -n '1p')" != "$expected_xcode_version" ]; then
   echo "reproducible notifier build requires $expected_xcode_version" >&2
+  exit 1
+fi
+
+if [ "$(plutil -extract CFBundleExecutable raw "$expected_bundle/Contents/Info.plist")" != 'terminal-notifier' ] ||
+   [ -n "$(find "$expected_bundle" -type l -print -quit)" ]; then
+  echo 'vendored terminal-notifier bundle has an unsafe executable layout' >&2
+  exit 1
+fi
+
+bundle_files=$(cd "$expected_bundle" && find . -type f -print | LC_ALL=C sort)
+expected_bundle_files='./Contents/Info.plist
+./Contents/MacOS/terminal-notifier
+./Contents/PkgInfo
+./Contents/Resources/en.lproj/Credits.rtf
+./Contents/Resources/en.lproj/InfoPlist.strings
+./Contents/Resources/en.lproj/MainMenu.nib
+./Contents/_CodeSignature/CodeResources'
+if [ "$bundle_files" != "$expected_bundle_files" ]; then
+  echo 'vendored terminal-notifier bundle contains an unexpected file' >&2
   exit 1
 fi
 
@@ -42,16 +63,18 @@ rebuilt="$build_dir/Build/Products/Release/terminal-notifier.app/Contents/MacOS/
 strip -x "$rebuilt"
 codesign --remove-signature "$rebuilt" 2>/dev/null || true
 node "$project_root/vendor/normalize-macho-uuids.mjs" "$rebuilt"
-codesign --force --sign - "$rebuilt"
+cp -R "$expected_bundle" "$bundle_dir"
+rm -rf "$bundle_dir/Contents/_CodeSignature"
+cp "$rebuilt" "$bundle_dir/Contents/MacOS/terminal-notifier"
+codesign --force --deep --sign - "$bundle_dir"
+codesign --verify --deep --strict "$bundle_dir"
 
-if ! cmp -s \
-  "$rebuilt" \
-  "$expected_root/vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier"; then
-  echo 'vendored terminal-notifier does not match the pinned-source reproducible build' >&2
+if ! diff -qr "$bundle_dir" "$expected_bundle" >/dev/null; then
+  echo 'vendored terminal-notifier bundle does not match the pinned-source reproducible build' >&2
   shasum -a 256 \
-    "$rebuilt" \
-    "$expected_root/vendor/terminal-notifier.app/Contents/MacOS/terminal-notifier" >&2
+    "$bundle_dir/Contents/MacOS/terminal-notifier" \
+    "$expected_bundle/Contents/MacOS/terminal-notifier" >&2
   exit 1
 fi
 
-echo 'vendored terminal-notifier matches the pinned-source reproducible build'
+echo 'vendored terminal-notifier bundle matches the pinned-source reproducible build'
