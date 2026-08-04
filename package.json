@@ -61,5 +61,8 @@
   },
   "dependencies": {
     "@clack/prompts": "1.7.0"
+  },
+  "devDependencies": {
+    "parse5": "8.0.1"
   }
 }

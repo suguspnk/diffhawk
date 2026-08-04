@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse as parseHtml } from 'parse5';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(
@@ -57,6 +58,10 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   assert.equal(shrinkwrap.packages[''].name, packageJson.name);
   assert.equal(shrinkwrap.packages[''].version, packageJson.version);
   assert.deepEqual(shrinkwrap.packages[''].dependencies, packageJson.dependencies);
+  assert.deepEqual(
+    shrinkwrap.packages[''].devDependencies,
+    packageJson.devDependencies,
+  );
   assert.equal(shrinkwrap.packages['node_modules/@clack/prompts'].version, '1.7.0');
   assert.equal(shrinkwrap.packages['node_modules/@clack/core'].version, '1.4.3');
   assert.equal(
@@ -198,6 +203,204 @@ test('GitHub Pages motion is local, pinned, and progressively enhanced', async (
     motionProvenance,
     new RegExp(createHash('sha256').update(motionBundle).digest('hex')),
   );
+});
+
+function assertSecureGithubPagesHtml(html) {
+  const document = parseHtml(html);
+  const elements = [];
+  const visit = (node) => {
+    if (node.tagName) {
+      elements.push(node);
+    }
+    for (const child of node.childNodes ?? []) {
+      visit(child);
+    }
+  };
+  visit(document);
+
+  const attributes = (element) => new Map(
+    element.attrs.map(({ name, value }) => [name, value]),
+  );
+  const cspMetas = elements.filter((element) => {
+    if (element.tagName !== 'meta') return false;
+    return attributes(element).get('http-equiv')?.toLowerCase() ===
+      'content-security-policy';
+  });
+  assert.equal(
+    cspMetas.length,
+    1,
+    'the page declares exactly one content security policy',
+  );
+  const [cspMeta] = cspMetas;
+  const structuredDataScript = elements.find((element) => {
+    if (element.tagName !== 'script') return false;
+    return attributes(element).get('type')?.toLowerCase() ===
+      'application/ld+json';
+  });
+  const contentSecurityPolicy = cspMeta && attributes(cspMeta).get('content');
+  const structuredDataSource = structuredDataScript?.childNodes
+    ?.filter((node) => node.nodeName === '#text')
+    .map((node) => node.value)
+    .join('');
+
+  assert.ok(contentSecurityPolicy, 'the page declares a content security policy');
+  assert.ok(structuredDataSource, 'the page includes its structured data');
+
+  const structuredDataHash = createHash('sha256')
+    .update(structuredDataSource)
+    .digest('base64');
+  const expectedDirectives = new Map([
+    ['default-src', ["'none'"]],
+    ['script-src', ["'self'", `'sha256-${structuredDataHash}'`]],
+    ['style-src', ["'unsafe-inline'"]],
+    ['img-src', ["'self'", 'data:']],
+    ['connect-src', ["'none'"]],
+    ['font-src', ["'none'"]],
+    ['frame-src', ["'none'"]],
+    ['media-src', ["'none'"]],
+    ['object-src', ["'none'"]],
+    ['worker-src', ["'none'"]],
+    ['base-uri', ["'none'"]],
+    ['form-action', ["'none'"]],
+    ['manifest-src', ["'self'"]],
+  ]);
+  const actualDirectives = new Map();
+
+  for (const segment of contentSecurityPolicy.split(';')) {
+    const [name, ...sources] = segment.trim().split(/\s+/);
+    if (!name) continue;
+    assert.equal(
+      actualDirectives.has(name),
+      false,
+      `content security policy must not duplicate ${name}`,
+    );
+    actualDirectives.set(name, sources.sort());
+  }
+
+  assert.deepEqual(
+    Object.fromEntries(actualDirectives),
+    Object.fromEntries(
+      [...expectedDirectives].map(([name, sources]) => [name, sources.sort()]),
+    ),
+  );
+
+  const referrerMetas = elements.filter((element) => {
+    if (element.tagName !== 'meta') return false;
+    return attributes(element).get('name')?.toLowerCase() === 'referrer';
+  });
+  assert.equal(
+    referrerMetas.length,
+    1,
+    'the page declares exactly one referrer policy',
+  );
+  const [referrerMeta] = referrerMetas;
+  assert.equal(attributes(referrerMeta).get('content'), 'no-referrer');
+
+  const pageUrl = new URL('https://suguspnk.github.io/openmergelens/');
+  const allowedOutboundHosts = new Set(['github.com', 'www.npmjs.com']);
+  let outboundLinkCount = 0;
+
+  for (const element of elements) {
+    const attrs = attributes(element);
+    for (const name of attrs.keys()) {
+      assert.doesNotMatch(name, /^on/i, `${element.tagName} has no event handler`);
+    }
+
+    assert.equal(attrs.has('srcset'), false, 'srcset is not an approved resource input');
+    assert.equal(
+      element.tagName === 'meta' &&
+        attrs.get('http-equiv')?.toLowerCase() === 'refresh',
+      false,
+      'meta refresh navigation is not allowed',
+    );
+
+    for (const attributeName of ['src', 'poster', 'data']) {
+      const value = attrs.get(attributeName);
+      if (value === undefined) continue;
+      const resource = new URL(value, pageUrl);
+      const allowedDataImage = element.tagName === 'img' &&
+        resource.protocol === 'data:';
+      assert.ok(
+        allowedDataImage ||
+          (resource.protocol === 'https:' && resource.origin === pageUrl.origin),
+        `${element.tagName}[${attributeName}] uses an approved local resource`,
+      );
+    }
+
+    const href = attrs.get('href');
+    if (href === undefined) continue;
+    const destination = new URL(href, pageUrl);
+    assert.equal(destination.protocol, 'https:', `${element.tagName}[href] uses HTTPS`);
+
+    if (destination.origin === pageUrl.origin) continue;
+    assert.equal(element.tagName, 'a', 'only anchors may leave the site origin');
+    outboundLinkCount += 1;
+    assert.ok(
+      allowedOutboundHosts.has(destination.hostname),
+      `outbound link host is approved: ${destination.hostname}`,
+    );
+  }
+
+  assert.ok(outboundLinkCount > 0, 'the page includes approved outbound links');
+}
+
+test('GitHub Pages blocks unapproved active content and outbound destinations', async () => {
+  const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
+  assertSecureGithubPagesHtml(html);
+});
+
+test('GitHub Pages security validation rejects browser-equivalent bypass forms', async () => {
+  const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
+  const mutations = [
+    {
+      name: 'single-quoted remote script',
+      html: html.replace(
+        'src="./assets/site-motion.js"',
+        "src='https://evil.example/site-motion.js'",
+      ),
+    },
+    {
+      name: 'entity-encoded JavaScript URL',
+      html: html.replace('href="#how-it-works"', 'href="&#106;avascript:alert(1)"'),
+    },
+    {
+      name: 'protocol-relative outbound host',
+      html: html.replace(
+        'href="https://github.com/suguspnk/openmergelens"',
+        'href="//evil.example/openmergelens"',
+      ),
+    },
+    {
+      name: 'duplicate permissive script directive',
+      html: html.replace("content=\"default-src 'none';", "content=\"script-src *; default-src 'none';"),
+    },
+    {
+      name: 'duplicate content security policy',
+      html: html.replace(
+        '<meta name="referrer" content="no-referrer">',
+        '<meta http-equiv="Content-Security-Policy" content="default-src *">\n    <meta name="referrer" content="no-referrer">',
+      ),
+    },
+    {
+      name: 'duplicate permissive referrer policy',
+      html: html.replace(
+        '<meta name="referrer" content="no-referrer">',
+        '<meta name="referrer" content="no-referrer">\n    <meta name="referrer" content="unsafe-url">',
+      ),
+    },
+    {
+      name: 'missing functional style directive',
+      html: html.replace(" style-src 'unsafe-inline';", ''),
+    },
+  ];
+
+  for (const mutation of mutations) {
+    assert.throws(
+      () => assertSecureGithubPagesHtml(mutation.html),
+      undefined,
+      mutation.name,
+    );
+  }
 });
 
 test('relative links in the installed README target packaged files', async () => {
