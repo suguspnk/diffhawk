@@ -30,8 +30,27 @@ test('trusted publishing is manually dispatched with an exact release tag', asyn
   assert.match(workflow, /^on:\n  workflow_dispatch:/m);
   assert.doesNotMatch(workflow, /^  release:/m);
   assert.match(workflow, /ref: \$\{\{ inputs\.release_tag }}/);
+  assert.match(workflow, /release_sha: \$\{\{ steps\.release\.outputs\.sha }}/);
+  assert.match(workflow, /ref: \$\{\{ needs\.verify\.outputs\.release_sha }}/);
   assert.match(workflow, /refs\/tags\/\$\{RELEASE_TAG}\^\{commit}/);
-  assert.match(workflow, /npm stage publish --tag/);
+  assert.match(workflow, /test "\$tag_commit" = "\$VERIFIED_SHA"/);
+  assert.match(workflow, /npm stage publish .*--tag/);
+});
+
+test('OIDC is isolated to the script-free staging job', async () => {
+  const workflow = await readProjectFile('.github/workflows/publish.yml');
+  const verifyJob = workflow.slice(
+    workflow.indexOf('  verify:'),
+    workflow.indexOf('  stage:'),
+  );
+  const stageJob = workflow.slice(workflow.indexOf('  stage:'));
+
+  assert.doesNotMatch(verifyJob, /id-token:\s*write/);
+  assert.match(verifyJob, /pnpm install --frozen-lockfile --ignore-scripts/);
+  assert.match(stageJob, /needs: verify/);
+  assert.match(stageJob, /permissions:\n\s+contents: read\n\s+id-token: write/);
+  assert.doesNotMatch(stageJob, /pnpm install|pnpm release:check/);
+  assert.match(stageJob, /npm stage publish --ignore-scripts --tag/);
 });
 
 test('bootstrap documentation prevents restaging immutable version 1.0.0', async () => {
