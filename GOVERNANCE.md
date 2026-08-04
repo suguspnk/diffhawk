@@ -2,9 +2,14 @@
 
 ## Maintainers
 
-OpenMergeLens currently has a single maintainer, who has final say on scope,
-design, and what gets merged. There is no formal contributor tier with merge
-rights at this time.
+OpenMergeLens currently has a single human maintainer, who has final say on
+scope, design, and what gets merged. There is no formal contributor tier with
+merge rights at this time.
+
+The maintainer controls two authorized GitHub identities, `@suguspnk` and
+`@sera240910`; both are code owners. Repository roles used for triage,
+automation, or collaboration do not confer maintainer status and must not
+satisfy the protected branch's code-owner approval requirement.
 
 External contributions (issues, PRs) are welcome, but merge rights are not
 extended to contributors currently. This may change as the project grows,
@@ -16,16 +21,25 @@ All changes land through a pull request, including changes made by a
 maintainer. This keeps history and diffs reviewable even when no second
 person is available to review.
 
-- With a single maintainer, PRs are self-reviewed and may use the maintainer
-  bypass for the approval requirement after required CI checks pass: check
-  that the change matches the design constraints in [CLAUDE.md](CLAUDE.md) /
-  [PRD.md](PRD.md), that any relevant tests/dry-run checks pass, and
-  that the relevant user, design, and release documentation is updated if
-  behavior changed.
+- While the project has one human maintainer, maintainer-authored PRs normally
+  use the maintainer bypass after required CI passes. Before bypassing, the
+  maintainer must review the complete diff and current head SHA, confirm that
+  the change matches [CLAUDE.md](CLAUDE.md) / [PRD.md](PRD.md), verify affected
+  tests and documentation, and record the bypass checklist in the pull request.
+  The alternate authorized identity may approve instead, but cross-account
+  approval is not required for the normal single-maintainer workflow.
 - If a second maintainer joins, PRs opened by one maintainer should be
   reviewed and approved by another before merging, rather than self-merged.
 - Direct pushes to `main` are avoided in favor of PRs, even for small changes,
   so there's always a reviewable diff.
+
+The repository protection settings are part of this governance contract. They
+must match [docs/REPOSITORY_SECURITY.md](docs/REPOSITORY_SECURITY.md). In
+particular, `main` requires a current code-owner approval and a current CI
+gate; an approval from an account with generic write access is insufficient.
+Administrative bypass is the documented normal path for maintainer-authored
+changes while the project has only one human maintainer. It is allowed only
+after the required checks and bypass checklist are complete.
 
 ## Decision-making
 
