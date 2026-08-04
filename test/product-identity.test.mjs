@@ -196,11 +196,17 @@ function assertSecureGithubPagesHtml(html) {
   const attributes = (element) => new Map(
     element.attrs.map(({ name, value }) => [name, value]),
   );
-  const cspMeta = elements.find((element) => {
+  const cspMetas = elements.filter((element) => {
     if (element.tagName !== 'meta') return false;
     return attributes(element).get('http-equiv')?.toLowerCase() ===
       'content-security-policy';
   });
+  assert.equal(
+    cspMetas.length,
+    1,
+    'the page declares exactly one content security policy',
+  );
+  const [cspMeta] = cspMetas;
   const structuredDataScript = elements.find((element) => {
     if (element.tagName !== 'script') return false;
     return attributes(element).get('type')?.toLowerCase() ===
@@ -253,10 +259,16 @@ function assertSecureGithubPagesHtml(html) {
     ),
   );
 
-  const referrerMeta = elements.find((element) => {
+  const referrerMetas = elements.filter((element) => {
     if (element.tagName !== 'meta') return false;
     return attributes(element).get('name')?.toLowerCase() === 'referrer';
   });
+  assert.equal(
+    referrerMetas.length,
+    1,
+    'the page declares exactly one referrer policy',
+  );
+  const [referrerMeta] = referrerMetas;
   assert.equal(attributes(referrerMeta).get('content'), 'no-referrer');
 
   const pageUrl = new URL('https://suguspnk.github.io/openmergelens/');
@@ -336,6 +348,20 @@ test('GitHub Pages security validation rejects browser-equivalent bypass forms',
     {
       name: 'duplicate permissive script directive',
       html: html.replace("content=\"default-src 'none';", "content=\"script-src *; default-src 'none';"),
+    },
+    {
+      name: 'duplicate content security policy',
+      html: html.replace(
+        '<meta name="referrer" content="no-referrer">',
+        '<meta http-equiv="Content-Security-Policy" content="default-src *">\n    <meta name="referrer" content="no-referrer">',
+      ),
+    },
+    {
+      name: 'duplicate permissive referrer policy',
+      html: html.replace(
+        '<meta name="referrer" content="no-referrer">',
+        '<meta name="referrer" content="no-referrer">\n    <meta name="referrer" content="unsafe-url">',
+      ),
     },
     {
       name: 'missing functional style directive',
