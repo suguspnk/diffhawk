@@ -17,6 +17,9 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
   );
+  const shrinkwrap = JSON.parse(
+    await readFile(path.join(projectRoot, 'npm-shrinkwrap.json'), 'utf8'),
+  );
 
   assert.equal(packageJson.name, 'openmergelens');
   assert.equal(
@@ -44,6 +47,24 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
     'pnpm release:check',
     'interactive publishes must run the same audit and package gate as CI',
   );
+  assert.equal(
+    packageJson.dependencies['@clack/prompts'],
+    '1.7.0',
+    'published production dependencies must not float after release',
+  );
+  assert.equal(shrinkwrap.name, packageJson.name);
+  assert.equal(shrinkwrap.version, packageJson.version);
+  assert.equal(shrinkwrap.packages[''].name, packageJson.name);
+  assert.equal(shrinkwrap.packages[''].version, packageJson.version);
+  assert.deepEqual(shrinkwrap.packages[''].dependencies, packageJson.dependencies);
+  assert.equal(shrinkwrap.packages['node_modules/@clack/prompts'].version, '1.7.0');
+  assert.equal(shrinkwrap.packages['node_modules/@clack/core'].version, '1.4.3');
+  assert.equal(
+    Object.keys(shrinkwrap.packages).some((entry) => entry.includes('/.pnpm/')),
+    false,
+    'the published npm lock must not contain pnpm store paths',
+  );
+  assert.ok(packageJson.files.includes('npm-shrinkwrap.json'));
 });
 
 test('the bundled manual config requires init to record bulk consent', async () => {
