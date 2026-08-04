@@ -138,6 +138,14 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(provenanceWorkflow, /vendor\/alerter-Package\.resolved/);
   assert.match(provenanceWorkflow, /vendor\/alerter-persistent\.patch/);
   assert.match(provenanceWorkflow, /env -i/);
+  assert.match(
+    provenanceWorkflow,
+    /EVENT_NAME: \$\{\{ github\.event_name }}/,
+  );
+  assert.match(
+    provenanceWorkflow,
+    /\[ "\$EVENT_NAME" = 'workflow_dispatch' \][\s\S]*echo 'alerter_binary=true'[\s\S]*echo 'terminal_binary=true'/,
+  );
 
   const normalizedCopy = Buffer.from(binary);
   assert.equal(normalizeMachOUuids(normalizedCopy), 2);
