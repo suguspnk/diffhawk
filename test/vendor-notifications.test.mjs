@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { normalizeMachOUuids } from '../vendor/normalize-macho-uuids.mjs';
 
@@ -10,6 +12,7 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
+const execFileAsync = promisify(execFile);
 
 test('vendored Alerter is pinned, patched, licensed, normalized, and universal', async () => {
   const notifierBundle = path.join(
@@ -20,6 +23,7 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   );
   const [
     binary,
+    terminalNotifierBinary,
     bundleInfo,
     bundleIcon,
     siteMark,
@@ -32,6 +36,14 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     provenanceWorkflow,
   ] = await Promise.all([
     readFile(path.join(notifierBundle, 'MacOS', 'alerter')),
+    readFile(path.join(
+      projectRoot,
+      'vendor',
+      'terminal-notifier.app',
+      'Contents',
+      'MacOS',
+      'terminal-notifier',
+    )),
     readFile(path.join(notifierBundle, 'Info.plist'), 'utf8'),
     readFile(path.join(notifierBundle, 'Resources', 'OpenMergeLens.icns')),
     readFile(path.join(
@@ -57,6 +69,9 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     ),
   ]);
   const checksum = createHash('sha256').update(binary).digest('hex');
+  const terminalNotifierChecksum = createHash('sha256')
+    .update(terminalNotifierBinary)
+    .digest('hex');
   const iconChecksum = createHash('sha256').update(bundleIcon).digest('hex');
   const canonicalSiteMark = siteMark
     .toString('utf8')
@@ -80,6 +95,7 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
   assert.match(provenance, /6070136eb72a0f63a10abfe350c51e0007fd8341/);
   assert.match(provenance, /11f63cddc9bb3f8554ed9b762632a120cfa7bee05e3c09d65734823e09d24f10/);
   assert.match(provenance, new RegExp(checksum));
+  assert.match(provenance, new RegExp(terminalNotifierChecksum));
   assert.match(provenance, new RegExp(iconChecksum));
   assert.match(provenance, new RegExp(siteMarkChecksum));
   assert.match(provenance, /SWIFT_DETERMINISTIC_HASHING=1/);
@@ -157,6 +173,21 @@ test('vendored Alerter is pinned, patched, licensed, normalized, and universal',
     provenanceWorkflow,
     /\[ "\$EVENT_NAME" = 'workflow_dispatch' \][\s\S]*echo 'alerter_binary=true'[\s\S]*echo 'terminal_binary=true'/,
   );
+
+  if (process.platform === 'darwin') {
+    await execFileAsync('codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      path.join(projectRoot, 'vendor', 'OpenMergeLensNotifier.app'),
+    ]);
+    await execFileAsync('codesign', [
+      '--verify',
+      '--deep',
+      '--strict',
+      path.join(projectRoot, 'vendor', 'terminal-notifier.app'),
+    ]);
+  }
 
   const normalizedCopy = Buffer.from(binary);
   assert.equal(normalizeMachOUuids(normalizedCopy), 2);
