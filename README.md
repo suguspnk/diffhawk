@@ -130,18 +130,21 @@ This will:
    actually authenticated (not just installed). You can also enter a custom
    reviewer command instead. Codex runs in ephemeral, read-only mode and
    accepts the prompt-only review workspace without requiring a Git checkout.
-5. Require one explicit consent for the complete selected repository set
+5. For a built-in backend, choose a current model from the backend catalog or
+   enter a model ID, then choose its reasoning/thinking effort (or keep each
+   setting at the CLI default). Custom commands use their own model settings.
+6. Require one explicit consent for the complete selected repository set
    before source code, pull-request content, or personal data can be processed
    by the selected third-party AI provider. Declining leaves setup unchanged.
-6. Ask how many independent review focus categories to run per PR. The
+7. Ask how many independent review focus categories to run per PR. The
    recommended choice runs all four categories plus synthesis; lower choices
    reduce reviewer calls by skipping later categories.
-7. Ask whether completed polls should show desktop notifications (enabled by
+8. Ask whether completed polls should show desktop notifications (enabled by
    default). After setup is applied, send a test notification, confirm that it
    appeared, and show platform-specific recovery steps if the operating system
    suppresses it.
-8. Offer one schedule for the complete multi-account poller.
-9. Preview the config, deterministic review-file paths, and schedule, then ask
+9. Offer one schedule for the complete multi-account poller.
+10. Preview the config, deterministic review-file paths, and schedule, then ask
    once before applying them.
 
 Cancelling before the final confirmation leaves the config and review files
@@ -161,10 +164,11 @@ then copy `<that path>/openmergelens/config.example.json` to
 
 | Field | Meaning |
 |---|---|
-| `configVersion` | Required schema version; currently `3`. Version 2 repository-scoped consent is migrated conservatively; older/single-account shapes are rejected. |
+| `configVersion` | Required schema version; currently `4`. Version 2 repository-scoped consent and version 3 configs are migrated conservatively; older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each repository list contains explicit `OWNER/REPO` strings. |
 | `aiProcessingConsent` | A setup-generated scoped authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing, `null`, malformed, or scope-mismatched consent prevents every repository from reaching the reviewer. Changing the backend or selected set requires one fresh bulk confirmation. Leave this `null` in hand-written config, then run `openmergelens init` to record consent. |
 | `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |
+| `model` | Optional object controlling the selected generated Codex/Claude backend. `null` uses both CLI defaults. Otherwise use `{ "id": "…", "reasoningEffort": "…" }`; either property may be `null` independently. Model IDs are validated before being added to the command. Custom reviewer commands must leave this field `null`. |
 | `reviewBatchSize` | Global maximum number of concurrent PR reviews across all accounts (defaults to `5`). |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |

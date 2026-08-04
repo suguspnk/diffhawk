@@ -38,13 +38,13 @@ test('detectAgents executes Windows npm shims through ComSpec', async () => {
     execute: async (...args) => {
       executions.push(args);
       return {
-        stdout: '--setting-sources --tools dontAsk',
+        stdout: '--setting-sources --tools dontAsk --model --config --effort',
       };
     },
   });
 
   assert.deepEqual(agents.map(({ status }) => status), ['ready', 'ready']);
-  assert.equal(executions.length, 3);
+  assert.equal(executions.length, 4);
   assert.equal(executions[0][0], 'C:\\Windows\\System32\\cmd.exe');
   assert.deepEqual(executions[0][1].slice(0, 3), ['/d', '/s', '/c']);
   assert.equal(executions[0][2].shell, false);
@@ -65,7 +65,7 @@ test('detectAgents gives Codex the default user CODEX_HOME when none is configur
     execute: async (...args) => {
       executions.push(args);
       return {
-        stdout: '--setting-sources --tools dontAsk',
+        stdout: '--setting-sources --tools dontAsk --model --config --effort',
       };
     },
   });
@@ -90,7 +90,7 @@ test('detectAgents gives Claude the default user config dir when none is configu
     execute: async (...args) => {
       executions.push(args);
       return {
-        stdout: '--setting-sources --tools dontAsk',
+        stdout: '--setting-sources --tools dontAsk --model --config --effort',
       };
     },
   });
@@ -122,9 +122,11 @@ test('detectAgents rejects Claude versions missing isolation flags', async () =>
     platform: 'linux',
     resolve: async (binary) => `/usr/local/bin/${binary}`,
     execute: async (_command, args) => ({
-      stdout: args.includes('--help')
-        ? '--strict-mcp-config --allowedTools --permission-mode default'
-        : '',
+      stdout: args.includes('exec')
+        ? '--model --config'
+        : args.includes('--help')
+          ? '--strict-mcp-config --allowedTools --permission-mode default'
+          : '',
     }),
   });
 
@@ -134,4 +136,91 @@ test('detectAgents rejects Claude versions missing isolation flags', async () =>
     ['--setting-sources', '--tools', 'dontAsk'],
   );
   assert.equal(agents[1].status, 'ready');
+});
+
+test('detectAgents reports optional model and reasoning controls separately', async () => {
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (_command, args) => ({
+      stdout: args.includes('--help')
+        ? '--setting-sources --tools --model dontAsk'
+        : '',
+    }),
+  });
+
+  const claude = agents.find((agent) => agent.id === 'claude');
+  assert.equal(claude.status, 'ready');
+  assert.equal(claude.modelSelectionSupported, true);
+  assert.equal(claude.reasoningSelectionSupported, false);
+});
+
+test('detectAgents probes Codex exec capabilities and reports model/config controls', async () => {
+  const executions = [];
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (_command, args) => {
+      executions.push(args);
+      if (args.includes('exec')) return { stdout: '-c, --config <key=value> --model <MODEL>' };
+      return { stdout: args.includes('--help') ? '--setting-sources --tools dontAsk' : '' };
+    },
+  });
+
+  const codex = agents.find((agent) => agent.id === 'codex');
+  assert.deepEqual(executions[2], ['exec', '--help']);
+  assert.deepEqual(executions[3], CODEX_REVIEWER_CHECK_ARGS);
+  assert.equal(codex.status, 'ready');
+  assert.equal(codex.modelSelectionSupported, true);
+  assert.equal(codex.reasoningSelectionSupported, true);
+});
+
+test('detectAgents treats a failed optional Codex capability probe as unsupported', async () => {
+  const executions = [];
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (_command, args) => {
+      executions.push(args);
+      if (args.includes('exec')) throw new Error('old Codex has no exec help');
+      return { stdout: '' };
+    },
+  });
+
+  const codex = agents.find((agent) => agent.id === 'codex');
+  assert.equal(codex.status, 'ready');
+  assert.equal(codex.modelSelectionSupported, false);
+  assert.equal(codex.reasoningSelectionSupported, false);
+});
+
+test('detectAgents treats absent Codex model and config flags as unsupported', async () => {
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (_command, args) => ({
+      stdout: args.includes('exec') ? 'Usage: codex exec [OPTIONS]' : '',
+    }),
+  });
+
+  const codex = agents.find((agent) => agent.id === 'codex');
+  assert.equal(codex.status, 'ready');
+  assert.equal(codex.modelSelectionSupported, false);
+  assert.equal(codex.reasoningSelectionSupported, false);
+});
+
+test('detectAgents rejects Claude when its capability probe returns no result', async () => {
+  const agents = await detectAgents({
+    platform: 'linux',
+    resolve: async (binary) => `/usr/local/bin/${binary}`,
+    execute: async (_command, args) => args.includes('--help')
+      ? undefined
+      : { stdout: '' },
+  });
+
+  const claude = agents.find((agent) => agent.id === 'claude');
+  assert.equal(claude.status, 'incompatible');
+  assert.deepEqual(
+    claude.missingCapabilities,
+    ['--setting-sources', '--tools', 'dontAsk'],
+  );
 });

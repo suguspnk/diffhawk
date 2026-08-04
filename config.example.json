@@ -1,5 +1,5 @@
 {
-  "configVersion": 3,
+  "configVersion": 4,
   "aiProcessingConsent": null,
   "githubAccounts": [
     {
@@ -19,6 +19,7 @@
     }
   ],
   "reviewerCommand": "claude -p --output-format text --setting-sources \"\" --strict-mcp-config --permission-mode dontAsk --max-turns 100 --tools \"\"",
+  "model": null,
   "reviewerInputMode": "stdin",
   "reviewBatchSize": 5,
   "reviewFocusCount": 4,

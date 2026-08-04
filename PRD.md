@@ -274,33 +274,37 @@ false positives. **Decided: adopt a lightweight local equivalent.**
 
 ## Agent-agnostic reviewer adapter
 
-Don't hardcode `claude -p ...`. Instead, define a config field like:
+The setup wizard writes the complete, isolated command for a detected Claude
+or Codex backend. Do not copy a bare agent invocation (such as `claude -p`)
+into `reviewerCommand`: custom commands are accepted only when they expose the
+per-review MCP server through both placeholders. For a custom backend, define
+the config field like:
 
 ```json
 {
-  "reviewerCommand": "claude -p --output-format text",
+  "reviewerCommand": "my-reviewer --mcp-config {{mcp_config}} --allowed-tool {{mcp_tool}}",
   "reviewerInputMode": "stdin"
 }
 ```
 
-The adapter script pipes the composed PR-link prompt to `reviewerCommand` via stdin (or
-substitutes a `{prompt_file}` placeholder if the backend needs a file path
-instead of stdin) and captures stdout as the review text. This way, swapping
-to a different CLI (another agent runtime, a different model wrapper, a local
-LLM harness) is a one-line config change, not a code change.
+The adapter script pipes the composed PR-link prompt to `reviewerCommand` via
+stdin and captures stdout as the review text. This way, swapping to a
+different CLI (another agent runtime, a different model wrapper, a local LLM
+harness) is a one-line config change, not a code change. Reviewer commands that
+require a prompt file are not supported by the current `reviewerInputMode`
+contract; use a small stdin-reading wrapper when adapting such a backend.
 
-Suggested default for `reviewerCommand`: `claude -p` reading the prompt from
-stdin, since that matches how the user already works, but keep it swappable.
+For a built-in backend, run `openmergelens init` and keep the generated
+`reviewerCommand`; it includes the MCP inspection contract and the required
+read-only restrictions. Keep custom commands swappable by retaining both
+`{{mcp_config}}` and `{{mcp_tool}}` placeholders.
 
 ## Config shape
 
 ```json
 {
-  "configVersion": 3,
-  "aiProcessingConsent": {
-    "granted": true,
-    "scope": "sha256:<reviewer-and-selected-repository-scope>"
-  },
+  "configVersion": 4,
+  "aiProcessingConsent": null,
   "githubAccounts": [
     {
       "hostname": "github.com",
@@ -313,12 +317,19 @@ stdin, since that matches how the user already works, but keep it swappable.
       "repositories": ["OWNER/personal-project"]
     }
   ],
-  "reviewerCommand": "claude -p",
+  "reviewerCommand": "my-reviewer --mcp-config {{mcp_config}} --allowed-tool {{mcp_tool}}",
+  "model": null,
+  "reviewerInputMode": "stdin",
   "reviewBatchSize": 5,
   "reviewFocusCount": 4,
+  "desktopNotifications": true,
   "stateFile": "./state.json"
 }
 ```
+
+This shape passes the current v4 validator. `openmergelens init` fills in the
+consent scope after the user confirms the selected reviewer and repositories;
+the `null` value above is the valid pre-consent state.
 
 **Decided: repo name is `suguspnk/openmergelens`** for this bot's own repo (not
 to be confused with `socialpostai-v2`, which is what it watches/reviews).
@@ -383,8 +394,9 @@ cloned checkout). Steps, in order:
      exit immediately.
    - Store only hostnames, usernames, and explicit repositories in config,
      never tokens.
-   - Config version 2 is a clean break; legacy config shapes are rejected and
-     are not migrated.
+   - Version 2 repository-scoped consent and version 3 configs are migrated
+     conservatively. Older or unsupported shapes are rejected and require a
+     fresh config from `openmergelens init`.
    - Resolve each account at poll time with
      `gh auth token --hostname ... --user ...` and pass the token only to
      child `gh` processes. Do not use
@@ -407,14 +419,14 @@ cloned checkout). Steps, in order:
    - Probe for known CLIs on `PATH` and check each is actually
      authenticated/working, not just installed:
      - **Claude Code** (`claude`): detect via `which claude`; verify
-       working with a minimal non-mutating check (e.g. `claude -p "ok"
-       --output-format text` or equivalent lightweight ping) rather than
-       assuming presence-on-PATH means ready.
-     - **Codex CLI** (`codex`): detect via `which codex`; verify similarly
-       with a prompt-only-safe check (`codex exec --skip-git-repo-check
-       --ephemeral --sandbox read-only "ok"` or its equivalent). The
-     generated reviewer command uses the same flags plus access to only the
-     per-review local GitHub gateway, so scheduled execution
+       working with a minimal non-mutating, prompt-only check supported by
+       that CLI (or an equivalent lightweight ping) rather than assuming
+       presence-on-PATH means ready.
+     - **Codex CLI** (`codex`): detect via `which codex`; verify its
+       authentication with `codex login status` (or the equivalent
+       non-mutating status check). The generated reviewer command uses the
+       same isolated execution family plus access to only the per-review local
+       GitHub gateway, so scheduled execution
        does not depend on a Git working directory, does not retain five
        sessions per reviewed PR, and prevents model-generated commands from
        modifying local files.
@@ -431,6 +443,12 @@ cloned checkout). Steps, in order:
      the adapter can shell out to). It must expose the per-review MCP server
      through explicit `{{mcp_config}}` and `{{mcp_tool}}` placeholders;
      commands without both placeholders fail closed before launch.
+   - For a selected built-in backend, offer a current-only versioned model
+     catalog plus a safe free-text model ID fallback. Offer the backend's
+     native reasoning/effort choices when the installed CLI exposes the
+     corresponding control; otherwise retain the CLI default. Persist these
+     independent settings in the top-level `model` object, without including
+     model changes in AI-consent scope or review-state identity.
    - Selection sets `reviewerCommand` (and `reviewerInputMode`) in config.
    - Config loading upgrades the exact former generated defaults (`codex exec`
      and the earlier read-only/no-network Codex command) to the safe

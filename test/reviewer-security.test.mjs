@@ -1,6 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildReviewerEnvironment } from '../lib/reviewer-security.mjs';
+import {
+  CLAUDE_REVIEWER_COMMAND,
+  CODEX_REVIEWER_COMMAND,
+} from '../lib/reviewer-command-defaults.mjs';
+
+test('buildReviewerEnvironment preserves Codex auth for the generated command', () => {
+  const environment = buildReviewerEnvironment(CODEX_REVIEWER_COMMAND, {
+    PATH: '/bin',
+    CODEX_HOME: '/custom/.codex',
+    GH_TOKEN: 'secret',
+    UNRELATED_SECRET: 'must-not-pass',
+  });
+
+  assert.equal(environment.CODEX_HOME, '/custom/.codex');
+  assert.equal(environment.GH_TOKEN, 'secret');
+  assert.equal('UNRELATED_SECRET' in environment, false);
+});
+
+test('buildReviewerEnvironment preserves Claude auth for the generated command', () => {
+  const environment = buildReviewerEnvironment(CLAUDE_REVIEWER_COMMAND, {
+    PATH: '/bin',
+    CLAUDE_CONFIG_DIR: '/custom/.claude',
+    ANTHROPIC_API_KEY: 'secret',
+    GH_TOKEN: 'github-secret',
+    UNRELATED_SECRET: 'must-not-pass',
+  });
+
+  assert.equal(environment.CLAUDE_CONFIG_DIR, '/custom/.claude');
+  assert.equal(environment.ANTHROPIC_API_KEY, 'secret');
+  assert.equal(environment.GH_TOKEN, 'github-secret');
+  assert.equal('UNRELATED_SECRET' in environment, false);
+});
 
 test('buildReviewerEnvironment sets Codex default home from the user profile', () => {
   const environment = buildReviewerEnvironment('codex', {

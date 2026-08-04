@@ -20,10 +20,11 @@ const personal = {
 
 function config(accounts = [work, personal]) {
   return {
-    configVersion: 3,
+    configVersion: 4,
     githubAccounts: accounts,
     aiProcessingConsent: createAiProcessingConsent('reviewer', accounts),
     reviewerCommand: 'reviewer',
+    model: null,
     reviewerInputMode: 'stdin',
     reviewBatchSize: 2,
     reviewFocusCount: 1,
@@ -229,6 +230,31 @@ test('the reviewer receives only the selected account credential environment', a
   assert.equal(
     reviewerEnvironment.OPENMERGELENS_GITHUB_ACCOUNT,
     'work@github.com',
+  );
+});
+
+test('the poller forwards the selected model and reasoning level to the reviewer', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  dependencies.invokeMultiPassReview = async ({ model }) => {
+    events.push(JSON.stringify(model));
+    return { summary: 'reviewed', findings: [] };
+  };
+
+  const result = await pollOnce({
+    config: {
+      ...config([work]),
+      model: { id: 'gpt-5.6', reasoningEffort: 'high' },
+    },
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(result.failed, false);
+  assert.deepEqual(
+    events.filter((event) => event.startsWith('{')),
+    [JSON.stringify({ id: 'gpt-5.6', reasoningEffort: 'high' })],
   );
 });
 
