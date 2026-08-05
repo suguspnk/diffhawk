@@ -274,9 +274,13 @@ already active and exits successfully. Fatal startup failures are also written
 to `~/.openmergelens/poll.log`, including on Windows where the scheduler does not
 redirect process output.
 
+If new commits arrive while a review is running, OpenMergeLens discards the
+stale result without posting it, reports the PR as deferred rather than failed,
+and leaves its state untouched so the next poll reviews the new head.
+
 ## Desktop notifications
 
-When a poll reviews, re-reviews, dry-runs, or recovers one or more PRs,
+When a poll reviews, re-reviews, defers, dry-runs, or recovers one or more PRs,
 OpenMergeLens sends one audible desktop notification after the complete batch
 and all state writes finish. The notification lists up to three
 `OWNER/REPO#N: title` entries and summarizes any remaining entries. Mixed

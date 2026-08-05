@@ -329,9 +329,14 @@ test('new commits arriving during review prevent a stale review from posting', a
     dependencies,
   });
 
-  assert.equal(result.failed, true);
+  assert.equal(result.failed, false);
   assert.equal(result.reviewed, 0);
-  assert.equal(result.failures[0].note, 'new commits during review');
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.outcomes[0].status, 'deferred');
+  assert.equal(
+    result.outcomes[0].note,
+    'new commits during review; will retry next poll',
+  );
   assert.deepEqual(events.filter((event) => event.startsWith('post:')), []);
   await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
 });

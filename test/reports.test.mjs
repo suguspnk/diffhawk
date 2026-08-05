@@ -76,6 +76,7 @@ test('report entries contain only PR outcomes and order attention first', () => 
     outcomes: [
       result('reviewed').outcomes[0],
       result('re-reviewed', { number: 2 }).outcomes[0],
+      result('deferred', { number: 5 }).outcomes[0],
     ],
     failures: [
       { status: 'failed', subject: 'review queue', note: 'not a PR' },
@@ -89,6 +90,7 @@ test('report entries contain only PR outcomes and order attention first', () => 
     [
       ['tracking-failed', 4],
       ['failed', 3],
+      ['deferred', 5],
       ['re-reviewed', 2],
       ['reviewed', 42],
     ],

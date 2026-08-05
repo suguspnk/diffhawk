@@ -4,6 +4,10 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+- Treat pull requests updated during review as deferred work instead of failed
+  polls: stale results are still discarded, state remains unchanged, and the
+  next poll retries the new head without an attention notification.
+
 ## [1.3.0] - 2026-08-05
 
 - Added built-in Codex and Claude model/reasoning selection during `init`, with
