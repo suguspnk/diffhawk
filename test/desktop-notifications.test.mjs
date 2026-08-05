@@ -67,6 +67,25 @@ test('formats successful, re-review, recovery, and dry-run outcomes', () => {
   assert.match(mixed.message, /^Dry run: owner\/cli#4/m);
 });
 
+test('formats a deferred review without treating it as an attention failure', () => {
+  assert.deepEqual(
+    buildPollNotification({
+      outcomes: [entry(
+        'deferred',
+        'owner/repo',
+        12,
+        'New commit landed',
+        'work@github.com',
+      )],
+    }),
+    {
+      title: 'OpenMergeLens review deferred',
+      message: 'Deferred: owner/repo#12: New commit landed',
+      attention: false,
+    },
+  );
+});
+
 test('partial failures take attention priority while retaining a success', () => {
   const notification = buildPollNotification({
     outcomes: [

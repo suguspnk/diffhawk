@@ -164,10 +164,11 @@ poller as a `pnpm` script / bin.
    A final synthesis invocation receives all candidate findings, independently
    checks the linked PR with `gh`, merges duplicate root causes, discards
    unsupported claims, and returns the one summary/findings result to post.
-   Re-fetch metadata after review and skip posting if the head SHA changed
-   during inspection. If any pass or synthesis invocation fails or returns
-   malformed output, skip posting and leave state untouched so the next poll
-   retries.
+   Re-fetch metadata after review. If the head SHA changed during inspection,
+   discard the stale result, report the candidate as deferred, and leave state
+   untouched so the next poll retries against the new head. If any pass or
+   synthesis invocation fails or returns malformed output, skip posting and
+   leave state untouched so the next poll retries.
 
 6. **Post the review.** **Decided: formal `gh pr review`**, not a plain
    comment. It shows up in the PR's review list, not just as a comment.
