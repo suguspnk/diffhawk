@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
   buildPrompt,
   DEFAULT_REVIEW_FOCUS_COUNT,
@@ -821,6 +823,95 @@ test('invokeMultiPassReview aborts before synthesis when a focused pass is malfo
     /behavior and correctness.*no parseable JSON findings/,
   );
   assert.equal(invocation, 1);
+});
+
+test('invokeMultiPassReview rejects an empty focused summary', async () => {
+  await assert.rejects(
+    invokeMultiPassReview({
+      reviewerCommand: 'stub-reviewer',
+      template: 'Review {{diff}}',
+      learnings: '',
+      pr,
+      reviewFocusCount: 1,
+      invoke: async () => JSON.stringify({ summary: '', findings: [] }),
+    }),
+    /behavior and correctness.*no parseable JSON findings/,
+  );
+});
+
+test('invokeMultiPassReview rejects a malformed finding instead of filtering it', async () => {
+  await assert.rejects(
+    invokeMultiPassReview({
+      reviewerCommand: 'stub-reviewer',
+      template: 'Review {{diff}}',
+      learnings: '',
+      pr,
+      reviewFocusCount: 1,
+      invoke: async () => JSON.stringify({
+        summary: 'Review completed.',
+        findings: [{
+          path: 'src/bug.js',
+          line: '42',
+          severity: 'critical',
+          comment: 'The line is unsafe.',
+        }],
+      }),
+    }),
+    /behavior and correctness.*no parseable JSON findings/,
+  );
+});
+
+test('invokeMultiPassReview rejects malformed synthesis output', async () => {
+  let invocation = 0;
+  await assert.rejects(
+    invokeMultiPassReview({
+      reviewerCommand: 'stub-reviewer',
+      template: 'Review {{diff}}',
+      learnings: '',
+      pr,
+      reviewFocusCount: 1,
+      invoke: async () => {
+        invocation += 1;
+        return invocation === 1
+          ? JSON.stringify({ summary: 'Focused.', findings: [] })
+          : JSON.stringify({ summary: 'Synthesis.', findings: [{ path: 'src/bug.js' }] });
+      },
+    }),
+    /synthesis pass returned no parseable JSON findings/,
+  );
+  assert.equal(invocation, 2);
+});
+
+test('invokeReviewer force-kills a descendant after the direct child closes on timeout', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-reviewer-tree-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const pidFile = path.join(directory, 'descendant.pid');
+  const childScript = [
+    'const fs = require("node:fs");',
+    'const { spawn } = require("node:child_process");',
+    'const child = spawn(process.execPath, ["-e", "process.on(\\"SIGTERM\\", () => {}); setInterval(() => {}, 1000)"], { stdio: "ignore" });',
+    `fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
+    'setInterval(() => {}, 1000);',
+  ].join(' ');
+  const encodedChildScript = Buffer.from(childScript, 'utf8').toString('base64');
+  const reviewerCommand = [
+    JSON.stringify(process.execPath),
+    '-e',
+    `'eval(Buffer.from("${encodedChildScript}", "base64").toString())'`,
+  ].join(' ');
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand,
+      prompt: '',
+      timeoutMs: 50,
+    }),
+    /timed out after 50ms/,
+  );
+
+  const descendantPid = Number(await readFile(pidFile, 'utf8'));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.throws(() => process.kill(descendantPid, 0), { code: 'ESRCH' });
 });
 
 test('invokeMultiPassReview retries only an incomplete focused inspection', async () => {
