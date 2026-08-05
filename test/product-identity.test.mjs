@@ -139,6 +139,15 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
   assert.equal(structuredData['@graph'][1].url, canonicalUrl);
 });
 
+test('GitHub Pages includes the official Product Hunt follow badge', async () => {
+  const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
+
+  assert.match(
+    html,
+    /<a\s+class="product-hunt-badge"\s+href="https:\/\/www\.producthunt\.com\/products\/openmergelens\?utm_source=badge-follow&amp;utm_medium=badge&amp;utm_source=badge-openmergelens"\s+target="_blank"\s+rel="noopener noreferrer"\s*>\s*<img\s+src="https:\/\/api\.producthunt\.com\/widgets\/embed-image\/v1\/follow\.svg\?product_id=1283249&amp;theme=neutral"\s+alt="OpenMergeLens - Local&#0032;AI&#0032;pull&#0045;request&#0032;reviews&#0032;without&#0032;another&#0032;GitHub&#0032;bot \| Product Hunt"\s+style="width: 250px; height: 54px;"\s+width="250"\s+height="54"\s*\/?>\s*<\/a>/,
+  );
+});
+
 test('GitHub Pages motion is local, pinned, and progressively enhanced', async () => {
   const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
   const motionSource = await readFile(
@@ -253,7 +262,7 @@ function assertSecureGithubPagesHtml(html) {
     ['default-src', ["'none'"]],
     ['script-src', ["'self'", `'sha256-${structuredDataHash}'`]],
     ['style-src', ["'unsafe-inline'"]],
-    ['img-src', ["'self'", 'data:']],
+    ['img-src', ["'self'", 'https://api.producthunt.com', 'data:']],
     ['connect-src', ["'none'"]],
     ['font-src', ["'none'"]],
     ['frame-src', ["'none'"]],
@@ -297,7 +306,11 @@ function assertSecureGithubPagesHtml(html) {
   assert.equal(attributes(referrerMeta).get('content'), 'no-referrer');
 
   const pageUrl = new URL('https://suguspnk.github.io/openmergelens/');
-  const allowedOutboundHosts = new Set(['github.com', 'www.npmjs.com']);
+  const allowedOutboundHosts = new Set([
+    'github.com',
+    'www.npmjs.com',
+    'www.producthunt.com',
+  ]);
   let outboundLinkCount = 0;
 
   for (const element of elements) {
@@ -320,10 +333,16 @@ function assertSecureGithubPagesHtml(html) {
       const resource = new URL(value, pageUrl);
       const allowedDataImage = element.tagName === 'img' &&
         resource.protocol === 'data:';
+      const allowedLocalResource = resource.protocol === 'https:' &&
+        resource.origin === pageUrl.origin;
+      const allowedProductHuntImage = element.tagName === 'img' &&
+        resource.protocol === 'https:' &&
+        resource.origin === 'https://api.producthunt.com';
       assert.ok(
         allowedDataImage ||
-          (resource.protocol === 'https:' && resource.origin === pageUrl.origin),
-        `${element.tagName}[${attributeName}] uses an approved local resource`,
+          allowedLocalResource ||
+          allowedProductHuntImage,
+        `${element.tagName}[${attributeName}] uses an approved resource`,
       );
     }
 
