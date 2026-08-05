@@ -391,9 +391,19 @@ corresponding path under `OPENMERGELENS_HOME`).
   "github.com@antonio::OWNER/socialpostai-v2#123": {
     "lastReviewedSha": "abc123...",
     "lastReviewedAt": "2026-07-24T18:00:00Z"
+  },
+  "__openmergelens": {
+    "version": 1,
+    "candidateCursors": {
+      "github.com@antonio::OWNER/socialpostai-v2::requested": 25
+    }
   }
 }
 ```
+
+The reserved `__openmergelens` entry is optional scheduler metadata, not a
+review record. It advances bounded candidate windows independently per account,
+repository, and discovery source when one poll cannot inspect every candidate.
 
 ## Scheduling
 

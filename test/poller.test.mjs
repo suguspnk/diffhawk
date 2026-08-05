@@ -1535,6 +1535,118 @@ test('candidate metadata budget preserves later work and reports overflow', asyn
   );
 });
 
+test('candidate metadata overflow rotates its window so later PRs do not starve', async (t) => {
+  const files = await fixture(t);
+  const account = { ...work, repositories: ['owner/repo'] };
+  const state = {};
+  for (let number = 1; number <= MAX_CANDIDATE_METADATA_PER_POLL + 1; number += 1) {
+    state[prKey('owner/repo', number, account)] = {
+      lastReviewedSha: number === MAX_CANDIDATE_METADATA_PER_POLL + 1
+        ? 'old-sha'
+        : 'current-sha',
+      lastReviewedAt: '2026-08-05T00:00:00.000Z',
+    };
+  }
+  await saveState(files.stateFile, state);
+
+  const metadataNumbers = [];
+  const reviewedNumbers = [];
+  const dependencies = successfulDependencies([]);
+  dependencies.searchReviewRequestedPRs = async ({ repo }) =>
+    Array.from({ length: MAX_CANDIDATE_METADATA_PER_POLL + 1 }, (_, index) => ({
+      repo,
+      number: index + 1,
+    }));
+  dependencies.getPullRequest = async ({ repo, number }) => {
+    metadataNumbers.push(number);
+    return {
+      headRefOid: number === MAX_CANDIDATE_METADATA_PER_POLL + 1
+        ? 'new-sha'
+        : 'current-sha',
+      number,
+      title: `PR ${number}`,
+      url: `https://github.com/${repo}/pull/${number}`,
+      body: '',
+      state: 'OPEN',
+    };
+  };
+  dependencies.invokeMultiPassReview = async ({ pr }) => {
+    reviewedNumbers.push(pr.number);
+    return { summary: 'reviewed', findings: [] };
+  };
+
+  const first = await pollOnce({
+    config: config([account]),
+    ...files,
+    dependencies,
+  });
+  assert.equal(first.failed, true);
+  assert.equal(first.reviewed, 0);
+  assert.deepEqual(
+    metadataNumbers,
+    Array.from({ length: MAX_CANDIDATE_METADATA_PER_POLL }, (_, index) => index + 1),
+  );
+
+  const second = await pollOnce({
+    config: config([account]),
+    ...files,
+    dependencies,
+  });
+  assert.equal(second.failed, true);
+  assert.equal(second.reviewed, 1);
+  assert.equal(metadataNumbers[MAX_CANDIDATE_METADATA_PER_POLL], MAX_CANDIDATE_METADATA_PER_POLL + 1);
+  assert.deepEqual(reviewedNumbers, [MAX_CANDIDATE_METADATA_PER_POLL + 1]);
+});
+
+test('already-posted reconciliations release safety capacity for a later changed PR', async (t) => {
+  const files = await fixture(t);
+  const account = { ...work, repositories: ['owner/repo'] };
+  const state = {};
+  for (let number = 1; number <= MAX_REVIEWS_PER_POLL + 1; number += 1) {
+    state[prKey('owner/repo', number, account)] = {
+      lastReviewedSha: 'old-sha',
+      lastReviewedAt: '2026-08-05T00:00:00.000Z',
+    };
+  }
+  await saveState(files.stateFile, state);
+
+  const reviewedNumbers = [];
+  const postedNumbers = [];
+  const dependencies = successfulDependencies([]);
+  dependencies.searchReviewRequestedPRs = async ({ repo }) =>
+    Array.from({ length: MAX_REVIEWS_PER_POLL + 1 }, (_, index) => ({
+      repo,
+      number: index + 1,
+    }));
+  dependencies.getPullRequest = async ({ repo, number }) => ({
+    headRefOid: 'new-sha',
+    number,
+    title: `PR ${number}`,
+    url: `https://github.com/${repo}/pull/${number}`,
+    body: '',
+    state: 'OPEN',
+  });
+  dependencies.reviewAlreadyPosted = async ({ number }) => number <= MAX_REVIEWS_PER_POLL;
+  dependencies.invokeMultiPassReview = async ({ pr }) => {
+    reviewedNumbers.push(pr.number);
+    return { summary: 'reviewed', findings: [] };
+  };
+  dependencies.postReview = async ({ number, scheduleMutation }) =>
+    scheduleMutation(async () => { postedNumbers.push(number); });
+
+  const result = await pollOnce({
+    config: config([account]),
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(result.failed, false);
+  assert.equal(result.reviewed, MAX_REVIEWS_PER_POLL + 1);
+  assert.deepEqual(reviewedNumbers, [MAX_REVIEWS_PER_POLL + 1]);
+  assert.deepEqual(postedNumbers, [MAX_REVIEWS_PER_POLL + 1]);
+  assert.equal(result.failures.length, 0);
+});
+
 test('closed tracked backlog does not consume actionable safety capacity', async (t) => {
   const files = await fixture(t);
   const metadataCandidates = [];

@@ -4,14 +4,17 @@ import { chmod, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  candidateCursorFor,
   loadState,
   migrateLegacyStateForReviewer,
   needsReview,
   normalizePrKey,
   normalizeState,
   prKey,
+  recordCandidateCursor,
   reviewerKey,
   saveState,
+  STATE_METADATA_KEY,
 } from '../lib/state.mjs';
 
 const reviewer = { hostname: 'github.com', username: 'OctoCat' };
@@ -42,6 +45,51 @@ test('review state remains independent for two accounts reviewing one PR', () =>
       'abc123',
     ),
     true,
+  );
+});
+
+test('candidate scheduling cursors round-trip independently from review entries', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+  const state = {
+    [prKey('owner/repo', 7, reviewer)]: {
+      lastReviewedSha: 'sha-7',
+      lastReviewedAt: '2026-07-25T00:00:00.000Z',
+    },
+  };
+  const cursorKey = 'github.com@octocat::owner/repo::requested';
+
+  recordCandidateCursor(state, cursorKey, 25);
+  assert.equal(candidateCursorFor(state, cursorKey), 25);
+  await saveState(stateFile, state);
+
+  const loaded = await loadState(stateFile);
+  assert.equal(candidateCursorFor(loaded, cursorKey), 25);
+  assert.deepEqual(loaded[STATE_METADATA_KEY], {
+    version: 1,
+    candidateCursors: { [cursorKey]: 25 },
+  });
+  assert.equal(loaded[prKey('owner/repo', 7, reviewer)].lastReviewedSha, 'sha-7');
+});
+
+test('malformed candidate scheduling metadata fails closed', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      [STATE_METADATA_KEY]: {
+        version: 1,
+        candidateCursors: { invalid: -1 },
+      },
+    }),
+  );
+
+  await assert.rejects(
+    loadState(stateFile),
+    /Invalid review state metadata.*candidate cursor is invalid/,
   );
 });
 

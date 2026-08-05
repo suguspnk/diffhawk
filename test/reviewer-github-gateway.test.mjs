@@ -1063,6 +1063,52 @@ test('file context permits pagination but rejects repeated cached pages', async 
   assert.equal(calls, 1);
 });
 
+test('overlapping identical file-context cursors allow only one page response', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-duplicate-cursor-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let calls = 0;
+  let resolveFetch;
+  const gateway = await startReviewerGitHubGateway({
+    directory,
+    target,
+    githubEnvironment: {},
+    inspectionPageBytes: 8,
+    runGitHub: async () => {
+      calls += 1;
+      return new Promise((resolve) => { resolveFetch = resolve; });
+    },
+  });
+  t.after(() => gateway.close());
+  const capability = gatewayCapability(await readFile(gateway.mcpServerPath, 'utf8'));
+  assert.ok(capability);
+
+  const input = {
+    operation: 'file_context',
+    path: 'src/overlap.js',
+    cursor: 0,
+  };
+  const first = openGatewayRequest(gateway, capability, input);
+  await waitForCondition(() => calls === 1, 'the first file-context fetch');
+  const second = openGatewayRequest(gateway, capability, input);
+  const requestBarrier = await gatewayRequest(gateway, capability, {
+    operation: 'not_allowed',
+  });
+  assert.equal(requestBarrier.statusCode, 403);
+
+  resolveFetch('abcdefghijk');
+  const [firstResponse, secondResponse] = await Promise.all([
+    first.response,
+    second.response,
+  ]);
+  assert.deepEqual(
+    [firstResponse.statusCode, secondResponse.statusCode],
+    [200, 200],
+  );
+  const repeated = await gatewayRequest(gateway, capability, input);
+  assert.equal(repeated.statusCode, 429);
+  assert.equal(calls, 1);
+});
+
 test('file context rejects an oversized source and remembers the attempted bytes', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-oversized-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
