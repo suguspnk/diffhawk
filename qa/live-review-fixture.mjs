@@ -1,0 +1,1 @@
+/**\n * Disposable live-review fixture. Do not merge.\n */\nexport function canDeleteAccount(session) {\n  return Boolean(session?.authenticated);\n}\n
