@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import http from 'node:http';
 import net from 'node:net';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -345,6 +345,34 @@ test('gateway rejects target shape and scope mismatches before runGitHub', async
       /review target/,
     );
     assert.deepEqual(calls, [], JSON.stringify(overrides));
+  }
+});
+
+test('gateway shortens an overlong POSIX socket path and cleans it up', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-gateway-socket-root-'));
+  const directory = path.join(root, 'x'.repeat(80));
+  await mkdir(directory);
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const gateway = await startReviewerGitHubGateway({
+    directory,
+    target,
+    githubEnvironment: {},
+    runGitHub: async () => 'unexpected',
+  });
+  t.after(() => gateway.close());
+  const source = await readFile(gateway.mcpServerPath, 'utf8');
+  const capability = source.match(/authorization: "Bearer ([a-f0-9]+)"/u)?.[1];
+  assert.ok(capability);
+  if (process.platform !== 'win32') {
+    assert.ok(Buffer.byteLength(gateway.socketPath) <= 100);
+  }
+  const response = await gatewayRequest(gateway, capability, { operation: 'not_allowed' });
+  assert.equal(response.statusCode, 403);
+
+  await gateway.close();
+  if (process.platform !== 'win32') {
+    await assert.rejects(() => stat(gateway.socketPath), { code: 'ENOENT' });
   }
 });
 
@@ -916,7 +944,7 @@ async function assertSharedInspectionSurvivesClientTimeout(
     directory,
     target,
     githubEnvironment: {},
-    requestTimeoutMs: 100,
+    requestTimeoutMs: 500,
     runGitHub: async (_args, { signal }) => {
       calls += 1;
       fetchSignal = signal;

@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+async function readText(filePath) {
+  return (await readFile(filePath, 'utf8')).replace(/\r\n?/gu, '\n');
+}
+
 function versionsIn(range) {
   return [...range.matchAll(/\b(\d+)\.(\d+)\.(\d+)\b/gu)].map((match) =>
     match.slice(1).map(Number),
@@ -50,16 +54,14 @@ const OVERBROAD_NODE_CLAIM = /\bNode(?:\.js)?\s+24(?:\+|\s+or\s+newer)(?!\w)/iu;
 
 async function readNodeStandards() {
   const packageJson = JSON.parse(
-    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+    await readText(path.join(projectRoot, 'package.json')),
   );
-  const standards = await readFile(
+  const standards = await readText(
     path.join(projectRoot, 'docs/tech-stack-standards.md'),
-    'utf8',
   );
-  const readme = await readFile(path.join(projectRoot, 'README.md'), 'utf8');
-  const contributing = await readFile(
+  const readme = await readText(path.join(projectRoot, 'README.md'));
+  const contributing = await readText(
     path.join(projectRoot, 'CONTRIBUTING.md'),
-    'utf8',
   );
 
   const nodeSectionStart = standards.indexOf('## Node.js (ESM + child_process)');
