@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   loadState,
+  migrateLegacyStateForReviewer,
   needsReview,
+  normalizePrKey,
+  normalizeState,
   prKey,
   reviewerKey,
   saveState,
@@ -42,6 +45,84 @@ test('review state remains independent for two accounts reviewing one PR', () =>
   );
 });
 
+test('positive numeric PR aliases normalize to decimal keys without losing scope', () => {
+  const canonicalKey = 'github.com@work::owner/repo#7';
+  const state = {
+    [canonicalKey]: {
+      lastReviewedSha: 'sha-7',
+      lastReviewedAt: '2026-07-25T00:00:00.000Z',
+    },
+  };
+
+  for (const numberText of ['007', ' 7 ', '7.0', '7e0', '0x7']) {
+    const alias = `GitHub.com@Work::OWNER/REPO#${numberText}`;
+    assert.equal(normalizePrKey(alias), canonicalKey);
+    assert.equal(needsReview(state, alias, 'sha-7'), false);
+  }
+
+  const normalized = normalizeState({
+    'github.com@work::owner/repo#007': state[canonicalKey],
+  });
+  delete normalized[canonicalKey];
+  assert.deepEqual(normalized, {});
+});
+
+test('state normalization resolves numeric-key collisions independently of insertion order', () => {
+  const leadingZeroKey = 'github.com@work::owner/repo#007';
+  const decimalFormKey = 'github.com@work::owner/repo#7.0';
+  const leadingZeroEntry = {
+    lastReviewedSha: 'leading-zero-sha',
+    lastReviewedAt: '2026-07-25T00:00:00.000Z',
+  };
+  const decimalFormEntry = {
+    lastReviewedSha: 'decimal-form-sha',
+    lastReviewedAt: '2026-07-25T01:00:00.000Z',
+  };
+
+  const forward = normalizeState({
+    [leadingZeroKey]: leadingZeroEntry,
+    [decimalFormKey]: decimalFormEntry,
+  });
+  const reverse = normalizeState({
+    [decimalFormKey]: decimalFormEntry,
+    [leadingZeroKey]: leadingZeroEntry,
+  });
+
+  assert.deepEqual(forward, reverse);
+  assert.equal(forward['github.com@work::owner/repo#7'].lastReviewedSha, 'leading-zero-sha');
+});
+
+test('legacy state migration adopts unscoped entries without overwriting scoped state', () => {
+  const state = {
+    'owner/repo#7': {
+      lastReviewedSha: 'legacy-sha',
+      lastReviewedAt: '2026-07-25T00:00:00.000Z',
+    },
+    [prKey('owner/repo', 8, reviewer)]: {
+      lastReviewedSha: 'stronger-sha',
+      lastReviewedAt: '2026-07-25T01:00:00.000Z',
+    },
+    'owner/repo#8': {
+      lastReviewedSha: 'legacy-sha-that-must-not-win',
+      lastReviewedAt: '2026-07-25T02:00:00.000Z',
+    },
+  };
+
+  assert.equal(migrateLegacyStateForReviewer(state, reviewer), true);
+  assert.deepEqual(Object.keys(state).sort(), [
+    'github.com@octocat::owner/repo#7',
+    'github.com@octocat::owner/repo#8',
+  ]);
+  assert.deepEqual(state[prKey('owner/repo', 7, reviewer)], {
+    lastReviewedSha: 'legacy-sha',
+    lastReviewedAt: '2026-07-25T00:00:00.000Z',
+  });
+  assert.deepEqual(state[prKey('owner/repo', 8, reviewer)], {
+    lastReviewedSha: 'stronger-sha',
+    lastReviewedAt: '2026-07-25T01:00:00.000Z',
+  });
+});
+
 test('loading malformed state roots fails closed', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -68,6 +149,69 @@ test('loading malformed review entries fails closed', async (t) => {
     loadState(stateFile),
     /Invalid review state entry.*expected lastReviewedSha and lastReviewedAt strings/,
   );
+});
+
+test('loading existing state hardens its file mode by default', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      'owner/repo#1': {
+        lastReviewedSha: 'sha-1',
+        lastReviewedAt: '2026-07-25T00:00:00.000Z',
+      },
+    }),
+  );
+  await chmod(stateFile, 0o644);
+
+  await loadState(stateFile);
+
+  assert.equal((await stat(stateFile)).mode & 0o777, 0o600);
+});
+
+test('loading mixed-case scoped and unscoped aliases canonicalizes them deterministically', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-state-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stateFile = path.join(directory, 'state.json');
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      'GITHUB.COM@WORK::OWNER/REPO#7': {
+        lastReviewedSha: 'legacy-sha',
+        lastReviewedAt: '2026-07-25T00:00:00.000Z',
+      },
+      'github.com@work::owner/REPO#7': {
+        lastReviewedSha: 'alias-sha',
+        lastReviewedAt: '2026-07-25T01:00:00.000Z',
+      },
+      'github.com@work::owner/repo#7': {
+        lastReviewedSha: 'canonical-sha',
+        lastReviewedAt: '2026-07-25T02:00:00.000Z',
+      },
+      'OWNER/REPO#8': {
+        lastReviewedSha: 'unscoped-sha',
+        lastReviewedAt: '2026-07-25T03:00:00.000Z',
+      },
+    }),
+  );
+
+  const state = await loadState(stateFile);
+  assert.deepEqual(Object.keys(state), [
+    'github.com@work::owner/repo#7',
+    'owner/repo#8',
+  ]);
+  assert.equal(state['github.com@work::owner/repo#7'].lastReviewedSha, 'canonical-sha');
+  assert.equal(state['owner/repo#8'].lastReviewedSha, 'unscoped-sha');
+
+  await saveState(stateFile, state);
+  assert.deepEqual(Object.keys(await loadState(stateFile)), [
+    'github.com@work::owner/repo#7',
+    'owner/repo#8',
+  ]);
 });
 
 test('saving malformed state is rejected before writing', async (t) => {

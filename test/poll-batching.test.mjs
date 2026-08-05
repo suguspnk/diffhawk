@@ -4,6 +4,7 @@ import {
   DEFAULT_REVIEW_BATCH_SIZE,
   isValidReviewBatchSize,
   processInBatches,
+  processWithConcurrency,
   resolveReviewBatchSize,
 } from '../lib/poll-batching.mjs';
 
@@ -101,4 +102,25 @@ test('a worker failure waits for its started siblings before propagating', async
   releaseSibling();
   await rejection;
   assert.equal(laterBatchStarted, false);
+});
+
+test('concurrency processing starts the next item when any worker finishes and preserves order', async () => {
+  const started = [];
+  const release = new Map();
+  const run = processWithConcurrency([1, 2, 3], 2, async (item) => {
+    started.push(item);
+    await new Promise((resolve) => release.set(item, resolve));
+    return item * 10;
+  });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [1, 2]);
+
+  release.get(2)();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [1, 2, 3]);
+
+  release.get(1)();
+  release.get(3)();
+  assert.deepEqual(await run, [10, 20, 30]);
 });

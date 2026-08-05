@@ -26,6 +26,24 @@ test('userHome respects OPENMERGELENS_HOME override', (t) => {
   assert.equal(userHome(), '/tmp/custom-openmergelens-home');
 });
 
+test('userHome resolves a relative OPENMERGELENS_HOME override', (t) => {
+  const original = process.env.OPENMERGELENS_HOME;
+  process.env.OPENMERGELENS_HOME = './relative-openmergelens-home';
+  t.after(() => {
+    if (original === undefined) delete process.env.OPENMERGELENS_HOME;
+    else process.env.OPENMERGELENS_HOME = original;
+  });
+
+  assert.equal(
+    userHome(),
+    path.resolve('./relative-openmergelens-home'),
+  );
+  assert.equal(
+    userPath('config.json'),
+    path.resolve('./relative-openmergelens-home/config.json'),
+  );
+});
+
 test('userPath joins segments onto the user home', (t) => {
   const original = process.env.OPENMERGELENS_HOME;
   const customHome = path.join(path.parse(process.cwd()).root, 'tmp', 'custom-openmergelens-home');

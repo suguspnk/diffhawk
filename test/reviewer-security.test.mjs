@@ -11,6 +11,8 @@ test('buildReviewerEnvironment preserves Codex auth for the generated command', 
     PATH: '/bin',
     CODEX_HOME: '/custom/.codex',
     GH_TOKEN: 'secret',
+    GITHUB_TOKEN: 'github-secret',
+    GITHUB_ENTERPRISE_TOKEN: 'github-enterprise-secret',
     UNRELATED_SECRET: 'must-not-pass',
   });
 
@@ -24,13 +26,19 @@ test('buildReviewerEnvironment preserves Claude auth for the generated command',
     PATH: '/bin',
     CLAUDE_CONFIG_DIR: '/custom/.claude',
     ANTHROPIC_API_KEY: 'secret',
+    AWS_SECRET_ACCESS_KEY: 'aws-secret',
     GH_TOKEN: 'github-secret',
+    GITHUB_TOKEN: 'github-secret',
+    GITHUB_ENTERPRISE_TOKEN: 'github-enterprise-secret',
     UNRELATED_SECRET: 'must-not-pass',
   });
 
   assert.equal(environment.CLAUDE_CONFIG_DIR, '/custom/.claude');
   assert.equal(environment.ANTHROPIC_API_KEY, 'secret');
+  assert.equal(environment.AWS_SECRET_ACCESS_KEY, 'aws-secret');
   assert.equal(environment.GH_TOKEN, 'github-secret');
+  assert.equal(environment.GITHUB_TOKEN, undefined);
+  assert.equal(environment.GITHUB_ENTERPRISE_TOKEN, undefined);
   assert.equal('UNRELATED_SECRET' in environment, false);
 });
 

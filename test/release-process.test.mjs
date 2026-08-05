@@ -54,6 +54,17 @@ test('OIDC is isolated to the script-free staging job', async () => {
   assert.match(stageJob, /npm stage publish --ignore-scripts --tag/);
 });
 
+test('FINDING-PKG-001 staging pins the npm CLI required by npm stage', async () => {
+  const workflow = await readProjectFile('.github/workflows/publish.yml');
+  const stageJob = workflow.slice(workflow.indexOf('  stage:'));
+
+  assert.match(
+    stageJob,
+    /npm install --global npm@11\.15\.0\n\s+test "\$\(npm --version\)" = "11\.15\.0"/,
+  );
+  assert.match(stageJob, /npm stage publish --ignore-scripts --tag/);
+});
+
 test('bootstrap documentation prevents restaging immutable version 1.0.0', async () => {
   const releasing = await readProjectFile('docs/RELEASING.md');
 

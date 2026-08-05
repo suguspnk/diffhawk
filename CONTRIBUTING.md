@@ -16,7 +16,7 @@ proposals, documentation fixes, and pull requests are welcome.
 
 Requirements:
 
-- Node.js 22.14 or newer in the Node 22 line, or Node.js 24 or newer;
+- Node.js 22.14+ in the Node 22 line, or Node.js 24.x;
 - pnpm 11.17.0;
 - GitHub CLI for live dry-run testing; and
 - a supported reviewer CLI for end-to-end testing.

@@ -55,7 +55,9 @@ stable release only:
 
    The workflow verifies that the input names an existing tag pointing at the
    checked-out commit, verifies that the tag matches `package.json`, reruns
-   release checks, and stages the package using npm trusted publishing.
+   release checks, and stages the package using npm trusted publishing. The
+   staging job uses Node 24 with npm 11.15.0, the minimum npm version that
+   supports `npm stage`.
    Prerelease versions use the `next` dist-tag; stable versions use `latest`.
 7. Inspect and approve the staged package with 2FA on npmjs.com or through the
    interactive npm CLI.
