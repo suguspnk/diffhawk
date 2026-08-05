@@ -32,8 +32,10 @@ the shipped CLI and its tests when behavior changes.
   2. "Seen ≠ done": must not just track "have I looked at this PR" but track
      **new commits since the last review** so a freshly requested re-review can
      target the new head. State is keyed by reviewer account + PR + last-reviewed
-     commit SHA, not a boolean seen/unseen flag. A changed SHA is not a
-     standalone trigger; a fresh requested-review entry is still required.
+     commit SHA, not a boolean seen/unseen flag. new commits alone are not a trigger
+     for an untracked PR; the PR author must request that account again in GitHub's **Reviewers**
+     list before it enters discovery. Previously
+     tracked PRs are eligible through the bounded fallback.
   3. Needs a real review prompt, not "review this PR." Prompts are directly
      editable and shared per GitHub host/repository. Durable corrections are
      isolated per GitHub host/account/repository.
@@ -113,6 +115,7 @@ poller as a `pnpm` script / bin.
    reports more than 1,000 matches or an incomplete result window, the
    implementation falls back to the paginated repository pull-request list
    endpoint and filters its `requested_reviewers` to the direct user.
+   Global search is intentionally unsupported: coverage must be explicit.
    Resolve each account with `gh auth token --hostname ... --user ...` and
    scope every child command with that credential.
 
