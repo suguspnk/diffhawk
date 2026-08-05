@@ -4,9 +4,26 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-- Treat pull requests updated during review as deferred work instead of failed
-  polls: stale results are still discarded, state remains unchanged, and the
-  next poll retries the new head without an attention notification.
+## [1.4.0] - 2026-08-06
+
+- Deferred reviews when a pull request changes head during review: stale
+  results are discarded, state remains untouched, and the next poll retries
+  the new head without an attention notification.
+- Hardened multi-account and multi-host discovery with explicit repository
+  scopes, paginated fallback when GitHub search caps results, account-scoped
+  state, and rotating overflow scheduling.
+- Added bounded, fair review queueing and admission limits so one account,
+  repository, or stable candidate prefix cannot starve other work.
+- Hardened reviewer execution and GitHub posting with constrained per-review
+  read-only MCP access, structured-output and anchor validation, summary
+  fallback for unanchored findings, mutation serialization, rate-limit
+  handling, and review-marker reconciliation.
+- Hardened setup and scheduling across cron, launchd, and Windows Task
+  Scheduler, including config migration and consent validation, reviewer
+  detection, environment restoration, interval validation, and rollback
+  safety.
+- Added failure handling and regression coverage for malformed metadata,
+  missing heads, scheduler startup failures, and diff and search edge cases.
 
 ## [1.3.0] - 2026-08-05
 
