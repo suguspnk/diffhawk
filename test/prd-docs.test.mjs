@@ -23,4 +23,16 @@ test('PRD config shape remains valid for the current validator', async () => {
   assert.match(prd, /Version 2 repository-scoped consent and version 3 configs are migrated/u);
   assert.match(prd, /Codex CLI.*codex login status/su);
   assert.doesNotMatch(prd, /codex exec --skip-git-repo-check\s+--ephemeral\s+--sandbox read-only "ok"/u);
+  assert.match(prd, /matching `CODEOWNERS` rule/u);
+  assert.match(prd, /new commits alone are not a trigger/u);
+  assert.match(prd, /State is keyed by reviewer account \+ PR \+ last-reviewed/u);
+  assert.match(prd, /request\s+that account again in GitHub's \*\*Reviewers\*\*/u);
+});
+
+test('project instructions describe the requested-review re-review trigger', async () => {
+  const agents = await readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8');
+  assert.match(agents, /per-account PR last-reviewed SHA/u);
+  assert.match(agents, /HOST@USERNAME::OWNER\/REPO#N/u);
+  assert.match(agents, /requested\s+again\s+in\s+GitHub's\s+\*\*Reviewers\*\*\s+list/u);
+  assert.match(agents, /new commits alone are not a trigger/u);
 });

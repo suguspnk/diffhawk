@@ -23,7 +23,7 @@ lib/dispatch.mjs          parses CLI arguments and dispatches init or poll comma
 lib/paths.mjs             resolves the per-user state directory (~/.openmergelens, or $OPENMERGELENS_HOME)
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
 lib/github-auth.mjs       resolves + scopes GitHub credentials (multi-account aware)
-lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
+lib/state.mjs             read/write state.json (per-account PR last-reviewed SHA)
 lib/desktop-notifications.mjs  formats + delivers native macOS/Windows/Linux notifications
 lib/reviewer-command-defaults.mjs  safe known-backend commands + exact legacy upgrades
 lib/reviewer-adapter.mjs  abstraction over the configured reviewer command + prompt templating
@@ -57,8 +57,10 @@ framing instead, so it keeps producing a working prompt.
 
 - No `.github/workflows/*.yml`, no webhooks, no tunnels. Pure client-side
   polling via `gh` CLI.
-- State is keyed by `OWNER/REPO#N` → last-reviewed head SHA, not a seen/unseen
-  boolean. A PR with new commits since its last review must be re-reviewed.
+- State is keyed by `HOST@USERNAME::OWNER/REPO#N` → last-reviewed head SHA, not
+  a seen/unseen boolean. A PR with new commits since its last review can be
+  re-reviewed only after the configured account is requested again in GitHub's
+  **Reviewers** list; new commits alone are not a trigger.
 - The reviewer backend (`reviewerCommand`) must stay swappable via config;
   never hardcode a specific CLI invocation (e.g. `claude -p`) directly in the
   polling logic.
