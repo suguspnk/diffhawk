@@ -275,6 +275,13 @@ async function main() {
 
   console.clear();
   p.intro('OpenMergeLens: configure independent GitHub reviewer accounts');
+  p.note(
+    "OpenMergeLens reviews open pull requests only when a selected account is in GitHub's " +
+      'Reviewers list. The request can be added manually or created automatically by a ' +
+      'matching CODEOWNERS rule. After a review, new commits alone do not start another ' +
+      'review; the PR author must request the account again in Reviewers.',
+    'When reviews run',
+  );
 
   await ensurePrivateDirectory(userHome());
   const releaseOperationLock = await acquireLock(userPath('operation.lock'));
@@ -299,7 +306,7 @@ async function main() {
       authenticatedAccounts.map((account) => [accountKey(account), account]),
     );
     const selectedAccountKeys = await p.autocompleteMultiselect({
-      message: 'Which GitHub accounts should auto-review pull requests?',
+      message: 'Which GitHub accounts should watch for review requests?',
       options: authenticatedAccounts.map((account) => ({
         value: accountKey(account),
         label: accountLabel(account),
@@ -336,7 +343,7 @@ async function main() {
       const accessible = new Set(repos.map((repo) => repo.nameWithOwner.toLowerCase()));
       const existingRepositories = existingByKey.get(selectedKey)?.repositories || [];
       const repositories = await p.autocompleteMultiselect({
-        message: `Which repositories should ${accountLabel(account)} review?`,
+        message: `Which repositories should ${accountLabel(account)} watch for review requests?`,
         options: repos.map((repo) => ({
           value: repo.nameWithOwner,
           label: repo.nameWithOwner,

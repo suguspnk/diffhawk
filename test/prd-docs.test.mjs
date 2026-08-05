@@ -23,4 +23,7 @@ test('PRD config shape remains valid for the current validator', async () => {
   assert.match(prd, /Version 2 repository-scoped consent and version 3 configs are migrated/u);
   assert.match(prd, /Codex CLI.*codex login status/su);
   assert.doesNotMatch(prd, /codex exec --skip-git-repo-check\s+--ephemeral\s+--sandbox read-only "ok"/u);
+  assert.match(prd, /matching `CODEOWNERS` rule/u);
+  assert.match(prd, /new commits alone are not a trigger/u);
+  assert.match(prd, /request\s+that account again in GitHub's \*\*Reviewers\*\*/u);
 });

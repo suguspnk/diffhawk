@@ -568,9 +568,10 @@
             OpenMergeLens: AI code reviews on your machine.
           </h1>
           <p class="hero-copy" data-motion-hero-item>
-            OpenMergeLens finds GitHub pull requests waiting for your review,
-            runs the reviewer agent you choose, and posts anchored, inline
-            feedback without a GitHub App, webhook, or hosted server.
+            OpenMergeLens finds open GitHub pull requests with an active review
+            request for your account, runs the reviewer agent you choose, and
+            posts anchored, inline feedback without a GitHub App, webhook, or
+            hosted server. Requests can be manual or supplied by CODEOWNERS.
           </p>
           <div class="actions" data-motion-hero-item>
             <a class="button primary" href="https://github.com/suguspnk/openmergelens#install">
@@ -645,16 +646,18 @@ Reviewing acme/api#284...
           <div class="section-heading" data-motion-reveal="rise">
             <h2 id="workflow-heading">From request to review</h2>
             <p>
-              A deterministic polling loop keeps reviews useful and avoids
-              duplicate comments when pull requests receive new commits.
+              A deterministic polling loop handles requested reviews and avoids
+              duplicate comments. New commits on a previously reviewed pull
+              request wait for the author to request another review.
             </p>
           </div>
 
           <ol class="workflow" data-motion-reveal="stagger-fade">
             <li>
               <strong>Find requests</strong>
-              Uses <code>gh</code> to find pull requests assigned to your
-              configured reviewer accounts.
+              Uses <code>gh</code> to find open pull requests where your
+              configured account is in the Reviewers list. The request may be
+              manual or created by a matching CODEOWNERS rule.
             </li>
             <li>
               <strong>Inspect the change</strong>
@@ -669,7 +672,8 @@ Reviewing acme/api#284...
             <li>
               <strong>Post once</strong>
               Publishes validated findings and records the reviewed commit SHA
-              locally.
+              locally. After new commits, the author must request the account
+              again before another review is queued.
             </li>
           </ol>
         </div>

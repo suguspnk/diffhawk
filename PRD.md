@@ -1,9 +1,11 @@
 # PR Review Bot: Handoff Spec
 
-Local, agent-agnostic poller that auto-reviews GitHub PRs whenever you (antonio)
-are the requested reviewer, whether that's set at PR creation or added later,
-and re-reviews when new commits land after the last review. Posts results as a
-PR comment automatically, no per-run approval needed.
+Local, agent-agnostic poller that auto-reviews open GitHub PRs whenever a
+configured account is the requested reviewer. The request can be added manually
+or created automatically by a matching `CODEOWNERS` rule. After OpenMergeLens
+reviews a PR, new commits alone are not a trigger: the PR author must request
+that account again in GitHub's **Reviewers** list before another review runs.
+Posts results as a PR review automatically, with no per-run approval needed.
 
 Repo: `~/Symph/projects/pr-review-bot` (git initialized with no remote; keep it
 local only unless explicitly decided otherwise later).
@@ -19,20 +21,25 @@ a fresh session with: "implement the PR review bot per PRD.md".
   deliberately avoids committing any `.github/workflows/*.yml`: no workflow
   file, no webhook, no tunnel. Pure client-side polling using `gh` CLI.
 - Requirements gathered from user:
-  1. Trigger scope: PR opened with me as requested reviewer, OR added as
-     reviewer to an already-open PR. GitHub's `review_requested` event/search
-     qualifier covers both, but we're polling rather than subscribing to webhooks,
-     so we detect this via periodic search, not the event itself.
-  2. "Seen ≠ done": must not just track "have I looked at this PR" but
-     detect **new commits since the last review** and re-trigger. So state is
-     keyed by PR + last-reviewed commit SHA, not a boolean seen/unseen flag.
+  1. Trigger scope: an open PR must have the configured account in GitHub's
+     requested-reviewer list. That request may be added manually, or GitHub may
+     create it when a matching `CODEOWNERS` rule applies. The
+     `review_requested` search qualifier covers the resulting request, but we're
+     polling rather than subscribing to webhooks, so we detect it via periodic
+     search, not the event itself. OpenMergeLens does not parse `CODEOWNERS` or
+     create requests.
+  2. "Seen ≠ done": must not just track "have I looked at this PR" but track
+     **new commits since the last review** so a freshly requested re-review can
+     target the new head. State is keyed by PR + last-reviewed commit SHA, not a
+     boolean seen/unseen flag. A changed SHA is not a standalone trigger; a
+     fresh requested-review entry is still required.
   3. Needs a real review prompt, not "review this PR." Prompts are directly
      editable and shared per GitHub host/repository. Durable corrections are
      isolated per GitHub host/account/repository.
-  4. Output: post directly as a `gh pr comment`, as pre-approved by the user
-     for this specific automated flow, no confirmation prompt needed each run.
-     (This approval is scoped to this bot's own posting behavior and is not a
-     general standing permission for PR comments in other contexts.)
+  4. Output: post directly as a formal GitHub PR review, as pre-approved by the
+     user for this specific automated flow, with no confirmation prompt needed
+     each run. (This approval is scoped to this bot's own posting behavior and
+     is not a general standing permission for PR comments in other contexts.)
   5. Agent-agnostic: don't hardcode a `claude` CLI invocation. The "reviewer
      backend" should be a swappable command/adapter so any CLI capable of
      taking a prompt + diff and returning review text can be plugged in.
@@ -74,11 +81,15 @@ poller as a `pnpm` script / bin.
 ## Core logic (one poll cycle)
 
 1. **Discover candidate PRs.** For every configured account and every
-   explicitly selected repository:
+   explicitly selected repository, search only for open PRs where that account
+   is currently an explicitly requested reviewer:
    ```bash
    gh api /search/issues -f q="is:pr is:open review-requested:antonio repo:OWNER/REPO" --jq '.items[].number'
    ```
-   Global search is intentionally unsupported: coverage must be explicit.
+   This covers both manual reviewer requests and requests GitHub created from a
+   matching `CODEOWNERS` rule. Global search is intentionally unsupported:
+   coverage must be explicit. A new commit on a previously reviewed PR does not
+   enter the queue until the author re-requests the account in **Reviewers**.
    Resolve each account with `gh auth token --hostname ... --user ...` and
    scope every child command with that credential.
 
@@ -95,7 +106,8 @@ poller as a `pnpm` script / bin.
    - Key: `HOST@USERNAME::OWNER/REPO#N`
    - If key absent → new PR, needs review.
    - If key present and stored SHA != current `headRefOid` → new commits since
-     last review, needs re-review.
+     last review; if this PR was returned by the requested-reviewer search, it
+     needs re-review.
    - If key present and SHA matches → skip, already reviewed this exact head.
    - If local state is missing, check the PR's submitted reviews for
      OpenMergeLens's opaque account/repo/commit marker. If found, repair local
@@ -387,9 +399,11 @@ cloned checkout). Steps, in order:
 1. **Welcome banner.** One line: name + one-sentence purpose. No ASCII art.
 
 2. **GitHub reviewer account selection.** Runs `gh auth status`, lists every
-   authenticated account, and asks for the complete set that should search
-   for review requests and post reviews. Existing configured accounts are
-   preselected.
+   authenticated account, and asks for the complete set that should watch for
+   requested reviews and post reviews. The wizard explains that a PR must be in
+   GitHub's **Reviewers** list for the selected account; the request may be
+   manual or supplied by a matching `CODEOWNERS` rule. Existing configured
+   accounts are preselected.
    - No authenticated accounts → print the exact fix (`gh auth login`) and
      exit immediately.
    - Store only hostnames, usernames, and explicit repositories in config,
@@ -408,7 +422,9 @@ cloned checkout). Steps, in order:
      `gh repo list --json nameWithOwner,isPrivate --limit 200` (paginate if
      needed).
    - Render a searchable multi-select with existing repository choices
-     preselected. Require at least one repository per account.
+     preselected. Require at least one repository per account. Watching a
+     repository enables the requested-review search; it does not create or renew
+     GitHub review requests.
 
 4. **Review files: deterministic and previewed.** Seed one prompt per
    host/repository and one empty learnings file per host/account/repository,

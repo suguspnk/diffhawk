@@ -4,7 +4,8 @@ security, correctness, and violations of established repo conventions). Do
 not stop after finding the first issue and do not impose an arbitrary limit
 on findings.
 
-This may be a re-review after new commits. Use the constrained semantic GitHub
+This may be a re-review after the PR author requested this reviewer again
+following new commits. Use the constrained semantic GitHub
 inspection tool to inspect the complete cumulative PR diff: inspect every
 non-generated file and hunk, including code from earlier commits, as if it has
 not been reviewed before. Do not focus only on the newest changes or assume a
