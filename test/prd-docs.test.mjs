@@ -7,8 +7,12 @@ import { validateConfig } from '../lib/config.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+async function readText(filePath) {
+  return (await readFile(filePath, 'utf8')).replace(/\r\n?/gu, '\n');
+}
+
 test('PRD config shape remains valid for the current validator', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const match = prd.match(/## Config shape\s*```json\s*([\s\S]*?)\s*```/u);
   assert.ok(match, 'PRD must include a JSON config-shape example');
 
@@ -30,7 +34,7 @@ test('PRD config shape remains valid for the current validator', async () => {
 });
 
 test('project instructions describe the requested-review re-review trigger', async () => {
-  const agents = await readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8');
+  const agents = await readText(path.join(projectRoot, 'AGENTS.md'));
   assert.match(agents, /per-account PR last-reviewed SHA/u);
   assert.match(agents, /HOST@USERNAME::OWNER\/REPO#N/u);
   assert.match(agents, /requested\s+again\s+in\s+GitHub's\s+\*\*Reviewers\*\*\s+list/u);
@@ -38,7 +42,7 @@ test('project instructions describe the requested-review re-review trigger', asy
 });
 
 test('PRD notification contract documents deferred outcomes as non-attention', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const match = prd.match(/9\. \*\*Notify after the complete poll settles\.\*[\s\S]*?(?=\n\n10\.)/u);
   assert.ok(match, 'PRD must include the notification contract');
   assert.match(
@@ -48,7 +52,7 @@ test('PRD notification contract documents deferred outcomes as non-attention', a
 });
 
 test('PRD documents the current reviewer and GitHub review contracts', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
 
   assert.doesNotMatch(prd, /gh pr comment/u);
   assert.doesNotMatch(prd, /prompt \+ diff/u);
@@ -59,7 +63,7 @@ test('PRD documents the current reviewer and GitHub review contracts', async () 
 });
 
 test('PRD keeps synthesis on the constrained MCP inspection path', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const pipeline = prd.match(
     /5\. \*\*Run independent reviewer passes\*\*[\s\S]*?(?=\n\n6\.)/u,
   );
@@ -78,7 +82,7 @@ test('PRD keeps synthesis on the constrained MCP inspection path', async () => {
 });
 
 test('PRD scheduling contract documents the generated scheduled runner', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const match = prd.match(/## Scheduling\s*([\s\S]*?)(?=\n## Auth prerequisites)/u);
   assert.ok(match, 'PRD must include the scheduling contract');
   const scheduling = match[1];
@@ -93,7 +97,7 @@ test('PRD scheduling contract documents the generated scheduled runner', async (
 });
 
 test('PRD documents cadence-safe cron intervals separately from host schedulers', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const scheduling = prd.match(/## Scheduling\s*([\s\S]*?)(?=\n## Auth prerequisites)/u)?.[1];
 
   assert.ok(scheduling, 'PRD must include the scheduling contract');
@@ -109,7 +113,7 @@ test('PRD documents cadence-safe cron intervals separately from host schedulers'
 });
 
 test('PRD requires a persistent published install before configuring schedules', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const onboarding = prd.match(/## Onboarding \(`openmergelens init`\)[\s\S]*?(?=\n## Decisions)/u);
   const scheduling = prd.match(/## Scheduling\s*([\s\S]*?)(?=\n## Auth prerequisites)/u);
 
@@ -132,9 +136,9 @@ test('PRD requires a persistent published install before configuring schedules',
 });
 
 test('PRD documents user-home state storage rather than repository-root state', async () => {
-  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const prd = await readText(path.join(projectRoot, 'PRD.md'));
   const configExample = JSON.parse(
-    await readFile(path.join(projectRoot, 'config.example.json'), 'utf8'),
+    await readText(path.join(projectRoot, 'config.example.json')),
   );
   const architecture = prd.match(/## Architecture\s*```[\s\S]*?```/u);
   const runtimeState = prd.match(/## Per-user runtime state\s*([\s\S]*?)(?=\n## )/u);
@@ -157,8 +161,8 @@ test('PRD documents user-home state storage rather than repository-root state', 
 
 test('PRD discovery command matches the explicit paginated GitHub search contract', async () => {
   const [prd, github] = await Promise.all([
-    readFile(path.join(projectRoot, 'PRD.md'), 'utf8'),
-    readFile(path.join(projectRoot, 'lib/github.mjs'), 'utf8'),
+    readText(path.join(projectRoot, 'PRD.md')),
+    readText(path.join(projectRoot, 'lib/github.mjs')),
   ]);
   const discovery = prd.match(
     /1\. \*\*Discover candidate PRs\.\*[\s\S]*?```bash\s*([\s\S]*?)\s*```/u,

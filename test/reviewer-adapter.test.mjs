@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -59,6 +59,19 @@ function sentinelEnvironment() {
     ['PATH', '/bin'],
     ...githubEnvironmentKeys.map((key) => [key, `sentinel-${key}`]),
   ]);
+}
+
+async function waitForFile(filePath, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    try {
+      await stat(filePath);
+      return;
+    } catch (error) {
+      if (error.code !== 'ENOENT' || Date.now() >= deadline) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 test('parseCommand preserves its portable quoting and escaping grammar', () => {
@@ -900,14 +913,14 @@ test('invokeReviewer force-kills a descendant after the direct child closes on t
     `'eval(Buffer.from("${encodedChildScript}", "base64").toString())'`,
   ].join(' ');
 
-  await assert.rejects(
-    invokeReviewer({
-      reviewerCommand,
-      prompt: '',
-      timeoutMs: 50,
-    }),
-    /timed out after 50ms/,
-  );
+  const invocation = invokeReviewer({
+    reviewerCommand,
+    prompt: '',
+    timeoutMs: 500,
+  });
+  invocation.catch(() => {});
+  await waitForFile(pidFile, 400);
+  await assert.rejects(() => invocation, /timed out after 500ms/);
 
   const descendantPid = Number(await readFile(pidFile, 'utf8'));
   await new Promise((resolve) => setTimeout(resolve, 50));

@@ -18,6 +18,14 @@ import {
   SUPPORTED_CRON_INTERVALS,
 } from '../lib/scheduler.mjs';
 
+const hostPath = process.platform === 'win32' ? path.win32 : path.posix;
+
+function pathPattern(value) {
+  return value
+    .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+    .replaceAll('\\\\', '[\\\\/]');
+}
+
 function cronFireTimesAcrossHours(intervalMinutes, hours = 2) {
   const fireTimes = [];
   for (let hour = 0; hour < hours; hour += 1) {
@@ -126,7 +134,7 @@ test('installCron replaces a matching legacy OpenMergeLens entry', async (t) => 
     intervalMinutes: 15,
     environment: { ...process.env, OPENMERGELENS_HOME: directory },
     platform: 'linux',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
   };
   const legacy = cronPreview({ ...options, intervalMinutes: 30 }).preview
     .replace('# openmergelens:managed:cron:v1', '# openmergelens poll');
@@ -151,7 +159,7 @@ test('cronPreview exactly matches the line installCron writes', async (t) => {
     intervalMinutes: 15,
     environment: { ...process.env, OPENMERGELENS_HOME: directory },
     platform: 'linux',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
   };
   let installed;
 
@@ -248,6 +256,7 @@ test('removeScheduler launchd unloads and removes only the fixed plist', async (
   await removeScheduler('launchd', {
     platform: 'darwin',
     homeDirectory: '/Users/Test',
+    pathImplementation: path.posix,
     executeCommand: async (command, args) => calls.push([command, args]),
     removeFile: async (filePath, options) => removed.push([filePath, options]),
   });
@@ -281,7 +290,9 @@ test('removeScheduler launchd restores the original plist content and mode', asy
   await removal.restore();
 
   assert.equal(await readFile(plistPath, 'utf8'), originalPlist);
-  assert.equal((await stat(plistPath)).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(plistPath)).mode & 0o777, 0o600);
+  }
 });
 
 test('reconcileScheduler keeps the new schedule when launchctl reports no old job', async () => {
@@ -678,7 +689,7 @@ test('FINDING-FRESH-004 restores schtasks artifacts after a create failure', asy
       pollScriptPath: 'C:\\opt\\openmergelens\\bin\\poll.mjs',
       intervalMinutes: 15,
       homeDirectory: directory,
-      pathImplementation: path.posix,
+      pathImplementation: hostPath,
       environment: { OPENMERGELENS_HOME: stateHome, PATH: 'C:\\new\\bin' },
       executeCommand: async (command, args) => {
         assert.equal(command, 'schtasks');
@@ -776,7 +787,7 @@ test('FINDING-CLI-001 restores the prior schtasks definition after a partial rep
       pollScriptPath: 'C:\\opt\\openmergelens\\bin\\poll.mjs',
       intervalMinutes: 15,
       homeDirectory: directory,
-      pathImplementation: path.posix,
+      pathImplementation: hostPath,
       environment: { OPENMERGELENS_HOME: path.join(directory, 'state') },
       executeCommand: async (command, args) => {
         assert.equal(command, 'schtasks');
@@ -950,7 +961,7 @@ test('cronPreview shell-quotes paths containing spaces and metacharacters', () =
 
 test('scheduler previews and installation persist absolute paths for relative home overrides', async (t) => {
   const relativeHome = `openmergelens-relative-home-${process.pid}-${Date.now()}`;
-  const expectedHome = path.resolve(relativeHome);
+  const expectedHome = hostPath.resolve(relativeHome);
   t.after(() => rm(expectedHome, { recursive: true, force: true }));
   const environment = {
     PATH: '/opt/tools',
@@ -964,10 +975,13 @@ test('scheduler previews and installation persist absolute paths for relative ho
     intervalMinutes: 15,
     environment,
     platform: 'linux',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
   });
-  assert.equal(cron.environmentPath, path.join(expectedHome, 'scheduler-environment.json'));
-  assert.match(cron.preview, new RegExp(`'${expectedHome}/poll\\.log' 2>&1 # openmergelens:managed:cron:v1$`));
+  assert.equal(cron.environmentPath, hostPath.join(expectedHome, 'scheduler-environment.json'));
+  assert.match(
+    cron.preview,
+    new RegExp(`'${pathPattern(hostPath.join(expectedHome, 'poll.log'))}' 2>&1 # openmergelens:managed:cron:v1$`),
+  );
   assert.equal(JSON.parse(cron.environmentPreview).OPENMERGELENS_HOME, expectedHome);
   assert.equal(JSON.parse(cron.environmentPreview).GH_CONFIG_DIR, '/opt/gh-config');
 
@@ -976,10 +990,13 @@ test('scheduler previews and installation persist absolute paths for relative ho
     intervalMinutes: 15,
     environment,
     platform: 'darwin',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
   });
-  assert.match(launchd.preview, new RegExp(`<string>${expectedHome}/poll\\.log</string>`));
-  assert.match(launchd.preview, new RegExp(`<string>${expectedHome}</string>`));
+  assert.match(
+    launchd.preview,
+    new RegExp(`<string>${pathPattern(hostPath.join(expectedHome, 'poll.log'))}</string>`),
+  );
+  assert.match(launchd.preview, new RegExp(`<string>${pathPattern(expectedHome)}</string>`));
   assert.equal(JSON.parse(launchd.environmentPreview).OPENMERGELENS_HOME, expectedHome);
   assert.equal(JSON.parse(launchd.environmentPreview).GH_CONFIG_DIR, '/opt/gh-config');
 
@@ -1006,24 +1023,27 @@ test('scheduler previews and installation persist absolute paths for relative ho
     intervalMinutes: 15,
     environment,
     platform: 'linux',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
     readCrontab: async () => '',
     writeCrontab: async ({ input }) => {
       writtenCrontab = input;
     },
   });
   assert.equal(
-    JSON.parse(await readFile(path.join(expectedHome, 'scheduler-environment.json'), 'utf8'))
+    JSON.parse(await readFile(hostPath.join(expectedHome, 'scheduler-environment.json'), 'utf8'))
       .OPENMERGELENS_HOME,
     expectedHome,
   );
   assert.equal(
-    JSON.parse(await readFile(path.join(expectedHome, 'scheduler-environment.json'), 'utf8'))
+    JSON.parse(await readFile(hostPath.join(expectedHome, 'scheduler-environment.json'), 'utf8'))
       .GH_CONFIG_DIR,
     '/opt/gh-config',
   );
-  assert.match(writtenCrontab, new RegExp(`'${expectedHome}/scheduler-environment\\.json'`));
-  assert.equal((await stat(path.join(expectedHome, 'poll.log'))).isFile(), true);
+  assert.match(
+    writtenCrontab,
+    new RegExp(`'${pathPattern(hostPath.join(expectedHome, 'scheduler-environment.json'))}'`),
+  );
+  assert.equal((await stat(hostPath.join(expectedHome, 'poll.log'))).isFile(), true);
 });
 
 test('cronPreview rejects values that could inject another crontab line', () => {
@@ -1383,7 +1403,7 @@ test('installSchtasks writes the environment file and invokes Task Scheduler', a
     homeDirectory: 'C:\\Users\\Test',
     nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
     platform: 'win32',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
     schtasksCommand: 'schtasks',
     executeCommand: async (command, args) => {
       calls.push([command, args]);
@@ -1426,7 +1446,7 @@ test('SCHED-001 installSchtasks registers long Windows paths through XML', async
     environment: { OPENMERGELENS_HOME: stateHome },
     nodeExecutable: `${packageRoot}/node.exe`,
     platform: 'win32',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
     executeCommand: async (command, args) => calls.push([command, args]),
   });
 
@@ -1509,7 +1529,7 @@ test('host scheduler installers reject unsafe intervals before side effects', as
       environment: { ...process.env, OPENMERGELENS_HOME: stateHome },
       homeDirectory: 'C:\\Users\\Test',
       platform: 'win32',
-      pathImplementation: path.posix,
+      pathImplementation: hostPath,
       executeCommand: async (...args) => calls.push(args),
     }),
     /positive whole number of minutes from 1 through 1439/,
@@ -1539,7 +1559,7 @@ test('launchd and schtasks installers accept a 90-minute interval', async (t) =>
     environment: { ...process.env, OPENMERGELENS_HOME: stateHome },
     homeDirectory: 'C:\\Users\\Test',
     platform: 'win32',
-    pathImplementation: path.posix,
+    pathImplementation: hostPath,
     executeCommand: async (command, args) => calls.push([command, args]),
   });
 
