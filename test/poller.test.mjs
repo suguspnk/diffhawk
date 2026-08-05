@@ -1979,7 +1979,18 @@ test('one unavailable account does not block healthy account work and marks fail
   assert.equal(result.failures[0].note, 'authentication failed');
   assert.equal(events.includes('post:personal'), true);
   assert.equal(events.includes('post:work'), false);
-  assert.match(await readFile(files.logPath, 'utf8'), /\[work@github\.com\].*account unavailable/);
+  const logRecords = (await readFile(files.logPath, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.equal(
+    logRecords.some(
+      (record) =>
+        record.account === 'work@github.com' &&
+        /account unavailable/.test(record.message),
+    ),
+    true,
+  );
 });
 
 test('missing config-wide AI-processing consent blocks every account before authentication', async (t) => {
@@ -2770,7 +2781,18 @@ for (const [label, review, expectedError] of [
     assert.equal(result.failures.length, 1);
     assert.equal(result.failures[0].status, 'failed');
     assert.equal(result.failures[0].note, 'dry-run validation failed');
-    assert.match(await readFile(files.logPath, 'utf8'), expectedError);
+    const logRecords = (await readFile(files.logPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.equal(
+      logRecords.some(
+        (record) =>
+          expectedError.test(record.message) ||
+          expectedError.test(record.error?.message ?? ''),
+      ),
+      true,
+    );
     assert.equal(postCalls, 0);
     assert.equal(events.filter((event) => event === 'github:scheduled').length, 6);
     assert.equal(saveCalls, 0);

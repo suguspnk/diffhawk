@@ -26,5 +26,9 @@ test('fatal poll startup errors are persisted to poll.log', async (t) => {
   );
 
   const log = await readFile(path.join(userHome, 'poll.log'), 'utf8');
-  assert.match(log, /\[fatal\] openmergelens: unrecognized argument "--invalid"/);
+  const record = JSON.parse(log.trim());
+  assert.equal(record.level, 'fatal');
+  assert.equal(record.event, 'startup.failure');
+  assert.equal(record.scope, 'fatal');
+  assert.match(record.message, /openmergelens: unrecognized argument "--invalid"/);
 });

@@ -321,10 +321,12 @@ installed programmatically by `lib/scheduler.mjs`.
   wherever `which node` resolves), the script itself, and any files it
   touches. Cron's default PATH (typically `/usr/bin:/bin`) doesn't source
   shell profiles, so `node`/`gh` can silently fail to resolve.
-- Redirect stdout and stderr to a log file on every invocation. Append rather
-  than overwrite so failures are visible across runs (cron:
-  `>> poll.log 2>&1`; launchd: `StandardOutPath`/`StandardErrorPath`;
-  Task Scheduler: redirect inside the wrapper script).
+- Keep scheduler stdout/stderr redirection on every invocation as a fallback
+  for wrapper and early-startup failures (cron: `>> poll.log 2>&1`; launchd:
+  `StandardOutPath`/`StandardErrorPath`; Task Scheduler: redirect inside the
+  wrapper script). The application logger is the primary writer: it emits
+  structured JSONL records, sanitizes and bounds diagnostics, and rotates the
+  private log with retained backups.
 - Register Windows tasks from XML with `/xml` when the executable and argument
   paths may be long; keep the command in `<Exec><Command>` and its arguments
   in `<Exec><Arguments>` instead of relying on the 262-character `/tr` value.

@@ -222,6 +222,28 @@ that permits only GET operations for the fixed PR and its repository. The
 generated Codex command denies host-file reads outside its isolated workspace,
 has no direct network access, and fails closed on unknown configuration.
 
+## Logs and diagnostics
+
+OpenMergeLens writes newline-delimited JSON records to
+`~/.openmergelens/poll.log` (or the configured `OPENMERGELENS_HOME`). Each
+record includes a timestamp, level, event, run ID, safe operational context,
+and a sanitized message. Failures also retain bounded error metadata such as
+exit status and subprocess diagnostics. Unknown fields, raw credentials, and
+unbounded command output are not written to the log.
+
+Manual runs show a readable progress view on the terminal. Scheduled runs
+write structured records to the file without echoing a second copy to stderr;
+the scheduler's stdout/stderr redirection remains a fallback for unexpected
+startup output. The active log is capped at 5 MiB and rotates through three
+private backups (`poll.log.1` through `poll.log.3`).
+
+For example, to inspect recent failures with `jq`:
+
+```bash
+jq 'select(.level == "error" or .level == "fatal") | {timestamp, event, runId, message, error}' \
+  ~/.openmergelens/poll.log
+```
+
 ## Try it (dry run)
 
 Before trusting OpenMergeLens to post anything, run it in dry-run mode. This does
@@ -284,8 +306,9 @@ OpenMergeLens using AI on behalf of the authenticated reviewer. Reviews remain
 non-binding `COMMENT` reviews; OpenMergeLens never approves a PR or requests
 changes automatically.
 
-If one account, repository, or PR fails, OpenMergeLens logs the account-prefixed
-failure, continues all independent work, and exits nonzero after the poll. It
+If one account, repository, or PR fails, OpenMergeLens logs a structured,
+account- and PR-scoped failure, continues all independent work, and exits
+nonzero after the poll. It
 never posts a broken or empty review, and leaves failed PR state untouched so
 the next run retries automatically. A global operation lock prevents
 overlapping polls from duplicating reviews; a second poll logs that one is
@@ -391,7 +414,9 @@ the manual one-shot command:
   ```
   */15 * * * * '/usr/bin/node' '/absolute/path/to/openmergelens/bin/scheduled.mjs' '/Users/you/.openmergelens/scheduler-environment.json' >> '/Users/you/.openmergelens/poll.log' 2>&1 # openmergelens:managed:cron:v1
   ```
-  Cron supports only exact hourly cadences: 1, 2, 3, 4, 5, 6, 10, 12, 15,
+  The application logger is the primary log writer; the redirection preserves
+  unexpected wrapper/startup output. Cron supports only exact hourly cadences:
+  1, 2, 3, 4, 5, 6, 10, 12, 15,
   20, or 30 minutes. These are the positive whole-minute intervals that divide
   an hour; cron step expressions reset at each hour, so values such as 7 or 59
   would create a shorter gap at the boundary and are rejected. launchd and

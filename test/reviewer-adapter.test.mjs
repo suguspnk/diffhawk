@@ -207,7 +207,13 @@ test('invokeReviewer preserves split UTF-8 stderr in exit diagnostics', async ()
       reviewerCommand: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(reviewerScript)}`,
       prompt: '',
     }),
-    /exited 3: diagnostic café/u,
+    (error) => {
+      assert.match(error.message, /exited 3: diagnostic café/u);
+      assert.equal(error.exitCode, 3);
+      assert.equal(error.stderr, 'diagnostic café');
+      assert.equal(error.stdout, '');
+      return true;
+    },
   );
 });
 

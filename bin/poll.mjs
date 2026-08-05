@@ -5,7 +5,7 @@ import { loadConfig, parseAccountSelector } from '../lib/config.mjs';
 import { parsePollArgs } from '../lib/dispatch.mjs';
 import { ensurePrivateDirectory } from '../lib/file-security.mjs';
 import { acquireLock } from '../lib/lock.mjs';
-import { appendFailure } from '../lib/logging.mjs';
+import { createLogger, ensureLogFile } from '../lib/logging.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
 import { pollOnce } from '../lib/poller.mjs';
 import {
@@ -22,12 +22,21 @@ const defaultReviewPromptPath = path.join(
   'docs',
   'review-prompt.default.md',
 );
+const logPath = userPath('poll.log');
+const logger = createLogger({
+  logPath,
+  consoleMode: process.env.OPENMERGELENS_SCHEDULED === '1' ? 'none' : 'human',
+});
 let activeConfig;
 
 function notify(notification) {
   return attemptDesktopNotification(notification, {
     config: activeConfig,
-    logPath: userPath('poll.log'),
+    logPath,
+    logFailure: (_path, label, message) => logger.warn(message, {
+      event: 'notification.failure',
+      fields: { scope: label },
+    }),
   });
 }
 
@@ -42,28 +51,33 @@ async function notifyPollResult(result) {
         reportsDirectory: userPath('reports'),
       });
     } catch (error) {
-      await appendFailure(
-        userPath('poll.log'),
-        'report',
-        `review report failed: ${error.message}`,
-      );
+      await logger.error(`review report failed: ${error.message}`, {
+        event: 'report.failure',
+        fields: { scope: 'report' },
+        error,
+      });
     }
   }
   return notify(report ? { ...notification, report } : notification);
 }
 
 async function main() {
-  const parsed = parsePollArgs(process.argv.slice(2));
-  if (parsed.error) throw new Error(parsed.error);
-
-  await ensurePrivateDirectory(userPath());
-  const releaseLock = await acquireLock(userPath('operation.lock'));
-  if (!releaseLock) {
-    console.log('poll skipped: another operation is already active');
-    return;
-  }
-
+  let releaseLock;
   try {
+    const parsed = parsePollArgs(process.argv.slice(2));
+    if (parsed.error) throw new Error(parsed.error);
+
+    await ensurePrivateDirectory(userPath());
+    await ensureLogFile(logPath);
+    releaseLock = await acquireLock(userPath('operation.lock'));
+    if (!releaseLock) {
+      logger.info('poll skipped: another operation is already active', {
+        event: 'poll.skipped',
+        fields: { reason: 'operation lock' },
+      });
+      return;
+    }
+
     const config = await loadConfig(userPath('config.json'));
     activeConfig = config;
     const accountSelector = parsed.accountSelector
@@ -72,20 +86,27 @@ async function main() {
     const result = await pollOnce({
       config,
       stateFile: resolveUserPath(config.stateFile),
-      logPath: userPath('poll.log'),
+      logPath,
       defaultReviewPromptPath,
       dryRun: parsed.dryRun,
       accountSelector,
+      logger,
     });
     await notifyPollResult(result);
     if (result.failed) process.exitCode = 1;
   } finally {
-    await releaseLock();
+    if (releaseLock) await releaseLock();
+    await logger.flush();
   }
 }
 
 main().catch(async (err) => {
-  await appendFailure(userPath('poll.log'), 'fatal', `openmergelens: ${err.message}`);
+  await logger.fatal(`openmergelens: ${err.message}`, {
+    event: 'startup.failure',
+    fields: { scope: 'fatal' },
+    error: err,
+  });
+  await logger.flush();
   await notifyPollResult({
     failures: [{
       status: 'failed',

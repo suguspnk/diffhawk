@@ -11,6 +11,7 @@ const environmentPath = process.argv[2];
 const logPath = environmentPath
   ? path.join(path.dirname(path.resolve(environmentPath)), 'poll.log')
   : userPath('poll.log');
+process.env.OPENMERGELENS_SCHEDULED = '1';
 
 async function main() {
   if (!environmentPath) {
@@ -26,6 +27,10 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  await appendFailure(logPath, 'fatal', `openmergelens: ${err.message}`);
+  await appendFailure(logPath, 'fatal', `openmergelens: ${err.message}`, {
+    consoleMode: 'none',
+    event: 'startup.failure',
+    error: err,
+  });
   process.exitCode = 1;
 });
