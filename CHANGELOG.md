@@ -4,6 +4,8 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-05
+
 - Added built-in Codex and Claude model/reasoning selection during `init`, with
   current model catalogs, safe custom model IDs, CLI-default fallbacks, and
   runtime forwarding without re-opening consent or resetting review state.
