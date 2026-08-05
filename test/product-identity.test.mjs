@@ -139,12 +139,12 @@ test('GitHub Pages entry point exposes complete search metadata', async () => {
   assert.equal(structuredData['@graph'][1].url, canonicalUrl);
 });
 
-test('GitHub Pages includes the official Product Hunt featured badge', async () => {
+test('GitHub Pages includes the official Product Hunt follow badge', async () => {
   const html = await readFile(path.join(projectRoot, 'docs/index.html'), 'utf8');
 
   assert.match(
     html,
-    /<a\s+class="product-hunt-badge"\s+href="https:\/\/www\.producthunt\.com\/products\/openmergelens\?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-openmergelens"\s+target="_blank"\s+rel="noopener noreferrer"\s*>\s*<img\s+alt="OpenMergeLens - Local AI pull-request reviews without another GitHub bot \| Product Hunt"\s+width="250"\s+height="54"\s+src="https:\/\/api\.producthunt\.com\/widgets\/embed-image\/v1\/featured\.svg\?post_id=1211782&amp;theme=light&amp;t=1785918449638"\s*>\s*<\/a>/,
+    /<a\s+class="product-hunt-badge"\s+href="https:\/\/www\.producthunt\.com\/products\/openmergelens\?utm_source=badge-follow&amp;utm_medium=badge&amp;utm_source=badge-openmergelens"\s+target="_blank"\s+rel="noopener noreferrer"\s*>\s*<img\s+src="https:\/\/api\.producthunt\.com\/widgets\/embed-image\/v1\/follow\.svg\?product_id=1283249&amp;theme=neutral"\s+alt="OpenMergeLens - Local&#0032;AI&#0032;pull&#0045;request&#0032;reviews&#0032;without&#0032;another&#0032;GitHub&#0032;bot \| Product Hunt"\s+style="width: 250px; height: 54px;"\s+width="250"\s+height="54"\s*\/?>\s*<\/a>/,
   );
 });
 
