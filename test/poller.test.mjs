@@ -208,6 +208,87 @@ test('two requested accounts independently review and persist the same PR', asyn
   ]);
 });
 
+for (const [label, malformedMetadata] of [
+  ['null', null],
+  ['missing state', {
+    headRefOid: 'sha-1',
+    number: 1,
+    title: 'PR 1',
+    url: 'https://github.com/owner/repo/pull/1',
+    body: '',
+  }],
+  ['missing headRefOid', {
+    number: 1,
+    title: 'PR 1',
+    url: 'https://github.com/owner/repo/pull/1',
+    body: '',
+    state: 'OPEN',
+  }],
+  ['blank headRefOid', {
+    headRefOid: '   ',
+    number: 1,
+    title: 'PR 1',
+    url: 'https://github.com/owner/repo/pull/1',
+    body: '',
+    state: 'OPEN',
+  }],
+]) {
+  test(`malformed ${label} metadata fails one candidate and continues`, async (t) => {
+    const files = await fixture(t);
+    const account = { ...work, repositories: ['owner/repo'] };
+    const initialEntry = {
+      lastReviewedSha: 'old-sha',
+      lastReviewedAt: '2026-08-05T00:00:00.000Z',
+    };
+    await saveState(files.stateFile, {
+      [prKey('owner/repo', 1, account)]: initialEntry,
+    });
+
+    const events = [];
+    const dependencies = successfulDependencies(events);
+    dependencies.searchReviewRequestedPRs = async () => [
+      { repo: 'owner/repo', number: 1 },
+      { repo: 'owner/repo', number: 2 },
+    ];
+    dependencies.getPullRequest = async ({ number }) => {
+      if (number === 1) return malformedMetadata;
+      return {
+        headRefOid: 'sha-2',
+        number: 2,
+        title: 'PR 2',
+        url: 'https://github.com/owner/repo/pull/2',
+        body: '',
+        state: 'OPEN',
+      };
+    };
+
+    const result = await pollOnce({
+      config: config([account]),
+      ...files,
+      dependencies,
+    });
+
+    assert.equal(result.failed, true);
+    assert.equal(result.reviewed, 1);
+    assert.deepEqual(
+      result.failures.map(({ repo, number, note }) => ({ repo, number, note })),
+      [{ repo: 'owner/repo', number: 1, note: 'metadata malformed' }],
+    );
+    assert.deepEqual(
+      result.outcomes.map(({ status, number }) => ({ status, number })),
+      [{ status: 'reviewed', number: 2 }],
+    );
+    assert.deepEqual(
+      events.filter((event) => event.startsWith('post:')),
+      ['post:work'],
+    );
+
+    const state = JSON.parse(await readFile(files.stateFile, 'utf8'));
+    assert.deepEqual(state[prKey('owner/repo', 1, account)], initialEntry);
+    assert.equal(state[prKey('owner/repo', 2, account)].lastReviewedSha, 'sha-2');
+  });
+}
+
 test('pollOnce adopts a current unscoped entry for its only selected account', async (t) => {
   const files = await fixture(t);
   const account = { ...work, repositories: ['owner/repo'] };
@@ -2103,6 +2184,75 @@ test('new commits arriving during review prevent a stale review from posting', a
   assert.deepEqual(events.filter((event) => event.startsWith('post:')), []);
   await assert.rejects(readFile(files.stateFile, 'utf8'), { code: 'ENOENT' });
 });
+
+for (const [label, confirmationMetadata] of [
+  ['null', null],
+  ['missing headRefOid', {
+    number: 1,
+    title: 'PR 1',
+    url: 'https://github.com/owner/repo/pull/1',
+    body: '',
+    state: 'OPEN',
+  }],
+]) {
+  test(`malformed ${label} confirmation fails one candidate and continues`, async (t) => {
+    const files = await fixture(t);
+    const account = { ...work, repositories: ['owner/repo'] };
+    const initialEntry = {
+      lastReviewedSha: 'old-sha',
+      lastReviewedAt: '2026-08-05T00:00:00.000Z',
+    };
+    await saveState(files.stateFile, {
+      [prKey('owner/repo', 1, account)]: initialEntry,
+    });
+
+    const events = [];
+    const dependencies = successfulDependencies(events);
+    dependencies.searchReviewRequestedPRs = async () => [
+      { repo: 'owner/repo', number: 1 },
+      { repo: 'owner/repo', number: 2 },
+    ];
+    const metadataCalls = new Map();
+    dependencies.getPullRequest = async ({ number }) => {
+      const calls = (metadataCalls.get(number) ?? 0) + 1;
+      metadataCalls.set(number, calls);
+      if (number === 1 && calls === 2) return confirmationMetadata;
+      return {
+        headRefOid: `sha-${number}`,
+        number,
+        title: `PR ${number}`,
+        url: `https://github.com/owner/repo/pull/${number}`,
+        body: '',
+        state: 'OPEN',
+      };
+    };
+
+    const result = await pollOnce({
+      config: config([account]),
+      ...files,
+      dependencies,
+    });
+
+    assert.equal(result.failed, true);
+    assert.equal(result.reviewed, 1);
+    assert.deepEqual(
+      result.failures.map(({ repo, number, note }) => ({ repo, number, note })),
+      [{ repo: 'owner/repo', number: 1, note: 'head verification failed' }],
+    );
+    assert.deepEqual(
+      result.outcomes.map(({ status, number }) => ({ status, number })),
+      [{ status: 'reviewed', number: 2 }],
+    );
+    assert.deepEqual(
+      events.filter((event) => event.startsWith('post:')),
+      ['post:work'],
+    );
+
+    const state = JSON.parse(await readFile(files.stateFile, 'utf8'));
+    assert.deepEqual(state[prKey('owner/repo', 1, account)], initialEntry);
+    assert.equal(state[prKey('owner/repo', 2, account)].lastReviewedSha, 'sha-2');
+  });
+}
 
 test('new commits at the mutation boundary defer without posting or recording', async (t) => {
   const files = await fixture(t);

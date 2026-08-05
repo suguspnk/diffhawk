@@ -59,7 +59,9 @@ test('any normalized review fits the posting body when all findings are unanchor
 test('explicit repository search preserves concatenated paginated gh output', async (t) => {
   let command;
   let args;
+  let spawnCount = 0;
   t.mock.method(childProcess, 'spawn', (spawnCommand, spawnArgs) => {
+    spawnCount += 1;
     command = spawnCommand;
     args = spawnArgs;
     const child = new EventEmitter();
@@ -73,6 +75,7 @@ test('explicit repository search preserves concatenated paginated gh output', as
       child.stdout.emit(
         'data',
         Buffer.from(
+          'meta|2|false\n' +
           'https://api.github.com/repos/acme/first|7\n' +
           'https://api.github.com/repos/acme/second|8\n',
         ),
@@ -92,10 +95,71 @@ test('explicit repository search preserves concatenated paginated gh output', as
   ]);
 
   assert.equal(command, 'gh');
+  assert.equal(spawnCount, 1);
   assert.ok(args.includes('--paginate'));
   assert.ok(args.includes('--jq'));
   assert.ok(args.includes('q=is:pr is:open review-requested:sera240910 repo:acme/first'));
   assert.ok(args.some((arg) => arg.includes('.repository_url')));
+});
+
+test('capped review-requested search falls back to the repository pull list', async (t) => {
+  const calls = [];
+  const fallbackPage = [
+    { number: 2001, requested_reviewers: [{ login: 'OCTOCAT' }] },
+    { number: 2002, requested_reviewers: [{ login: 'other-user' }] },
+  ];
+  t.mock.method(childProcess, 'spawn', (_spawnCommand, spawnArgs) => {
+    calls.push(spawnArgs);
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = {
+      write() {},
+      end() {},
+    };
+    process.nextTick(() => {
+      if (spawnArgs.includes('/search/issues')) {
+        child.stdout.emit(
+          'data',
+          Buffer.from(
+            'meta|1001|false\n' +
+            'https://api.github.com/repos/acme/repo|1\n',
+          ),
+        );
+      } else {
+        // gh applies --jq to each array-shaped page before returning stdout.
+        const fallbackNumbers = fallbackPage
+          .filter((pullRequest) => pullRequest.requested_reviewers.some(
+            (reviewer) => reviewer.login.toLowerCase() === 'octocat',
+          ))
+          .map((pullRequest) => String(pullRequest.number));
+        child.stdout.emit('data', Buffer.from(`${fallbackNumbers.join('\n')}\n`));
+      }
+      child.emit('close', 0);
+    });
+    return child;
+  });
+
+  const results = await searchReviewRequestedPRs({
+    username: 'octocat',
+    repo: 'acme/repo',
+  });
+
+  assert.deepEqual(results, [
+    { repo: 'acme/repo', number: 1 },
+    { repo: 'acme/repo', number: 2001 },
+  ]);
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].includes('--paginate'));
+  assert.ok(calls[1].includes('--method'));
+  assert.ok(calls[1].includes('GET'));
+  assert.ok(calls[1].includes('/repos/acme/repo/pulls'));
+  assert.ok(calls[1].includes('state=open'));
+  const fallbackJq = calls[1][calls[1].indexOf('--jq') + 1];
+  assert.equal(
+    fallbackJq,
+    '.[] | select(any(.requested_reviewers[]?; (.login // "") | ascii_downcase == "octocat")) | (.number | tostring)',
+  );
 });
 
 test('pull request metadata includes the current state', async (t) => {
@@ -353,7 +417,7 @@ test('diff anchor parsing fails closed before retaining too many anchors', () =>
 test('diff anchor parsing preserves normal multi-file hunk anchors', () => {
   const diff = [
     '+++ b/first.js',
-    '@@ -1,4 +1,4 @@',
+    '@@ -1,3 +1,3 @@',
     ' context',
     '-removed',
     '+added',
@@ -370,6 +434,20 @@ test('diff anchor parsing preserves normal multi-file hunk anchors', () => {
     'first.js:3',
     'second.js:9',
     'second.js:10',
+  ]);
+});
+
+test('diff anchor parsing treats header-looking added lines as source content', () => {
+  const diff = [
+    '+++ b/source.js',
+    '@@ -0,0 +1,2 @@',
+    '+++ b/not-a-header.js',
+    '+following source',
+  ].join('\n');
+
+  assert.deepEqual([...diffAnchors(diff)], [
+    'source.js:1',
+    'source.js:2',
   ]);
 });
 
