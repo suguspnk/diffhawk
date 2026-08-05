@@ -101,16 +101,18 @@ poller as a `pnpm` script / bin.
    fallback: it never expands discovery beyond PRs previously recorded for
    that configured identity and repository. For each target:
    ```bash
-   gh api --paginate --method GET /search/issues -f q="is:pr is:open review-requested:USERNAME repo:OWNER/REPO" -f per_page=100 --jq '.items[] | .repository_url + "|" + (.number | tostring)'
+   gh api --paginate --method GET /search/issues -f q="is:pr is:open review-requested:USERNAME repo:OWNER/REPO" -f per_page=100 --jq '"meta|" + (.total_count | tostring) + "|" + (.incomplete_results | tostring), (.items[] | .repository_url + "|" + (.number | tostring))'
    ```
    This covers both manual reviewer requests and requests GitHub created from a
    matching `CODEOWNERS` rule. Global search is intentionally unsupported:
    coverage must be explicit. Requested candidates are prioritized ahead of
    tracked fallback candidates, and the fallback remains limited to PRs already
    recorded for that identity and repository.
-   The paginated output is newline-delimited `repository_url|number` pairs;
-   the implementation parses each pair into the canonical `OWNER/REPO` slug
-   and PR number for subsequent calls.
+   The paginated output starts each page with `meta|total_count|incomplete_results`
+   and then emits newline-delimited `repository_url|number` pairs. If Search
+   reports more than 1,000 matches or an incomplete result window, the
+   implementation falls back to the paginated repository pull-request list
+   endpoint and filters its `requested_reviewers` to the direct user.
    Resolve each account with `gh auth token --hostname ... --user ...` and
    scope every child command with that credential.
 

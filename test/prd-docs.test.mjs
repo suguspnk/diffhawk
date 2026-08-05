@@ -177,7 +177,7 @@ test('PRD discovery command matches the explicit paginated GitHub search contrac
   assert.match(command, /-f per_page=100/u);
   assert.match(
     command,
-    /--jq '\.items\[\] \| \.repository_url \+ "\|" \+ \(\.number \| tostring\)'/u,
+    /--jq '"meta\|" \+ \(\.total_count \| tostring\) \+ "\|" \+ \(\.incomplete_results \| tostring\), \(\.items\[\] \| \.repository_url \+ "\|" \+ \(\.number \| tostring\)\)'/u,
   );
   assert.doesNotMatch(command, /review-requested:antonio/u);
   assert.match(prd, /Global search is intentionally unsupported: coverage must be explicit/u);
@@ -185,10 +185,12 @@ test('PRD discovery command matches the explicit paginated GitHub search contrac
   assert.match(prd, /scope every child command with that credential/u);
 
   assert.match(implementation, /'api', '--paginate', '--method', 'GET', '\/search\/issues'/u);
-  assert.match(implementation, /review-requested:\$\{username\} repo:\$\{repo\}/u);
+  assert.match(implementation, /review-requested:\$\{normalizedUsername\} repo:\$\{normalizedRepo\}/u);
   assert.match(implementation, /'-f', 'per_page=100'/u);
   assert.match(
     implementation,
-    /'--jq', '\.items\[\] \| \.repository_url \+ "\|" \+ \(\.number \| tostring\)'/u,
+    /'--jq',[\s\S]*?\.total_count[\s\S]*?\.incomplete_results[\s\S]*?\.items\[\][\s\S]*?\.repository_url/u,
   );
+  assert.match(implementation, /\/repos\/\$\{normalizedRepo\}\/pulls/u);
+  assert.match(implementation, /requested_reviewers/u);
 });

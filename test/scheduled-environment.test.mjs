@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +62,59 @@ test('scheduled environment rejects extra keys and non-string values', async (t)
 
   await writeFile(filePath, JSON.stringify({ PATH: 42 }));
   await assert.rejects(readScheduledEnvironment(filePath), /invalid.*PATH/);
+});
+
+test('scheduled runner logs missing environment startup failures beside the environment file', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-missing-'));
+  const environmentPath = path.join(directory, 'scheduler-environment.json');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/scheduled.mjs', environmentPath], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: path.join(directory, 'process-home'),
+      },
+    }),
+    (err) => {
+      assert.equal(err.code, 1);
+      assert.match(err.stderr, /\[fatal\] openmergelens: ENOENT: no such file or directory/);
+      assert.doesNotMatch(err.stderr, /at async/);
+      return true;
+    },
+  );
+
+  const log = await readFile(path.join(directory, 'poll.log'), 'utf8');
+  assert.match(log, /\[fatal\] openmergelens: ENOENT: no such file or directory/);
+  assert.doesNotMatch(log, /at async/);
+});
+
+test('scheduled runner logs malformed environment startup failures beside the environment file', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-malformed-'));
+  const environmentPath = path.join(directory, 'scheduler-environment.json');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(environmentPath, '{"PATH":', 'utf8');
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/scheduled.mjs', environmentPath], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: path.join(directory, 'process-home'),
+      },
+    }),
+    (err) => {
+      assert.equal(err.code, 1);
+      assert.match(err.stderr, /\[fatal\] openmergelens: .*JSON/);
+      assert.doesNotMatch(err.stderr, /at async/);
+      return true;
+    },
+  );
+
+  const log = await readFile(path.join(directory, 'poll.log'), 'utf8');
+  assert.match(log, /\[fatal\] openmergelens: .*JSON/);
+  assert.doesNotMatch(log, /at async/);
 });
 
 test('scheduled runner consumes its environment argument before poll argument parsing', async (t) => {
