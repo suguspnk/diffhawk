@@ -57,10 +57,10 @@ framing instead, so it keeps producing a working prompt.
 
 - No `.github/workflows/*.yml`, no webhooks, no tunnels. Pure client-side
   polling via `gh` CLI.
-- State is keyed by `OWNER/REPO#N` → last-reviewed head SHA, not a seen/unseen
-  boolean. A PR with new commits since its last review can be re-reviewed only
-  after the configured account is requested again in GitHub's **Reviewers** list;
-  new commits alone are not a trigger.
+- State is keyed by `HOST@USERNAME::OWNER/REPO#N` → last-reviewed head SHA, not
+  a seen/unseen boolean. A PR with new commits since its last review can be
+  re-reviewed only after the configured account is requested again in GitHub's
+  **Reviewers** list; new commits alone are not a trigger.
 - The reviewer backend (`reviewerCommand`) must stay swappable via config;
   never hardcode a specific CLI invocation (e.g. `claude -p`) directly in the
   polling logic.

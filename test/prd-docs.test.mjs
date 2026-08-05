@@ -30,6 +30,7 @@ test('PRD config shape remains valid for the current validator', async () => {
 
 test('project instructions describe the requested-review re-review trigger', async () => {
   const agents = await readFile(path.join(projectRoot, 'AGENTS.md'), 'utf8');
-  assert.match(agents, /requested again in GitHub's \*\*Reviewers\*\* list/u);
+  assert.match(agents, /HOST@USERNAME::OWNER\/REPO#N/u);
+  assert.match(agents, /requested\s+again\s+in\s+GitHub's\s+\*\*Reviewers\*\*\s+list/u);
   assert.match(agents, /new commits alone are not a trigger/u);
 });
