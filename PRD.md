@@ -30,9 +30,9 @@ a fresh session with: "implement the PR review bot per PRD.md".
      create requests.
   2. "Seen ≠ done": must not just track "have I looked at this PR" but track
      **new commits since the last review** so a freshly requested re-review can
-     target the new head. State is keyed by PR + last-reviewed commit SHA, not a
-     boolean seen/unseen flag. A changed SHA is not a standalone trigger; a
-     fresh requested-review entry is still required.
+     target the new head. State is keyed by reviewer account + PR + last-reviewed
+     commit SHA, not a boolean seen/unseen flag. A changed SHA is not a
+     standalone trigger; a fresh requested-review entry is still required.
   3. Needs a real review prompt, not "review this PR." Prompts are directly
      editable and shared per GitHub host/repository. Durable corrections are
      isolated per GitHub host/account/repository.
