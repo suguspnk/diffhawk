@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import {
   buildPrompt,
@@ -15,6 +16,7 @@ import {
 import {
   INCOMPLETE_INSPECTION_ERROR,
 } from '../lib/reviewer-github-gateway.mjs';
+import { MAX_REVIEW_STDOUT_BYTES } from '../lib/security-limits.mjs';
 
 const pr = {
   title: 'Fix off-by-one in pagination',
@@ -23,6 +25,39 @@ const pr = {
   url: 'https://github.com/example/repo/pull/42',
   headRefOid: 'abc123',
 };
+
+const githubEnvironmentKeys = [
+  'GH_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN',
+  'AWS_SECRET_ACCESS_KEY',
+  'UNRELATED_SECRET',
+];
+
+const gatewayAccess = {
+  repo: 'example/repo',
+  number: pr.number,
+  url: pr.url,
+  headRefOid: pr.headRefOid,
+  environment: {},
+};
+
+function testGateway() {
+  return {
+    mcpConfigPath: '/tmp/reviewer-mcp.json',
+    mcpServerPath: '/tmp/reviewer-mcp.mjs',
+    assertRequiredInspection() {},
+    async close() {},
+  };
+}
+
+function sentinelEnvironment() {
+  return Object.fromEntries([
+    ['PATH', '/bin'],
+    ...githubEnvironmentKeys.map((key) => [key, `sentinel-${key}`]),
+  ]);
+}
 
 test('parseCommand preserves its portable quoting and escaping grammar', () => {
   const cases = [
@@ -127,6 +162,125 @@ test('invokeReviewer uses the portable command preparation boundary', async () =
   });
 });
 
+test('invokeReviewer preserves split UTF-8 stdout from a real child', async () => {
+  const reviewerScript = [
+    "const value=Buffer.from(JSON.stringify({summary:'café',findings:[]}));",
+    "const split=value.indexOf(Buffer.from('é'))+1;",
+    'process.stdout.write(value.subarray(0,split));',
+    'setTimeout(()=>process.stdout.write(value.subarray(split)),25);',
+  ].join('');
+
+  const output = await invokeReviewer({
+    reviewerCommand: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(reviewerScript)}`,
+    prompt: '',
+  });
+
+  assert.deepEqual(JSON.parse(output), { summary: 'café', findings: [] });
+  assert.equal(output.includes('\uFFFD'), false);
+});
+
+test('invokeReviewer preserves split UTF-8 stderr in exit diagnostics', async () => {
+  const reviewerScript = [
+    "const value=Buffer.from('diagnostic café');",
+    "const split=value.indexOf(Buffer.from('é'))+1;",
+    'process.stderr.write(value.subarray(0,split));',
+    'setTimeout(()=>{process.stderr.write(value.subarray(split));process.exitCode=3;},25);',
+  ].join('');
+
+  await assert.rejects(
+    invokeReviewer({
+      reviewerCommand: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(reviewerScript)}`,
+      prompt: '',
+    }),
+    /exited 3: diagnostic café/u,
+  );
+});
+
+test('invokeReviewer sanitizes omitted and explicit environments before gateway launch', async () => {
+  const reviewerCommand = 'custom-reviewer {{mcp_config}} {{mcp_tool}}';
+  const sourceEnvironment = sentinelEnvironment();
+
+  for (const [label, environmentOptions] of [
+    ['omitted', { sourceEnvironment }],
+    ['explicit', { environment: sourceEnvironment }],
+  ]) {
+    let childEnvironment;
+    const output = await invokeReviewer({
+      reviewerCommand,
+      prompt: '',
+      githubAccess: gatewayAccess,
+      ...environmentOptions,
+      prepare: async (_command, _args, options) => {
+        childEnvironment = options.environment;
+        return {
+          command: process.execPath,
+          args: ['-e', 'process.stdout.write(JSON.stringify({summary:"ok",findings:[]}))'],
+          options: { shell: false },
+        };
+      },
+      startGitHubGateway: async () => testGateway(),
+    });
+
+    assert.deepEqual(JSON.parse(output), { summary: 'ok', findings: [] }, label);
+    assert.equal(childEnvironment.PATH, '/bin', label);
+    assert.equal(childEnvironment.GH_PROMPT_DISABLED, '1', label);
+    for (const key of githubEnvironmentKeys) {
+      assert.equal(childEnvironment[key], undefined, `${label}: ${key}`);
+    }
+  }
+});
+
+test('invokeMultiPassReview sanitizes process.env when environment is omitted', async () => {
+  const original = Object.fromEntries(
+    githubEnvironmentKeys.map((key) => [key, process.env[key]]),
+  );
+  const captures = [];
+
+  try {
+    for (const key of githubEnvironmentKeys) {
+      process.env[key] = `sentinel-${key}`;
+    }
+
+    const result = await invokeMultiPassReview({
+      reviewerCommand: 'custom-reviewer {{mcp_config}} {{mcp_tool}}',
+      template: 'Review {{diff}}',
+      learnings: '',
+      pr,
+      reviewFocusCount: 1,
+      githubAccess: gatewayAccess,
+      invoke: async (args) => {
+        captures.push({ invokeEnvironment: args.environment });
+        return invokeReviewer({
+          ...args,
+          prepare: async (_command, _args, options) => {
+            captures.push({ childEnvironment: options.environment });
+            return {
+              command: process.execPath,
+              args: ['-e', 'process.stdout.write(JSON.stringify({summary:"ok",findings:[]}))'],
+              options: { shell: false },
+            };
+          },
+          startGitHubGateway: async () => testGateway(),
+        });
+      },
+    });
+
+    assert.deepEqual(result, { summary: 'ok', findings: [] });
+    assert.equal(captures[0].invokeEnvironment, undefined);
+    for (const capture of captures.filter((entry) => entry.childEnvironment)) {
+      assert.equal(capture.childEnvironment.GH_PROMPT_DISABLED, '1');
+      for (const key of githubEnvironmentKeys) {
+        assert.equal(capture.childEnvironment[key], undefined, key);
+      }
+    }
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('invokeReviewer handles EPIPE when the reviewer exits before consuming a large prompt', async () => {
   const reviewerCommand = `"${process.execPath}" -e "process.exit(7)"`;
 
@@ -174,6 +328,9 @@ test('invokeReviewer rejects successful-looking output without required GitHub i
     '{{mcp_tool}}',
   ].join(' ');
   let gatewayClosed = false;
+  let gatewayOptions;
+  let reviewerEnvironment;
+  const scheduleGitHubOperation = async (operation) => operation();
 
   await assert.rejects(
     invokeReviewer({
@@ -185,23 +342,47 @@ test('invokeReviewer rejects successful-looking output without required GitHub i
         url: pr.url,
         headRefOid: pr.headRefOid,
         environment: {},
+        scheduleGitHubOperation,
       },
-      startGitHubGateway: async () => ({
-        mcpConfigPath: '/tmp/reviewer-mcp.json',
-        mcpServerPath: '/tmp/reviewer-mcp.mjs',
-        assertRequiredInspection() {
-          throw new Error(
-            'reviewer did not complete required GitHub inspection: missing PR metadata and cumulative PR diff',
-          );
-        },
-        async close() {
-          gatewayClosed = true;
-        },
-      }),
+      sourceEnvironment: {
+        PATH: '/bin',
+        GH_HOST: 'github.com',
+        GH_TOKEN: 'secret',
+      },
+      prepare: async (command, args, options) => {
+        reviewerEnvironment = options.environment;
+        return {
+          command: process.execPath,
+          args: [
+            '-e',
+            'process.stdout.write(JSON.stringify({summary:"looks valid",findings:[]}))',
+          ],
+          options: { shell: false },
+        };
+      },
+      startGitHubGateway: async (options) => {
+        gatewayOptions = options;
+        return {
+          mcpConfigPath: '/tmp/reviewer-mcp.json',
+          mcpServerPath: '/tmp/reviewer-mcp.mjs',
+          assertRequiredInspection() {
+            throw new Error(
+              'reviewer did not complete required GitHub inspection: missing PR metadata and cumulative PR diff',
+            );
+          },
+          async close() {
+            gatewayClosed = true;
+          },
+        };
+      },
     }),
     /missing PR metadata and cumulative PR diff/,
   );
   assert.equal(gatewayClosed, true);
+  assert.equal(gatewayOptions.scheduleGitHubOperation, scheduleGitHubOperation);
+  assert.equal(reviewerEnvironment.GH_TOKEN, undefined);
+  assert.equal(reviewerEnvironment.GH_HOST, undefined);
+  assert.equal(reviewerEnvironment.GH_PROMPT_DISABLED, '1');
 });
 
 test('invokeReviewer rejects a gateway that cannot verify required inspections', async () => {
@@ -456,6 +637,15 @@ test('parseFindings still parses valid JSON output produced from a custom templa
   assert.deepEqual(findings, [{ path: 'a.js', line: 3, severity: 'nit', comment: 'unused var' }]);
 });
 
+test('parseFindings recognizes schema keys encoded with JSON Unicode escapes', () => {
+  const rawOutput = String.raw`{"summ\u0061ry":"ok","find\u0069ngs":[]}`;
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'ok',
+    findings: [],
+  });
+});
+
 test('parseFindings skips prose braces before a valid JSON response', () => {
   const rawOutput = [
     'I reviewed the change; the placeholder {not JSON} is only prose.',
@@ -496,6 +686,43 @@ test('parseFindings does not cap valid extraction after many invalid schema-shap
 test('parseFindings handles a malformed brace flood in bounded time', { timeout: 1_000 }, () => {
   const result = parseFindings('{'.repeat(50_000) + 'x');
   assert.deepEqual(result.findings, []);
+});
+
+test('parseFindings rejects a max-sized unbalanced brace flood without heap amplification', { timeout: 2_000 }, async () => {
+  const moduleUrl = new URL('../lib/reviewer-adapter.mjs', import.meta.url).href;
+  const script = `
+    import { parseFindings } from ${JSON.stringify(moduleUrl)};
+    const before = process.memoryUsage().heapUsed;
+    const result = parseFindings('{'.repeat(${MAX_REVIEW_STDOUT_BYTES - 1}) + 'x');
+    const heapUsedDelta = process.memoryUsage().heapUsed - before;
+    if (result.findings.length !== 0 || result.summary.length > 16_000) {
+      process.exitCode = 1;
+    }
+    process.stdout.write(JSON.stringify({ heapUsedDelta }));
+  `;
+  const child = spawn(
+    process.execPath,
+    ['--max-old-space-size=64', '--input-type=module', '--eval', script],
+    { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+  );
+  const result = await new Promise((resolve, reject) => {
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error('max-sized brace flood child exceeded 1 second'));
+    }, 1_000);
+    child.once('error', reject);
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.once('close', (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ code, signal, stderr, stdout });
+    });
+  });
+
+  assert.equal(result.code, 0, result.stderr || `child signal: ${result.signal}`);
+  assert.ok(JSON.parse(result.stdout).heapUsedDelta < 32 * 1024 * 1024);
 });
 
 test('parseFindings handles fenced JSON and braces inside JSON strings', () => {

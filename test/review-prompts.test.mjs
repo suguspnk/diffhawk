@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +59,49 @@ test('ensureReviewPrompt seeds once and never overwrites custom content', async 
   await writeFile(destination, 'custom\n');
   await ensureReviewPrompt('github.com', 'owner/repo', { templatePath });
   assert.equal(await readFile(destination, 'utf8'), 'custom\n');
+});
+
+test('dry-run prompt lookup does not create or harden local files', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const home = await withHome(t);
+  const templatePath = path.join(home, 'template.md');
+  const destinationPath = reviewPromptPathFor('github.com', 'owner/repo');
+  await writeFile(templatePath, 'bundled template\n');
+
+  const fallback = await ensureReviewPrompt('github.com', 'owner/repo', {
+    templatePath,
+    dryRun: true,
+  });
+  assert.equal(fallback, templatePath);
+  await assert.rejects(readFile(destinationPath, 'utf8'), { code: 'ENOENT' });
+
+  await mkdir(path.dirname(destinationPath), { recursive: true });
+  await writeFile(destinationPath, 'custom prompt\n');
+  await chmod(destinationPath, 0o644);
+  const existing = await ensureReviewPrompt('github.com', 'owner/repo', {
+    templatePath,
+    dryRun: true,
+  });
+  assert.equal(existing, destinationPath);
+  assert.equal(await readFile(destinationPath, 'utf8'), 'custom prompt\n');
+  assert.equal((await stat(destinationPath)).mode & 0o777, 0o644);
+});
+
+test('real prompt initialization keeps files private', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const home = await withHome(t);
+  const templatePath = path.join(home, 'template.md');
+  await writeFile(templatePath, 'template\n');
+
+  const destination = await ensureReviewPrompt('github.com', 'owner/repo', {
+    templatePath,
+  });
+  assert.equal((await stat(destination)).mode & 0o777, 0o600);
+  await chmod(destination, 0o644);
+  await ensureReviewPrompt('github.com', 'owner/repo', { templatePath });
+  assert.equal((await stat(destination)).mode & 0o777, 0o600);
 });
 
 test('two accounts on the same host use the same prompt path', async (t) => {

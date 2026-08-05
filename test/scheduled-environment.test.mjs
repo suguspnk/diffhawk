@@ -14,7 +14,7 @@ import {
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('scheduled environment restores the poll and Linux notification session keys', async (t) => {
+test('FINDING-FRESH-002 scheduled environment restores GitHub CLI config and session keys', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-scheduled-env-'));
   const filePath = path.join(directory, 'scheduler-environment.json');
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -23,6 +23,7 @@ test('scheduled environment restores the poll and Linux notification session key
     HOME: '/home/reviewer',
     CODEX_HOME: '/home/reviewer/.codex',
     CLAUDE_CONFIG_DIR: '/home/reviewer/.claude',
+    GH_CONFIG_DIR: '/home/reviewer/.config/gh',
     OPENMERGELENS_HOME: '/custom/state',
     DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
     DISPLAY: ':0',
@@ -38,6 +39,7 @@ test('scheduled environment restores the poll and Linux notification session key
     HOME: '/home/reviewer',
     CODEX_HOME: '/home/reviewer/.codex',
     CLAUDE_CONFIG_DIR: '/home/reviewer/.claude',
+    GH_CONFIG_DIR: '/home/reviewer/.config/gh',
     OPENMERGELENS_HOME: '/custom/state',
     DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
     DISPLAY: ':0',
@@ -54,6 +56,9 @@ test('scheduled environment rejects extra keys and non-string values', async (t)
 
   await writeFile(filePath, JSON.stringify({ NODE_OPTIONS: '--require bad.js' }));
   await assert.rejects(readScheduledEnvironment(filePath), /invalid.*NODE_OPTIONS/);
+
+  await writeFile(filePath, JSON.stringify({ GH_TOKEN: 'do-not-persist' }));
+  await assert.rejects(readScheduledEnvironment(filePath), /invalid.*GH_TOKEN/);
 
   await writeFile(filePath, JSON.stringify({ PATH: 42 }));
   await assert.rejects(readScheduledEnvironment(filePath), /invalid.*PATH/);

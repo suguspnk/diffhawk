@@ -4,13 +4,27 @@ import { EventEmitter } from 'node:events';
 import childProcess from 'node:child_process';
 import {
   createReviewMarker,
+  diffAnchors,
   getPullRequest,
+  getPullRequestDiff,
   postReview,
+  prepareReview,
   retryMetadataFromDiagnostic,
   reviewAlreadyPosted,
   searchReviewRequestedPRs,
 } from '../lib/github.mjs';
 import { normalizeReviewObject } from '../lib/reviewer-adapter.mjs';
+import {
+  REVIEW_MUTATION_BOUNDARY_CODE,
+  ReviewMutationBoundaryError,
+} from '../lib/review-mutation-boundary.mjs';
+import {
+  createGitHubMutationQueue,
+  MAX_TIMER_DELAY_MS,
+} from '../lib/github-mutation-queue.mjs';
+import {
+  MAX_DIFF_ANCHORS,
+} from '../lib/security-limits.mjs';
 
 test('any normalized review fits the posting body when all findings are unanchored', async () => {
   const normalized = normalizeReviewObject({
@@ -119,6 +133,36 @@ test('pull request metadata includes the current state', async (t) => {
   assert.ok(fields.includes('state'));
 });
 
+test('gh subprocess preserves UTF-8 split across diff and metadata chunks', async (t) => {
+  const outputs = [
+    Buffer.from('diff --git a/café.txt b/café.txt\n'),
+    Buffer.from(JSON.stringify({ title: 'café', state: 'OPEN' })),
+  ];
+  t.mock.method(childProcess, 'spawn', () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = {
+      write() {},
+      end() {},
+    };
+    const output = outputs.shift();
+    process.nextTick(() => {
+      const splitAt = output.indexOf(0xc3) + 1;
+      child.stdout.emit('data', output.subarray(0, splitAt));
+      child.stdout.emit('data', output.subarray(splitAt));
+      child.emit('close', 0);
+    });
+    return child;
+  });
+
+  const diff = await getPullRequestDiff({ repo: 'owner/repo', number: 7 });
+  const metadata = await getPullRequest({ repo: 'owner/repo', number: 7 });
+
+  assert.equal(diff, 'diff --git a/café.txt b/café.txt\n');
+  assert.equal(metadata.title, 'café');
+});
+
 test('gh subprocess output is bounded before parsing', async (t) => {
   t.mock.method(childProcess, 'spawn', () => {
     const child = new EventEmitter();
@@ -154,6 +198,20 @@ test('GitHub response headers expose Retry-After and rate-reset timing', () => {
     {
       retryAfterMs: 7_000,
       rateLimitResetAtMs: 2_000_000_000_000,
+    },
+  );
+});
+
+test('GitHub retry metadata bounds oversized timer values', () => {
+  assert.deepEqual(
+    retryMetadataFromDiagnostic(
+      'HTTP/2.0 429 Too Many Requests\r\n' +
+      'retry-after: 3000000000\r\n' +
+      'x-ratelimit-reset: 999999999999999999999999\r\n',
+    ),
+    {
+      retryAfterMs: MAX_TIMER_DELAY_MS,
+      rateLimitResetAtMs: undefined,
     },
   );
 });
@@ -194,6 +252,125 @@ test('postReview requires mutation scheduling at its GitHub write boundary', asy
     postReview(options),
     /requires a GitHub mutation scheduler/,
   );
+});
+
+for (const reason of ['stale', 'closed']) {
+  test(`postReview rethrows a ${reason} mutation-boundary sentinel before reconciliation`, async () => {
+    const calls = [];
+    const options = reviewOptions({
+      scheduleMutation: async () => {
+        throw new ReviewMutationBoundaryError(reason);
+      },
+      request: async (args) => {
+        calls.push(args[args.indexOf('--method') + 1]);
+        return '';
+      },
+    });
+
+    await assert.rejects(
+      postReview(options),
+      (error) =>
+        error instanceof ReviewMutationBoundaryError &&
+        error.code === REVIEW_MUTATION_BOUNDARY_CODE &&
+        error.reason === reason,
+    );
+    assert.deepEqual(calls, []);
+  });
+}
+
+test('postReview keeps the fallback mutation boundary guarded', async () => {
+  const calls = [];
+  let mutationCount = 0;
+  const options = reviewOptions({
+    scheduleMutation: async (operation) => {
+      mutationCount += 1;
+      if (mutationCount === 3) {
+        throw new ReviewMutationBoundaryError('stale');
+      }
+      return operation();
+    },
+    request: async (args) => {
+      const method = args[args.indexOf('--method') + 1];
+      calls.push(method);
+      if (method === 'GET') return '';
+      throw Object.assign(new Error('HTTP 422: Validation Failed'), { status: 422 });
+    },
+  });
+
+  await assert.rejects(
+    postReview(options),
+    (error) =>
+      error instanceof ReviewMutationBoundaryError &&
+      error.reason === 'stale',
+  );
+  assert.deepEqual(calls, ['POST', 'GET']);
+  assert.equal(mutationCount, 3);
+});
+
+test('prepareReview shares posting validation and diff-anchor classification', () => {
+  const prepared = prepareReview({
+    ...reviewOptions(),
+    comments: [
+      ...reviewOptions().comments,
+      {
+        path: 'missing.js',
+        line: 99,
+        severity: 'major',
+        comment: 'Unanchored finding',
+      },
+    ],
+    diff: '+++ b/file.js\n@@ -0,0 +1 @@\n+line\n',
+  });
+
+  assert.equal(prepared.anchorable.length, 1);
+  assert.equal(prepared.unanchorable.length, 1);
+  assert.equal(prepared.payload.comments.length, 1);
+  assert.match(prepared.reviewBody, /Additional findings \(could not anchor to a diff line\)/);
+  assert.match(prepared.reviewBody, /missing\.js:99/);
+});
+
+test('diff anchor parsing fails closed before retaining too many anchors', () => {
+  const lineCount = MAX_DIFF_ANCHORS + 1;
+  const diff = `+++ b/large.js\n@@ -0,${lineCount} +1,${lineCount} @@\n` +
+    '+line\n'.repeat(lineCount);
+
+  assert.deepEqual(diffAnchors(diff), new Set());
+
+  const prepared = prepareReview({
+    ...reviewOptions(),
+    comments: [{
+      path: 'large.js',
+      line: 1,
+      severity: 'major',
+      comment: 'Large diff finding',
+    }],
+    diff,
+  });
+  assert.equal(prepared.anchorable.length, 0);
+  assert.equal(prepared.unanchorable.length, 1);
+});
+
+test('diff anchor parsing preserves normal multi-file hunk anchors', () => {
+  const diff = [
+    '+++ b/first.js',
+    '@@ -1,4 +1,4 @@',
+    ' context',
+    '-removed',
+    '+added',
+    ' trailing context',
+    '+++ b/second.js',
+    '@@ -8,0 +9,2 @@',
+    '+second one',
+    '+second two',
+  ].join('\n');
+
+  assert.deepEqual([...diffAnchors(diff)], [
+    'first.js:1',
+    'first.js:2',
+    'first.js:3',
+    'second.js:9',
+    'second.js:10',
+  ]);
 });
 
 test('review markers are stable across GitHub identifier casing and scoped to a commit', () => {
@@ -293,6 +470,59 @@ test('postReview stops immediately when GitHub rate-limits the mutation', async 
   assert.deepEqual(calls, ['POST']);
 });
 
+test('postReview puts reconciliation rate limits into the mutation queue backoff', async () => {
+  let clock = 20_000;
+  const sleeps = [];
+  const calls = [];
+  const reconciliationError = Object.assign(
+    new Error('HTTP 429: Too Many Requests'),
+    { status: 429, retryAfterMs: 5_000, rateLimitResetAtMs: 60_000 },
+  );
+  const queue = createGitHubMutationQueue({
+    minIntervalMs: 1_000,
+    now: () => clock,
+    sleep: async (milliseconds) => {
+      sleeps.push(milliseconds);
+      clock += milliseconds;
+    },
+  });
+  const request = async (args) => {
+    const method = args[args.indexOf('--method') + 1];
+    calls.push(method);
+    if (method === 'POST') {
+      throw Object.assign(new Error('HTTP 422: Validation Failed'), { status: 422 });
+    }
+    throw reconciliationError;
+  };
+
+  let failure;
+  await assert.rejects(
+    postReview({
+      ...reviewOptions(),
+      request,
+      scheduleMutation: (operation) => queue.run(operation),
+    }),
+    (error) => {
+      failure = error;
+      return error.status === 429 &&
+        error.retryAfterMs === 5_000 &&
+        error.rateLimitResetAtMs === 60_000 &&
+        error.cause === reconciliationError &&
+        error.originalError?.status === 422;
+    },
+  );
+
+  let nextMutationStartedAt;
+  await queue.run(async () => {
+    nextMutationStartedAt = clock;
+  });
+
+  assert.equal(failure.cause, reconciliationError);
+  assert.deepEqual(calls, ['POST', 'GET']);
+  assert.deepEqual(sleeps, [1_000, 5_000]);
+  assert.equal(nextMutationStartedAt, 26_000);
+});
+
 test('postReview fallback stops without reconciliation when GitHub rate-limits it', async () => {
   const calls = [];
   let postCount = 0;
@@ -317,6 +547,7 @@ test('postReview fallback stops without reconciliation when GitHub rate-limits i
 test('postReview treats an ambiguously successful request as complete after reconciliation', async () => {
   const options = reviewOptions();
   const calls = [];
+  let scheduledMutations = 0;
   let submitted;
   const request = async (args, requestOptions) => {
     const method = args[args.indexOf('--method') + 1];
@@ -333,8 +564,16 @@ test('postReview treats an ambiguously successful request as complete after reco
     });
   };
 
-  await postReview({ ...options, request });
+  await postReview({
+    ...options,
+    request,
+    scheduleMutation: async (operation) => {
+      scheduledMutations += 1;
+      return operation();
+    },
+  });
   assert.deepEqual(calls, ['POST', 'GET']);
+  assert.equal(scheduledMutations, 2);
   assert.match(submitted.body, new RegExp(options.marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(
     submitted.body,

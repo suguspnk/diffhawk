@@ -36,3 +36,159 @@ test('project instructions describe the requested-review re-review trigger', asy
   assert.match(agents, /requested\s+again\s+in\s+GitHub's\s+\*\*Reviewers\*\*\s+list/u);
   assert.match(agents, /new commits alone are not a trigger/u);
 });
+
+test('PRD notification contract documents deferred outcomes as non-attention', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const match = prd.match(/9\. \*\*Notify after the complete poll settles\.\*[\s\S]*?(?=\n\n10\.)/u);
+  assert.ok(match, 'PRD must include the notification contract');
+  assert.match(
+    match[0],
+    /deferred\s+outcomes\s+\(informational\s+and\s+not\s+requiring\s+attention\)/u,
+  );
+});
+
+test('PRD documents the current reviewer and GitHub review contracts', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+
+  assert.doesNotMatch(prd, /gh pr comment/u);
+  assert.doesNotMatch(prd, /prompt \+ diff/u);
+  assert.match(prd, /formal GitHub PR review.*inline comments/su);
+  assert.match(prd, /REST.*reviews endpoint.*\/pulls\/<N>\/reviews/su);
+  assert.match(prd, /prompt-only.*stdin.*constrained MCP.*structured review JSON/su);
+  assert.match(prd, /diff.*never embedded in reviewer input/su);
+});
+
+test('PRD keeps synthesis on the constrained MCP inspection path', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const pipeline = prd.match(
+    /5\. \*\*Run independent reviewer passes\*\*[\s\S]*?(?=\n\n6\.)/u,
+  );
+  assert.ok(pipeline, 'PRD must include the reviewer pipeline contract');
+
+  const synthesis = pipeline[0].match(
+    /A final synthesis invocation[\s\S]*?result to post\./u,
+  );
+  assert.ok(synthesis, 'PRD must describe the final synthesis invocation');
+  assert.match(synthesis[0], /same constrained MCP inspection\s+tool\/gateway/u);
+  assert.match(
+    synthesis[0],
+    /receives all candidate findings[\s\S]*?reconciles those candidates[\s\S]*?merges duplicate root causes[\s\S]*?discards unsupported claims/u,
+  );
+  assert.doesNotMatch(synthesis[0], /\bgh\b/u);
+});
+
+test('PRD scheduling contract documents the generated scheduled runner', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const match = prd.match(/## Scheduling\s*([\s\S]*?)(?=\n## Auth prerequisites)/u);
+  assert.ok(match, 'PRD must include the scheduling contract');
+  const scheduling = match[1];
+
+  assert.match(scheduling, /bin\/scheduled\.mjs/u);
+  assert.match(scheduling, /scheduler-environment\.json/u);
+  assert.match(scheduling, /bin\/scheduled-win32\.vbs/u);
+  assert.match(scheduling, /node bin\/poll\.mjs` remains a one-shot/u);
+  assert.match(scheduling, /node bin\/poll\.mjs --dry-run/u);
+  assert.doesNotMatch(scheduling, /cron` entry[^\n]*running `node bin\/poll\.mjs`/u);
+  assert.doesNotMatch(scheduling, /Windows Task Scheduler entry running `node bin\/poll\.mjs`/u);
+});
+
+test('PRD documents cadence-safe cron intervals separately from host schedulers', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const scheduling = prd.match(/## Scheduling\s*([\s\S]*?)(?=\n## Auth prerequisites)/u)?.[1];
+
+  assert.ok(scheduling, 'PRD must include the scheduling contract');
+  assert.match(
+    scheduling,
+    /Supported\s+intervals\s+are\s+1,\s+2,\s+3,\s+4,\s+5,\s+6,\s+10,\s+12,\s+15,\s+20,\s+and\s+30\s+minutes/u,
+  );
+  assert.match(scheduling, /values such as 7 or 59 are rejected/u);
+  assert.match(
+    scheduling,
+    /launchd and Task Scheduler accept positive whole-minute intervals from 1\s+through 1439[\s\S]*?this shared maximum matches Task Scheduler's `\/mo` minute\s+limit/u,
+  );
+});
+
+test('PRD requires a persistent published install before configuring schedules', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const onboarding = prd.match(/## Onboarding \(`openmergelens init`\)[\s\S]*?(?=\n## Decisions)/u);
+  const scheduling = prd.match(/## Scheduling\s*([\s\S]*?)(?=\n## Auth prerequisites)/u);
+
+  assert.ok(onboarding, 'PRD must include the onboarding contract');
+  assert.ok(scheduling, 'PRD must include the scheduling contract');
+  assert.match(onboarding[0], /npm install -g openmergelens[\s\S]*?openmergelens init/u);
+  assert.match(onboarding[0], /pnpm add --global openmergelens/u);
+  assert.doesNotMatch(onboarding[0], /pnpm dlx openmergelens init/u);
+  assert.match(
+    onboarding[0],
+    /Temporary `npx` and `pnpm dlx` runners are for manual, one-shot[\s\S]*?do not use them to configure an installed OS schedule/u,
+  );
+  assert.match(
+    scheduling[1],
+    /Before configuring an installed OS schedule[\s\S]*?install OpenMergeLens persistently[\s\S]*?npm install -g openmergelens/u,
+  );
+  assert.match(scheduling[1], /temporary `npx` or `pnpm dlx` runners/u);
+  assert.match(scheduling[1], /Use `npx`\s+or\s+`pnpm dlx` only for manual, one-shot commands/u);
+  assert.match(onboarding[0], /node bin\/init\.mjs` as usual/u);
+});
+
+test('PRD documents user-home state storage rather than repository-root state', async () => {
+  const prd = await readFile(path.join(projectRoot, 'PRD.md'), 'utf8');
+  const configExample = JSON.parse(
+    await readFile(path.join(projectRoot, 'config.example.json'), 'utf8'),
+  );
+  const architecture = prd.match(/## Architecture\s*```[\s\S]*?```/u);
+  const runtimeState = prd.match(/## Per-user runtime state\s*([\s\S]*?)(?=\n## )/u);
+
+  assert.ok(architecture, 'PRD must include the architecture tree');
+  assert.ok(runtimeState, 'PRD must include the per-user runtime state contract');
+  assert.doesNotMatch(architecture[0], /├── state\.json/u);
+  assert.doesNotMatch(architecture[0], /state\.json\s*\(gitignored/u);
+  assert.match(runtimeState[1], /All per-user runtime state lives outside this repository/u);
+  assert.match(runtimeState[1], /`~\/\.openmergelens\/` by default/u);
+  assert.match(runtimeState[1], /`OPENMERGELENS_HOME` environment variable/u);
+  assert.match(
+    runtimeState[1],
+    /config\.json.*state\.json.*poll\.log.*reports.*review-prompts.*learnings.*scheduler-environment\.json/su,
+  );
+  assert.match(prd, /`stateFile` supports an explicit absolute path/u);
+  assert.match(prd, /Relative values are resolved\s+under the user home/su);
+  assert.equal(configExample.stateFile, './state.json');
+});
+
+test('PRD discovery command matches the explicit paginated GitHub search contract', async () => {
+  const [prd, github] = await Promise.all([
+    readFile(path.join(projectRoot, 'PRD.md'), 'utf8'),
+    readFile(path.join(projectRoot, 'lib/github.mjs'), 'utf8'),
+  ]);
+  const discovery = prd.match(
+    /1\. \*\*Discover candidate PRs\.\*[\s\S]*?```bash\s*([\s\S]*?)\s*```/u,
+  );
+  const searchImplementation = github.match(
+    /export async function searchReviewRequestedPRs\([\s\S]*?(?=\nexport async function getPullRequest\()/u,
+  );
+
+  assert.ok(discovery, 'PRD must include the discovery command');
+  assert.ok(searchImplementation, 'GitHub search implementation must remain discoverable');
+  const command = discovery[1];
+  const implementation = searchImplementation[0];
+
+  assert.match(command, /gh api --paginate --method GET \/search\/issues/u);
+  assert.match(command, /review-requested:USERNAME repo:OWNER\/REPO/u);
+  assert.match(command, /-f per_page=100/u);
+  assert.match(
+    command,
+    /--jq '\.items\[\] \| \.repository_url \+ "\|" \+ \(\.number \| tostring\)'/u,
+  );
+  assert.doesNotMatch(command, /review-requested:antonio/u);
+  assert.match(prd, /Global search is intentionally unsupported: coverage must be explicit/u);
+  assert.match(prd, /Resolve each account with `gh auth token --hostname \.\.\. --user \.\.\.`/u);
+  assert.match(prd, /scope every child command with that credential/u);
+
+  assert.match(implementation, /'api', '--paginate', '--method', 'GET', '\/search\/issues'/u);
+  assert.match(implementation, /review-requested:\$\{username\} repo:\$\{repo\}/u);
+  assert.match(implementation, /'-f', 'per_page=100'/u);
+  assert.match(
+    implementation,
+    /'--jq', '\.items\[\] \| \.repository_url \+ "\|" \+ \(\.number \| tostring\)'/u,
+  );
+});

@@ -6,7 +6,11 @@ import {
   resolveExecutable,
   terminateProcessTree,
 } from '../lib/process-launch.mjs';
+import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 test('resolveExecutable uses the platform lookup and first concrete result', async () => {
   const calls = [];
@@ -29,6 +33,67 @@ test('resolveExecutable uses the platform lookup and first concrete result', asy
   );
   assert.deepEqual(calls[0].slice(0, 2), ['where.exe', ['codex']]);
   assert.equal(accessCalled, false);
+});
+
+for (const [platform, lookupCommand] of [
+  ['linux', 'which'],
+  ['win32', 'where.exe'],
+]) {
+  test(`prepareCommand bounds a hanging ${lookupCommand} lookup`, async () => {
+    const calls = [];
+    const start = Date.now();
+
+    await assert.rejects(
+      prepareCommand('reviewer', [], {
+        platform,
+        environment: { PATH: platform === 'win32' ? 'C:\\Tools' : '/tools' },
+        lookup: async (...args) => {
+          calls.push(args);
+          await new Promise(() => {});
+        },
+        lookupTimeoutMs: 10,
+      }),
+      (error) => {
+        assert.equal(error.code, 'ETIMEDOUT');
+        assert.match(error.message, new RegExp(`${lookupCommand} lookup timed out`));
+        return true;
+      },
+    );
+
+    assert.equal(calls[0][0], lookupCommand);
+    assert.deepEqual(calls[0][1], ['reviewer']);
+    assert.equal(calls[0][2].timeout, 10);
+    assert.ok(Date.now() - start < 500);
+  });
+}
+
+test('resolveExecutable passes its timeout to execFile and bounds a timed child', async () => {
+  const timeoutMs = 20;
+  const calls = [];
+  const lookup = (lookupCommand, args, options) => {
+    calls.push({ lookupCommand, args, options });
+    return execFileAsync(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 1000)'],
+      options,
+    );
+  };
+  const start = Date.now();
+
+  await assert.rejects(
+    resolveExecutable('reviewer', {
+      platform: 'linux',
+      environment: { PATH: '/tools' },
+      lookup,
+      lookupTimeoutMs: timeoutMs,
+    }),
+    { code: 'ETIMEDOUT' },
+  );
+
+  assert.equal(calls[0].lookupCommand, 'which');
+  assert.deepEqual(calls[0].args, ['reviewer']);
+  assert.equal(calls[0].options.timeout, timeoutMs);
+  assert.ok(Date.now() - start < 500);
 });
 
 test('resolveExecutable prefers Windows PATHEXT matches over extensionless shims', async () => {

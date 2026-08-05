@@ -2,16 +2,17 @@
 
 Local, agent-agnostic poller that auto-reviews open GitHub PRs whenever a
 configured account is the requested reviewer. The request can be added manually
-or created automatically by a matching `CODEOWNERS` rule. After OpenMergeLens
-reviews a PR, new commits alone are not a trigger: the PR author must request
-that account again in GitHub's **Reviewers** list before another review runs.
-Posts results as a PR review automatically, with no per-run approval needed.
+or created automatically by a matching `CODEOWNERS` rule. It also re-reviews
+previously reviewed PRs for the exact host, account, and repository when their
+head changes, using a bounded tracked-state fallback rather than global search.
+Posts results as a formal GitHub PR review with inline comments automatically,
+with no per-run approval needed.
 
 Repo: `~/Symph/projects/pr-review-bot` (git initialized with no remote; keep it
 local only unless explicitly decided otherwise later).
 
-This doc is the full spec. Nothing has been implemented yet: pick this up in
-a fresh session with: "implement the PR review bot per PRD.md".
+This doc is the full spec for the current implementation. Keep it aligned with
+the shipped CLI and its tests when behavior changes.
 
 ## Why this exists (context from design conversation)
 
@@ -36,13 +37,15 @@ a fresh session with: "implement the PR review bot per PRD.md".
   3. Needs a real review prompt, not "review this PR." Prompts are directly
      editable and shared per GitHub host/repository. Durable corrections are
      isolated per GitHub host/account/repository.
-  4. Output: post directly as a formal GitHub PR review, as pre-approved by the
-     user for this specific automated flow, with no confirmation prompt needed
-     each run. (This approval is scoped to this bot's own posting behavior and
-     is not a general standing permission for PR comments in other contexts.)
+  4. Output: post directly as a formal GitHub PR review through the REST
+     reviews endpoint, with inline comments, as pre-approved by the user for
+     this specific automated flow, with no confirmation prompt needed each run.
+     (This approval is scoped to this bot's own posting behavior and is not a
+     general standing permission for PR comments in other contexts.)
   5. Agent-agnostic: don't hardcode a `claude` CLI invocation. The "reviewer
-     backend" should be a swappable command/adapter so any CLI capable of
-     taking a prompt + diff and returning review text can be plugged in.
+     backend" should be a swappable prompt-only stdin command/adapter that uses
+     the constrained MCP inspection tool and returns structured review JSON.
+     The diff is inspected through MCP and is never embedded in reviewer input.
   6. Run mode: no preference given. Default to **one-shot script + externally
      scheduled** (cron/launchd/`/loop`), since that's simplest to test and
      most flexible. A built-in loop mode can be added later if wanted.
@@ -55,7 +58,6 @@ openmergelens/
 ├── package.json            (pnpm, type: module, bin entry)
 ├── pnpm-lock.yaml
 ├── config.example.json     (versioned multi-account config template)
-├── state.json              (gitignored: per-account PR last-reviewed SHA, local only)
 ├── docs/
 │   └── review-prompt.default.md (bundled seed for editable repository prompts)
 ├── bin/
@@ -67,8 +69,20 @@ openmergelens/
 │   ├── reviewer-adapter.mjs (abstraction over the actual review-generating command; parses structured JSON findings)
 │   ├── agent-detect.mjs     (probes PATH + auth status for known reviewer CLIs: claude, codex)
 │   └── scheduler.mjs        (installs cron/launchd/Task Scheduler entries, with confirm-before-write)
-└── .gitignore               (state.json, node_modules, .env, any local secrets)
+└── .gitignore               (defensive local-runtime files, node_modules, .env, secrets)
 ```
+
+## Per-user runtime state
+
+All per-user runtime state lives outside this repository under the user home:
+`~/.openmergelens/` by default, or the directory selected by the
+`OPENMERGELENS_HOME` environment variable. This includes `config.json`,
+`state.json`, `poll.log`, retained `reports/`, editable `docs/review-prompts/`
+and `docs/learnings/` files, and the generated `scheduler-environment.json`.
+The repository `.gitignore` still ignores local-runtime names such as
+`state.json`, `state.json.lock`, `config.json`, and `poll.log` as a defensive
+safeguard if someone deliberately points `OPENMERGELENS_HOME` at a checkout;
+that does not make the repository root the normal storage location.
 
 **Decided: Node, package-managed with pnpm.** Cross-OS is a hard requirement
 (it must work on Windows without WSL/Git Bash/Cygwin). Bash doesn't run natively
@@ -81,22 +95,32 @@ poller as a `pnpm` script / bin.
 ## Core logic (one poll cycle)
 
 1. **Discover candidate PRs.** For every configured account and every
-   explicitly selected repository, search only for open PRs where that account
-   is currently an explicitly requested reviewer:
+   explicitly selected repository, search for open PRs that currently request
+   that account's review, then merge those results with locally tracked PR
+   numbers for the exact host/account/repository. Tracked state is a bounded
+   fallback: it never expands discovery beyond PRs previously recorded for
+   that configured identity and repository. For each target:
    ```bash
-   gh api /search/issues -f q="is:pr is:open review-requested:antonio repo:OWNER/REPO" --jq '.items[].number'
+   gh api --paginate --method GET /search/issues -f q="is:pr is:open review-requested:USERNAME repo:OWNER/REPO" -f per_page=100 --jq '.items[] | .repository_url + "|" + (.number | tostring)'
    ```
    This covers both manual reviewer requests and requests GitHub created from a
    matching `CODEOWNERS` rule. Global search is intentionally unsupported:
-   coverage must be explicit. A new commit on a previously reviewed PR does not
-   enter the queue until the author re-requests the account in **Reviewers**.
+   coverage must be explicit. Requested candidates are prioritized ahead of
+   tracked fallback candidates, and the fallback remains limited to PRs already
+   recorded for that identity and repository.
+   The paginated output is newline-delimited `repository_url|number` pairs;
+   the implementation parses each pair into the canonical `OWNER/REPO` slug
+   and PR number for subsequent calls.
    Resolve each account with `gh auth token --hostname ... --user ...` and
    scope every child command with that credential.
 
 2. **Review candidates in bounded concurrent batches.** Build an independent
-   queue per account, deduplicate within that account, then round-robin the
-   queues into one global queue. Process up to `reviewBatchSize` PRs
-   concurrently across all accounts (default `5`).
+   queue per account, deduplicate within that account, prioritize currently
+   requested candidates ahead of tracked fallback candidates, then round-robin
+   the queues into one global queue. Process up to `reviewBatchSize` PRs
+   concurrently across all accounts (default `5`), subject to a built-in
+   admission cap of three reviews that bounds aggregate diff, gateway, prompt,
+   and reviewer-process memory.
    For each candidate, get the current head commit SHA:
    ```bash
    gh pr view <N> --repo OWNER/REPO --json headRefOid,number,title,url
@@ -106,8 +130,8 @@ poller as a `pnpm` script / bin.
    - Key: `HOST@USERNAME::OWNER/REPO#N`
    - If key absent → new PR, needs review.
    - If key present and stored SHA != current `headRefOid` → new commits since
-     last review; if this PR was returned by the requested-reviewer search, it
-     needs re-review.
+     last review; if this PR was returned by either the requested-reviewer
+     search or the bounded tracked fallback, it needs re-review.
    - If key present and SHA matches → skip, already reviewed this exact head.
    - If local state is missing, check the PR's submitted reviews for
      OpenMergeLens's opaque account/repo/commit marker. If found, repair local
@@ -162,16 +186,19 @@ poller as a `pnpm` script / bin.
    correctness, security and trust boundaries, integration and reliability,
    and tests plus an adversarial rescan. Each pass returns structured findings.
    A final synthesis invocation receives all candidate findings, independently
-   checks the linked PR with `gh`, merges duplicate root causes, discards
-   unsupported claims, and returns the one summary/findings result to post.
+   re-inspects the linked PR through the same constrained MCP inspection
+   tool/gateway, reconciles those candidates against the current cumulative PR,
+   merges duplicate root causes, discards unsupported claims, and returns the
+   one summary/findings result to post.
    Re-fetch metadata after review. If the head SHA changed during inspection,
    discard the stale result, report the candidate as deferred, and leave state
    untouched so the next poll retries against the new head. If any pass or
    synthesis invocation fails or returns malformed output, skip posting and
    leave state untouched so the next poll retries.
 
-6. **Post the review.** **Decided: formal `gh pr review`**, not a plain
-   comment. It shows up in the PR's review list, not just as a comment.
+6. **Post the review.** **Decided: formal GitHub PR review via the REST
+   reviews endpoint**, not a plain issue comment. It shows up in the PR's review
+   list, not just as a comment.
    **Decided: inline, severity-tagged comments** (one of the two adopted
    design suggestions below), posted as part of the same review object via
    `gh api` (the `gh pr review` CLI subcommand doesn't support per-line
@@ -215,7 +242,8 @@ poller as a `pnpm` script / bin.
    facilities. Emit one audible notification when review
    work occurred or a failure needs attention; no-op and lock-contention runs
    stay silent. Identify up to three PRs by repository, number, and title,
-   distinguish reviews/re-reviews/dry-runs/recoveries/tracking failures, and
+   distinguish reviews, re-reviews, deferred outcomes (informational and not
+   requiring attention), dry-runs, recoveries, and tracking failures, and
    prioritize failures in mixed results. Eligible notifications carry a
    private, bounded local HTML snapshot of that exact poll. Body activation
    and a View-results action open the snapshot on macOS and Windows; Linux
@@ -300,12 +328,15 @@ the config field like:
 }
 ```
 
-The adapter script pipes the composed PR-link prompt to `reviewerCommand` via
-stdin and captures stdout as the review text. This way, swapping to a
-different CLI (another agent runtime, a different model wrapper, a local LLM
-harness) is a one-line config change, not a code change. Reviewer commands that
-require a prompt file are not supported by the current `reviewerInputMode`
-contract; use a small stdin-reading wrapper when adapting such a backend.
+The reviewer contract is prompt-only: the adapter pipes the composed PR-link
+prompt to `reviewerCommand` via stdin, the command uses only the constrained MCP
+inspection tool to inspect the PR, and stdout contains structured review JSON.
+The diff is fetched host-side for deterministic anchor validation and is never
+embedded in reviewer input. Swapping to a different CLI (another agent
+runtime, a different model wrapper, a local LLM harness) is a one-line config
+change, not a code change. Reviewer commands that require a prompt file are not
+supported by the current `reviewerInputMode` contract; use a small stdin-reading
+wrapper when adapting such a backend.
 
 For a built-in backend, run `openmergelens init` and keep the generated
 `reviewerCommand`; it includes the MCP inspection contract and the required
@@ -348,7 +379,12 @@ the `null` value above is the valid pre-consent state.
 to be confused with `socialpostai-v2`, which is what it watches/reviews).
 Repository targets are always explicit `OWNER/REPO` strings.
 
-## State file shape (gitignored, local only)
+## State file shape (local-only user state)
+
+`stateFile` supports an explicit absolute path. Relative values are resolved
+under the user home described above, so the `"./state.json"` value in
+`config.example.json` means `~/.openmergelens/state.json` by default (or the
+corresponding path under `OPENMERGELENS_HOME`).
 
 ```json
 {
@@ -367,9 +403,33 @@ manual next-session step; see **Onboarding** below for the exact flow
 (cron / launchd / Task Scheduler, each with a confirm-before-write, or
 "I'll do it myself" which only prints instructions). This section covers
 what each option actually installs:
-- `cron` entry (macOS/Linux) running `node bin/poll.mjs` every N minutes
-- `launchd` plist (more idiomatic on macOS, survives reboots better than cron)
-- Windows Task Scheduler entry running `node bin/poll.mjs`
+- Before configuring an installed OS schedule for the published package,
+  install OpenMergeLens persistently, for example with
+  `npm install -g openmergelens` (or `pnpm add --global openmergelens`), then
+  run `openmergelens init`. Do not use temporary `npx` or `pnpm dlx` runners to
+  configure an installed schedule: the scheduler stores the resolved package
+  path, and a later temporary-cache cleanup can remove it. Use `npx` or
+  `pnpm dlx` only for manual, one-shot commands.
+- Installed schedules invoke Node with the generated `bin/scheduled.mjs`
+  runner and the generated `scheduler-environment.json` path. The runner loads
+  the setup-time environment from that file before importing the one-shot
+  `bin/poll.mjs` script.
+- `cron` entry (macOS/Linux) runs `bin/scheduled.mjs` at an exact hourly
+  cadence and redirects output to the scheduler's `poll.log`. Supported
+  intervals are 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, and 30 minutes—the positive
+  whole-minute intervals that divide an hour. Cron step expressions reset at
+  each hour, so values such as 7 or 59 are rejected rather than producing a
+  shorter boundary gap.
+- `launchd` plist (macOS) sets the same Node, `bin/scheduled.mjs`, and
+  `scheduler-environment.json` arguments, with its interval and output paths.
+- Windows Task Scheduler entry invokes the hidden
+  `bin/scheduled-win32.vbs` launcher, which passes Node,
+  `bin/scheduled.mjs`, and `scheduler-environment.json` to the scheduled run.
+  launchd and Task Scheduler accept positive whole-minute intervals from 1
+  through 1439; this shared maximum matches Task Scheduler's `/mo` minute
+  limit.
+- For a manual one-shot, run `node bin/poll.mjs`; use
+  `node bin/poll.mjs --dry-run` to exercise a poll without posting a review.
 - Claude Code's `/loop` skill wrapping a shell invocation remains a manual
   option outside the wizard, if the user wants to drive it from inside a
   Claude Code session instead of OS-level scheduling
@@ -377,7 +437,7 @@ what each option actually installs:
 ## Auth prerequisites
 
 - `gh auth status` must show an authenticated account with `repo` scope
-  (needed for `pr comment`, `pr view`, `pr diff` on private repos).
+  (needed for REST review posting, `pr view`, and `pr diff` on private repos).
 - Whatever `reviewerCommand` is configured must have its own auth already
   set up independently (e.g. `claude` CLI already logged in). The onboarding
   wizard (below) checks this at setup time so auth problems surface before
@@ -394,8 +454,19 @@ inline validation, ends in a real test run rather than a wall of docs.
 mid-flow without leaving a half-written config), good default look
 (rounded borders/spinners) without needing custom styling work.
 
-Command: `pnpm dlx openmergelens init` (or `node bin/init.mjs` if run from a
-cloned checkout). Steps, in order:
+For the published package, install it persistently before configuring an OS
+schedule, then run `openmergelens init`:
+
+```bash
+npm install -g openmergelens
+openmergelens init
+```
+
+A persistent pnpm global install (`pnpm add --global openmergelens`) is also
+supported. Temporary `npx` and `pnpm dlx` runners are for manual, one-shot
+commands only; do not use them to configure an installed OS schedule because
+their cache path can disappear after cleanup. For cloned-checkout development,
+run `node bin/init.mjs` as usual. Steps, in order:
 
 1. **Welcome banner.** One line: name + one-sentence purpose. No ASCII art.
 
@@ -493,10 +564,17 @@ cloned checkout). Steps, in order:
    Scheduler entry rather than merely printing instructions. Because this is a
    standing OS-level configuration change made on the user's behalf, the
    wizard must show the **exact entry it's about to write** (full crontab
-   line, full plist contents, or full `schtasks` command) and get an
+   line, full plist contents, or full Task Scheduler XML plus its `schtasks
+   /xml` registration command) and get an
    explicit final yes/no at that step, immediately before writing;
    picking "cron" earlier in the menu is not itself the confirmation.
    "I'll do it myself" skips this entirely; nothing is written to the OS.
+
+   Cron accepts only 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, or 30 minutes so its
+   minute-step expression keeps the requested cadence across hour boundaries.
+   launchd and Windows Task Scheduler accept positive whole-minute intervals
+   from 1 through 1439; scientific notation, unsafe integers, and values above
+   that maximum are rejected before preview or installation.
 
 8. **Summary + confirm.** Preview config, deterministic review-file paths,
    and the one shared schedule. Ask once before applying file/config/schedule
@@ -506,7 +584,7 @@ cloned checkout). Steps, in order:
 9. **Success screen.** Print the command to do a complete dry run and an
    account-filtered example using `--account USERNAME@HOSTNAME`, e.g.
    `node bin/poll.mjs --dry-run` (composes prompts and calls the reviewer
-   adapter, but skips the actual `gh pr review` post), so onboarding ends at
+   adapter, but skips the actual REST-backed GitHub review post), so onboarding ends at
    "see it produce real output," not "trust it blindly."
 
 Validation happens inline at each step (e.g. repo names checked live via
@@ -527,11 +605,11 @@ All open items from spec drafting are now resolved:
 3. **Search scope: explicit per account.** Global search is unsupported.
 4. **Error handling:** log failure details, skip posting, leave state
    unchanged so it retries next poll.
-5. **Post format: formal `gh pr review`**, not a plain `gh pr comment`, so it is
-   visible in the PR's review list. **Refined further per prior-art
-   research:** inline, severity-tagged comments (via the REST API's
-   `comments[]`, since `gh pr review` CLI can't anchor per-line), not a
-   single review body; see **Structured output format** above.
+5. **Post format: formal GitHub PR review through the REST reviews endpoint**,
+   not a plain issue comment, so it is visible in the PR's review list.
+   **Refined further per prior-art research:** inline, severity-tagged comments
+   via the REST API's `comments[]` entries, not a single review body; see
+   **Structured output format** above.
 6. **Prompt source: OpenMergeLens's own bundled template**, seeded into a
    directly editable host/repository prompt path.
 7. **Prior-art research done** (competitive scan of CodeRabbit, Qodo/PR-Agent,
@@ -571,7 +649,8 @@ All open items from spec drafting are now resolved:
   nonzero after independent work completes.
 - The same PR can be reviewed independently by multiple requested identities.
 - One shared state file uses hostname/username-namespaced keys.
-- One global `reviewBatchSize` is enforced across a round-robin account queue.
+- One global `reviewBatchSize` is enforced across a round-robin account queue,
+  with a built-in three-review resource admission cap.
 - One process lock prevents overlapping polls and blocks `init` while polling.
 - Removing an account or repository stops polling it but retains its prompt,
   learnings, and state for safe reactivation.

@@ -79,6 +79,10 @@ jobs:
           node-version: '24'
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Install npm with staged publishing support
+        run: |
+          npm install --global npm@11.15.0
+          test "$(npm --version)" = "11.15.0"
       - name: Confirm the release tag still identifies the verified commit
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}

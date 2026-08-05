@@ -21,7 +21,7 @@ them from scratch. Keep entries dense and actionable; update via the
 
 | Component | Version | Where used |
 |---|---|---|
-| Node.js | `>=18` (engines), ESM (`"type": "module"`) | `bin/`, `lib/` (entire codebase) |
+| Node.js | `^22.14.0 || ^24.0.0` (`package.json` engines), ESM (`"type": "module"`) | `bin/`, `lib/` (entire codebase) |
 | @clack/prompts | `^1.7.0` | `bin/init.mjs` (setup wizard) |
 | GitHub CLI (`gh`) | shelled out, no pinned version | `lib/github.mjs` |
 | pnpm | lockfileVersion `9.0` | repo-wide (`pnpm-lock.yaml`) |
@@ -32,8 +32,8 @@ them from scratch. Keep entries dense and actionable; update via the
 
 ### Overview
 
-OpenMergeLens is a Node.js 18+ ESM CLI tool (`"type": "module"` in
-`package.json`) with no server component. It shells out to `gh` and to a
+OpenMergeLens is a Node.js 22.14+ (Node 22 line) or Node.js 24.x ESM CLI tool
+(`"type": "module"` in `package.json`) with no server component. It shells out to `gh` and to a
 user-configured reviewer CLI via `node:child_process`, so `execFile`
 discipline is central to its security model.
 
@@ -42,12 +42,13 @@ discipline is central to its security model.
 - Stay ESM-first (`"type": "module"`), but be aware Node 22+ added
   `require(esm)`, so CJS consumers can load ESM packages without dual-publish
   workarounds if that's ever needed.
-- Declare an explicit `"engines": { "node": ">=18.0.0" }` (or higher) in
-  `package.json` to codify the minimum runtime for a tool distributed to run
-  on other machines via cron/launchd.
-- Target an actively-maintained LTS as the real floor, not just the oldest
-  version that happens to work: Node 20 is approaching/at EOL in the
-  2026 window; Node 22 is a safer maintenance baseline for new tooling.
+- Keep the explicit `"engines": { "node": "^22.14.0 || ^24.0.0" }` in
+  `package.json` aligned with this guidance: Node.js 22.14+ in the Node 22
+  line or Node.js 24.x are the supported runtimes for a tool distributed
+  to run on other machines via cron/launchd.
+- Target the maintained Node.js 22 and 24 release lines declared by the
+  package engine rather than lowering the runtime floor to an older version
+  that happens to work.
 - Prefer built-ins (native `fetch`, `node:test`, `AbortController`) over
   legacy polyfill packages to keep the dependency surface minimal.
 - Use `execFile` (or `spawn` with the default `shell: false`), never `exec`
@@ -324,6 +325,9 @@ installed programmatically by `lib/scheduler.mjs`.
   than overwrite so failures are visible across runs (cron:
   `>> poll.log 2>&1`; launchd: `StandardOutPath`/`StandardErrorPath`;
   Task Scheduler: redirect inside the wrapper script).
+- Register Windows tasks from XML with `/xml` when the executable and argument
+  paths may be long; keep the command in `<Exec><Command>` and its arguments
+  in `<Exec><Arguments>` instead of relying on the 262-character `/tr` value.
 - Prevent overlapping runs with a lock (e.g. `flock -n /tmp/openmergelens.lock
   node bin/poll.mjs` on Unix), especially since `poll.mjs` both reads and
   writes `state.json`: an overlapping run risks a race on that file.
@@ -358,6 +362,9 @@ installed programmatically by `lib/scheduler.mjs`.
   command-line creation doesn't reliably expose the GUI's "if already
   running" policy: use an external lock/PID check in the wrapper script
   instead of relying on scheduler defaults.
+- Keep minute intervals as safe decimal integers bounded to 1 through 1439:
+  Windows Task Scheduler's `/sc minute /mo` contract caps the value at 1439,
+  and the shared bound keeps launchd previews equally serialization-safe.
 
 ### References
 

@@ -49,6 +49,12 @@ import {
   schtasksPreview, installSchtasks,
   schedulerChoices,
   manualInstructions,
+  reconcileScheduler,
+  assertSchedulerInterval,
+  isValidSchedulerInterval,
+  MIN_SCHEDULER_INTERVAL_MINUTES,
+  MAX_SCHEDULER_INTERVAL_MINUTES,
+  SUPPORTED_CRON_INTERVALS,
 } from '../lib/scheduler.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +76,100 @@ export function selectableReviewerAgents(agents) {
 
 export function isInteractiveTerminal({ stdin = process.stdin, stdout = process.stdout } = {}) {
   return stdin?.isTTY === true && stdout?.isTTY === true;
+}
+
+export function validateScheduleInterval(value, scheduler) {
+  const text = String(value).trim();
+  if (!/^\d+$/u.test(text)) {
+    return 'Enter a positive whole number';
+  }
+  const intervalMinutes = Number(text);
+  if (
+    !Number.isSafeInteger(intervalMinutes) ||
+    intervalMinutes < MIN_SCHEDULER_INTERVAL_MINUTES
+  ) {
+    return 'Enter a positive whole number';
+  }
+  if (!isValidSchedulerInterval(intervalMinutes, scheduler)) {
+    if (intervalMinutes > MAX_SCHEDULER_INTERVAL_MINUTES && scheduler !== 'cron') {
+      return `Enter a whole number from ${MIN_SCHEDULER_INTERVAL_MINUTES} through ` +
+        `${MAX_SCHEDULER_INTERVAL_MINUTES} minutes`;
+    }
+    return `Choose one of the supported cron intervals: ${SUPPORTED_CRON_INTERVALS.join(', ')} minutes`;
+  }
+  return undefined;
+}
+
+export async function applyScheduleSelection({
+  scheduleChoice,
+  intervalMinutes = 15,
+  selectedPollScriptPath = pollScriptPath,
+  platform = process.platform,
+  schedulerOptions = {},
+  installFns = { cron: installCron, launchd: installLaunchd, schtasks: installSchtasks },
+  reconcile = reconcileScheduler,
+} = {}) {
+  const install = scheduleChoice === 'manual' ? undefined : installFns[scheduleChoice];
+  if (scheduleChoice !== 'manual' && typeof install !== 'function') {
+    throw new Error(`unknown scheduler selection: ${scheduleChoice}`);
+  }
+  if (scheduleChoice !== 'manual') {
+    assertSchedulerInterval(scheduleChoice, intervalMinutes);
+  }
+  return reconcile({
+    ...schedulerOptions,
+    scheduler: scheduleChoice,
+    platform,
+    pollScriptPath: selectedPollScriptPath,
+    intervalMinutes,
+    ...(install ? { install } : {}),
+  });
+}
+
+export async function finalizeSetup({
+  scheduleChoice,
+  intervalMinutes,
+  account,
+  desktopNotifications,
+  applySchedule = applyScheduleSelection,
+  verifyNotifications = verifyConfiguredNotifications,
+  spinner = p.spinner(),
+  outro = p.outro,
+  setExitCode = (code) => {
+    process.exitCode = code;
+  },
+} = {}) {
+  const scheduleAction = scheduleChoice === 'manual'
+    ? 'Removing existing OpenMergeLens schedules'
+    : `Installing ${scheduleChoice} entry`;
+  spinner.start(scheduleAction);
+  try {
+    await applySchedule({ scheduleChoice, intervalMinutes });
+    spinner.stop(scheduleChoice === 'manual'
+      ? 'Existing OpenMergeLens schedules removed'
+      : `${scheduleChoice} entry installed`);
+  } catch (err) {
+    spinner.stop(
+      `Configuration saved, but schedule transition failed: ${err.message}`,
+    );
+    setExitCode(1);
+    outro(
+      'Setup incomplete. Configuration was saved, but scheduling failed. ' +
+      'Fix the scheduler and rerun `openmergelens init`.',
+    );
+    return false;
+  }
+
+  if (desktopNotifications) {
+    await verifyNotifications();
+  }
+
+  outro(
+    'Setup complete. Try:\n\n' +
+    '  openmergelens --dry-run\n\n' +
+    `Or one account:\n\n  openmergelens --dry-run --account ${accountLabel(account)}`,
+  );
+  return true;
 }
 
 export function reviewerBackendOptions(agents) {
@@ -491,13 +591,11 @@ async function main() {
     let intervalMinutes = 15;
     if (scheduleChoice !== 'manual') {
       const interval = await p.text({
-        message: 'How often should it poll (minutes)?',
+        message: scheduleChoice === 'cron'
+          ? `How often should it poll? Choose an exact hourly cadence (${SUPPORTED_CRON_INTERVALS.join(', ')} minutes).`
+          : 'How often should it poll (minutes)?',
         initialValue: '15',
-        validate: (value) => (
-          Number.isInteger(Number(value)) && Number(value) > 0
-            ? undefined
-            : 'Enter a positive whole number'
-        ),
+        validate: (value) => validateScheduleInterval(value, scheduleChoice),
       });
       if (p.isCancel(interval)) exitCancelled();
       intervalMinutes = Number(interval);
@@ -586,28 +684,12 @@ async function main() {
       }
     }
 
-    if (scheduleChoice !== 'manual') {
-      const installFns = { cron: installCron, launchd: installLaunchd, schtasks: installSchtasks };
-      const scheduleSpinner = p.spinner();
-      scheduleSpinner.start(`Installing ${scheduleChoice} entry`);
-      try {
-        await installFns[scheduleChoice]({ pollScriptPath, intervalMinutes });
-        scheduleSpinner.stop(`${scheduleChoice} entry installed`);
-      } catch (err) {
-        scheduleSpinner.stop(`Configuration saved, but schedule installation failed: ${err.message}`);
-        process.exitCode = 1;
-      }
-    }
-
-    if (desktopNotifications) {
-      await verifyConfiguredNotifications();
-    }
-
-    p.outro(
-      'Setup complete. Try:\n\n' +
-      '  openmergelens --dry-run\n\n' +
-      `Or one account:\n\n  openmergelens --dry-run --account ${accountLabel(githubAccounts[0])}`,
-    );
+    await finalizeSetup({
+      scheduleChoice,
+      intervalMinutes,
+      account: githubAccounts[0],
+      desktopNotifications,
+    });
   } finally {
     await releaseOperationLock();
   }

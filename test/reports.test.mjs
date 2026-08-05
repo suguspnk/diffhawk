@@ -380,9 +380,33 @@ test('pruning replaces expired snapshots with bounded expiry pages', async (t) =
     await readFile(path.join(directory, `${FIRST_ID}.html`), 'utf8'),
     /Report expired/,
   );
+  const expiredPath = await resolveReportPath(directory, FIRST_ID);
+  assert.match(expiredPath, new RegExp(`${FIRST_ID}\\.html$`));
+  const opened = [];
+  await openReport(directory, FIRST_ID, {
+    openFile: async (filePath) => opened.push(filePath),
+  });
+  assert.deepEqual(opened, [expiredPath]);
+});
+
+test('report recovery rejects invalid IDs and arbitrary incomplete HTML', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-reports-'));
+  t.after(() => import('node:fs/promises').then(({ rm }) =>
+    rm(directory, { recursive: true, force: true })));
+
+  await writeFile(path.join(directory, `${FIRST_ID}.html`), '<!doctype html>');
+
   await assert.rejects(
     resolveReportPath(directory, FIRST_ID),
     /unavailable or expired/,
+  );
+  await assert.rejects(
+    resolveReportPath(directory, SECOND_ID),
+    /unavailable or expired/,
+  );
+  await assert.rejects(
+    resolveReportPath(directory, 'not-a-report-id'),
+    /invalid report ID/,
   );
 });
 
