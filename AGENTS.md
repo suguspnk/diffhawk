@@ -23,7 +23,7 @@ lib/dispatch.mjs          parses CLI arguments and dispatches init or poll comma
 lib/paths.mjs             resolves the per-user state directory (~/.openmergelens, or $OPENMERGELENS_HOME)
 lib/github.mjs            gh CLI wrappers: search, pr view, pr diff, post review
 lib/github-auth.mjs       resolves + scopes GitHub credentials (multi-account aware)
-lib/state.mjs             read/write state.json (per-PR last-reviewed SHA)
+lib/state.mjs             read/write state.json (per-account PR last-reviewed SHA)
 lib/desktop-notifications.mjs  formats + delivers native macOS/Windows/Linux notifications
 lib/reviewer-command-defaults.mjs  safe known-backend commands + exact legacy upgrades
 lib/reviewer-adapter.mjs  abstraction over the configured reviewer command + prompt templating

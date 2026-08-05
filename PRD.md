@@ -55,7 +55,7 @@ openmergelens/
 ├── package.json            (pnpm, type: module, bin entry)
 ├── pnpm-lock.yaml
 ├── config.example.json     (versioned multi-account config template)
-├── state.json              (gitignored: per-PR last-reviewed SHA, local only)
+├── state.json              (gitignored: per-account PR last-reviewed SHA, local only)
 ├── docs/
 │   └── review-prompt.default.md (bundled seed for editable repository prompts)
 ├── bin/
