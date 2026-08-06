@@ -14,6 +14,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   appendFailure,
   createLogger,
@@ -954,7 +955,7 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
     'utf8',
   );
 
-  const loggingModulePath = path.resolve('lib/logging.mjs');
+  const loggingModulePath = pathToFileURL(path.resolve('lib/logging.mjs')).href;
   const childCode = [
     `import { appendFailure } from ${JSON.stringify(loggingModulePath)};`,
     "const result = await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
