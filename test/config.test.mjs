@@ -21,7 +21,12 @@ import {
   reviewerCommandForGitHubGateway,
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
-import { parseCommand } from '../lib/reviewer-adapter.mjs';
+import {
+  DEFAULT_REVIEW_TIMEOUT_MS,
+  MAX_REVIEW_TIMEOUT_MS,
+  MIN_REVIEW_TIMEOUT_MS,
+  parseCommand,
+} from '../lib/reviewer-adapter.mjs';
 import {
   createAiProcessingConsent,
   hasAiProcessingConsent,
@@ -57,12 +62,39 @@ const validConfig = {
 test('validates and normalizes a version 4 multi-account config', () => {
   assert.deepEqual(validateConfig(validConfig), {
     ...validConfig,
+    reviewTimeoutMs: DEFAULT_REVIEW_TIMEOUT_MS,
     model: null,
     githubAccounts: validConfig.githubAccounts,
     reviewerCommand: CODEX_REVIEWER_COMMAND,
     reviewerInputMode: 'stdin',
     desktopNotifications: true,
   });
+});
+
+test('accepts a manual reviewer timeout and defaults omitted values', () => {
+  assert.equal(
+    validateConfig({ ...validConfig, reviewTimeoutMs: 15 * 60 * 1000 }).reviewTimeoutMs,
+    15 * 60 * 1000,
+  );
+  assert.equal(
+    validateConfig({ ...validConfig, reviewTimeoutMs: undefined }).reviewTimeoutMs,
+    DEFAULT_REVIEW_TIMEOUT_MS,
+  );
+});
+
+test('rejects reviewer timeouts outside the bounded manual range', () => {
+  for (const reviewTimeoutMs of [
+    MIN_REVIEW_TIMEOUT_MS - 1,
+    MAX_REVIEW_TIMEOUT_MS + 1,
+    12.5 * 60 * 1000 + 0.5,
+    null,
+    '720000',
+  ]) {
+    assert.throws(
+      () => validateConfig({ ...validConfig, reviewTimeoutMs }),
+      /reviewTimeoutMs must be a whole number of milliseconds/,
+    );
+  }
 });
 
 test('upgrades only the legacy Codex default command', () => {

@@ -23,6 +23,7 @@
   "reviewerInputMode": "stdin",
   "reviewBatchSize": 5,
   "reviewFocusCount": 4,
+  "reviewTimeoutMs": 720000,
   "desktopNotifications": true,
   "stateFile": "./state.json"
 }

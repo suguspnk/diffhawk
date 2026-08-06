@@ -612,6 +612,9 @@ async function main() {
         ? existingConfig.reviewBatchSize
         : 5,
       reviewFocusCount,
+      // The timeout is intentionally manual-only; preserve an existing
+      // override without adding another setup prompt.
+      reviewTimeoutMs: existingConfig?.reviewTimeoutMs,
       desktopNotifications,
       stateFile: existingConfig?.stateFile || './state.json',
     });
