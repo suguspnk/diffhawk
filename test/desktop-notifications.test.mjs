@@ -630,6 +630,7 @@ test('notification delivery failures are logged and isolated from the caller', a
     {
       config: { desktopNotifications: true },
       logPath: '/virtual/poll.log',
+      platform: 'darwin',
       deliver: async () => {
         throw error;
       },
