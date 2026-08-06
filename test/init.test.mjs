@@ -179,6 +179,33 @@ test('init does not report setup success after a schedule transition failure', a
   assert.doesNotMatch(outroMessages[0], /Setup complete/);
 });
 
+test('init forwards isolated scheduler options through finalization', async () => {
+  let received;
+
+  const completed = await finalizeSetup({
+    scheduleChoice: 'manual',
+    intervalMinutes: 15,
+    account: { hostname: 'github.com', username: 'alice' },
+    desktopNotifications: false,
+    schedulerOptions: { homeDirectory: '/tmp/openmergelens-test-scheduler' },
+    applySchedule: async (options) => {
+      received = options;
+    },
+    spinner: {
+      start() {},
+      stop() {},
+    },
+    outro() {},
+  });
+
+  assert.equal(completed, true);
+  assert.deepEqual(received, {
+    scheduleChoice: 'manual',
+    intervalMinutes: 15,
+    schedulerOptions: { homeDirectory: '/tmp/openmergelens-test-scheduler' },
+  });
+});
+
 test('init exits clearly instead of waiting for prompts without a TTY', async (t) => {
   const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-init-'));
   t.after(() => rm(userHome, { recursive: true, force: true }));

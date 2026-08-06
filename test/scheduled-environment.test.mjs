@@ -79,15 +79,17 @@ test('scheduled runner logs missing environment startup failures beside the envi
     }),
     (err) => {
       assert.equal(err.code, 1);
-      assert.match(err.stderr, /\[fatal\] openmergelens: ENOENT: no such file or directory/);
-      assert.doesNotMatch(err.stderr, /at async/);
+      assert.equal(err.stderr, '');
       return true;
     },
   );
 
   const log = await readFile(path.join(directory, 'poll.log'), 'utf8');
-  assert.match(log, /\[fatal\] openmergelens: ENOENT: no such file or directory/);
-  assert.doesNotMatch(log, /at async/);
+  const record = JSON.parse(log.trim());
+  assert.equal(record.level, 'fatal');
+  assert.equal(record.event, 'startup.failure');
+  assert.match(record.message, /openmergelens: ENOENT: no such file or directory/);
+  assert.doesNotMatch(record.message, /at async/);
 });
 
 test('scheduled runner logs malformed environment startup failures beside the environment file', async (t) => {
@@ -106,15 +108,17 @@ test('scheduled runner logs malformed environment startup failures beside the en
     }),
     (err) => {
       assert.equal(err.code, 1);
-      assert.match(err.stderr, /\[fatal\] openmergelens: .*JSON/);
-      assert.doesNotMatch(err.stderr, /at async/);
+      assert.equal(err.stderr, '');
       return true;
     },
   );
 
   const log = await readFile(path.join(directory, 'poll.log'), 'utf8');
-  assert.match(log, /\[fatal\] openmergelens: .*JSON/);
-  assert.doesNotMatch(log, /at async/);
+  const record = JSON.parse(log.trim());
+  assert.equal(record.level, 'fatal');
+  assert.equal(record.event, 'startup.failure');
+  assert.match(record.message, /openmergelens: .*JSON/);
+  assert.doesNotMatch(record.message, /at async/);
 });
 
 test('scheduled runner consumes its environment argument before poll argument parsing', async (t) => {
@@ -139,11 +143,13 @@ test('scheduled runner consumes its environment argument before poll argument pa
       },
     ),
     (err) => {
-      assert.match(err.stderr, /unrecognized argument "--invalid"/);
-      assert.doesNotMatch(err.stderr, new RegExp(
-        environmentPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-      ));
+      assert.equal(err.stderr, '');
       return true;
     },
   );
+  const record = JSON.parse(await readFile(path.join(directory, 'poll.log'), 'utf8'));
+  assert.match(record.message, /unrecognized argument "--invalid"/);
+  assert.doesNotMatch(record.message, new RegExp(
+    environmentPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  ));
 });

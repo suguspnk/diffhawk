@@ -23,7 +23,10 @@ import {
 import {
   INCOMPLETE_INSPECTION_ERROR,
 } from '../lib/reviewer-github-gateway.mjs';
-import { MAX_REVIEW_STDOUT_BYTES } from '../lib/security-limits.mjs';
+import {
+  MAX_REVIEW_PATH_CHARS,
+  MAX_REVIEW_STDOUT_BYTES,
+} from '../lib/security-limits.mjs';
 
 const pr = {
   title: 'Fix off-by-one in pagination',
@@ -212,7 +215,13 @@ test('invokeReviewer preserves split UTF-8 stderr in exit diagnostics', async ()
       reviewerCommand: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(reviewerScript)}`,
       prompt: '',
     }),
-    /exited 3: diagnostic café/u,
+    (error) => {
+      assert.match(error.message, /exited 3: diagnostic café/u);
+      assert.equal(error.exitCode, 3);
+      assert.equal(error.stderr, 'diagnostic café');
+      assert.equal(error.stdout, '');
+      return true;
+    },
   );
 });
 
@@ -662,6 +671,101 @@ test('parseFindings recognizes schema keys encoded with JSON Unicode escapes', (
 
   assert.deepEqual(parseFindings(rawOutput), {
     summary: 'ok',
+    findings: [],
+  });
+});
+
+test('parseFindings sanitizes unsafe controls from summaries while preserving Unicode and newlines', () => {
+  const controls = '\u0000\u0009\u000B\u001F\u007F\u0080\u009F\u061C\u200B\u200E\u200F\u2028\u2029\u202A\u202E\u2060\u2066\u206F\uFEFF';
+  const rawOutput = JSON.stringify({
+    summary: `café ☕\r\n${controls}summary @mention`,
+    findings: [],
+  });
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'café ☕\nsummary @\u200Bmention',
+    findings: [],
+  });
+});
+
+test('parseFindings sanitizes unsafe controls from finding comments before posting', () => {
+  const controls = '\u0001\u0008\u000C\u001E\u0081\u009E\u061C\u200C\u200D\u200F\u2028\u2029\u202B\u2061\u2067\u206E\uFEFF';
+  const rawOutput = JSON.stringify({
+    summary: 'reviewed',
+    findings: [{
+      path: 'src/example.js',
+      line: 7,
+      severity: 'major',
+      comment: `naïve 🚀\n${controls}comment @author`,
+    }],
+  });
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'reviewed',
+    findings: [{
+      path: 'src/example.js',
+      line: 7,
+      severity: 'major',
+      comment: 'naïve 🚀\ncomment @\u200Bauthor',
+    }],
+  });
+});
+
+test('parseFindings rejects unsafe controls from finding paths', () => {
+  const unsafeControls = [
+    '\u0000', '\u0001', '\u0009', '\u000B', '\u000C', '\u000E', '\u001F',
+    '\u007F', '\u0085', '\u009F', '\u061C', '\u200B', '\u200E', '\u200F',
+    '\u2028', '\u2029', '\u202A', '\u202E', '\u2060', '\u2066', '\u206F',
+    '\uFEFF',
+  ];
+  const rawOutput = JSON.stringify({
+    summary: 'reviewed',
+    findings: unsafeControls.map((control, index) => ({
+      path: `src/file${control}name-${index}.js`,
+      line: 1,
+      severity: 'major',
+      comment: 'unsafe path',
+    })),
+  });
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'reviewed',
+    findings: [],
+  });
+});
+
+test('parseFindings preserves valid relative paths and path length bounds', () => {
+  const validPaths = [
+    'src/example.js',
+    'src/./example.js',
+    'a'.repeat(MAX_REVIEW_PATH_CHARS),
+  ];
+  const rawOutput = JSON.stringify({
+    summary: 'reviewed',
+    findings: validPaths.map((path, index) => ({
+      path,
+      line: index + 1,
+      severity: 'nit',
+      comment: 'valid path',
+    })),
+  });
+
+  assert.deepEqual(parseFindings(rawOutput).findings, validPaths.map((path, index) => ({
+    path,
+    line: index + 1,
+    severity: 'nit',
+    comment: 'valid path',
+  })));
+  assert.deepEqual(parseFindings(JSON.stringify({
+    summary: 'reviewed',
+    findings: [{
+      path: 'a'.repeat(MAX_REVIEW_PATH_CHARS + 1),
+      line: 1,
+      severity: 'nit',
+      comment: 'too long',
+    }],
+  })), {
+    summary: 'reviewed',
     findings: [],
   });
 });

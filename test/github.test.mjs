@@ -197,6 +197,34 @@ test('pull request metadata includes the current state', async (t) => {
   assert.ok(fields.includes('state'));
 });
 
+test('gh subprocess preserves signal termination metadata', async (t) => {
+  t.mock.method(childProcess, 'spawn', () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = {
+      write() {},
+      end() {},
+    };
+    process.nextTick(() => child.emit('close', null, 'SIGTERM'));
+    return child;
+  });
+
+  let failure;
+  await assert.rejects(
+    getPullRequest({ repo: 'owner/repo', number: 7 }),
+    (error) => {
+      failure = error;
+      return error.signal === 'SIGTERM' &&
+        error.exitCode === null &&
+        error.cause?.signal === 'SIGTERM' &&
+        /exited SIGTERM$/.test(error.cause.message);
+    },
+  );
+  assert.equal(failure.signal, 'SIGTERM');
+  assert.equal(failure.exitCode, null);
+});
+
 test('gh subprocess preserves UTF-8 split across diff and metadata chunks', async (t) => {
   const outputs = [
     Buffer.from('diff --git a/café.txt b/café.txt\n'),

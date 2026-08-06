@@ -38,10 +38,10 @@ Applies to all code in this repo: `bin/`, `lib/`, and `test/`.
   extended. Only a true top-level/programmer error should escalate past
   `main()`.
 - **Attach context as errors bubble.** `gh()`'s errors already include the
-  failing command; `poller.mjs`'s `appendFailure` calls already include which PR
-  and which step (search / pr-view / diff / invoke-reviewer / post-review)
-  failed. Keep doing this: a `poll.log` line should be actionable without
-  attaching a debugger.
+  failing command; the shared logger records which account, PR, and step
+  (search / pr-view / diff / invoke-reviewer / post-review) failed. Keep doing
+  this: a structured `poll.log` record should be actionable without attaching
+  a debugger.
 - **Never blindly retry a review POST.** A timed-out request may have reached
   GitHub. Every posted review must retain its deterministic hidden marker, and
   ambiguous failures or missing local state must be reconciled against the
@@ -140,9 +140,11 @@ for the general pattern; these are the OpenMergeLens-specific rules.
   expose only the same MCP tool, never Bash or general filesystem tools.
 - **Sanitize before logging.** Subprocess stdout/stderr written to
   `poll.log` should never include raw, unfiltered output from a tool that
-  might echo a token or credential. This matters especially for
-  `reviewerCommand`, which is an arbitrary external binary OpenMergeLens doesn't
-  control.
+  might echo a token or credential. The logger must also cap messages and
+  diagnostics, rotate the active log, preserve only an allowlisted set of
+  operational fields, and retain useful exit/status metadata. This matters
+  especially for `reviewerCommand`, which is an arbitrary external binary
+  OpenMergeLens doesn't control.
 
 ## Security: Credentials & Secrets
 

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   attemptDesktopNotification,
@@ -622,13 +624,15 @@ test('configuration defaults on with config and environment opt-outs', () => {
 
 test('notification delivery failures are logged and isolated from the caller', async () => {
   const logged = [];
+  const error = new Error('desktop unavailable');
   const delivered = await attemptDesktopNotification(
     { title: 'Title', message: 'Message' },
     {
       config: { desktopNotifications: true },
       logPath: '/virtual/poll.log',
+      platform: 'darwin',
       deliver: async () => {
-        throw new Error('desktop unavailable');
+        throw error;
       },
       logFailure: async (...args) => {
         logged.push(args);
@@ -641,7 +645,61 @@ test('notification delivery failures are logged and isolated from the caller', a
     '/virtual/poll.log',
     'notification',
     'desktop notification failed: desktop unavailable',
+    { error },
   ]]);
+});
+
+test('notification failures retain sanitized structured diagnostics', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-notification-log-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const logPath = path.join(root, 'poll.log');
+  const secret = 'notification-secret';
+  const error = Object.assign(new Error('desktop unavailable'), {
+    code: 'E_NOTIFIER',
+    stderr: `Authorization: Bearer ${secret}\nstderr diagnostic`,
+    stdout: 'stdout diagnostic',
+  });
+
+  const delivered = await attemptDesktopNotification(
+    { title: 'Title', message: 'Message' },
+    {
+      config: { desktopNotifications: true },
+      logPath,
+      platform: 'darwin',
+      deliver: async () => {
+        throw error;
+      },
+    },
+  );
+
+  assert.equal(delivered, false);
+  const record = JSON.parse((await readFile(logPath, 'utf8')).trim());
+  assert.equal(record.message, 'desktop notification failed: desktop unavailable');
+  assert.equal(record.error.code, 'E_NOTIFIER');
+  assert.equal(
+    record.error.diagnostic,
+    'Authorization: Bearer [REDACTED] stderr diagnostic stdout diagnostic',
+  );
+  assert.doesNotMatch(record.error.diagnostic, new RegExp(secret));
+  assert.ok(record.error.diagnostic.length <= 4_096);
+});
+
+test('notification logging failures do not change the isolated result', async () => {
+  const delivered = await attemptDesktopNotification(
+    { title: 'Title', message: 'Message' },
+    {
+      config: { desktopNotifications: true },
+      platform: 'darwin',
+      deliver: async () => {
+        throw new Error('desktop unavailable');
+      },
+      logFailure: async () => {
+        throw new Error('log unavailable');
+      },
+    },
+  );
+
+  assert.equal(delivered, false);
 });
 
 test('Linux polls skip desktop notification outside a graphical session', async () => {
@@ -665,6 +723,24 @@ test('Linux polls skip desktop notification outside a graphical session', async 
   assert.equal(delivered, false);
   assert.equal(called, false);
   assert.deepEqual(logged, []);
+});
+
+test('Linux polls skip desktop notification with only XDG_RUNTIME_DIR', async () => {
+  let called = false;
+  const delivered = await attemptDesktopNotification(
+    { title: 'Title', message: 'Message' },
+    {
+      config: { desktopNotifications: true },
+      environment: { XDG_RUNTIME_DIR: '/tmp/runtime' },
+      platform: 'linux',
+      deliver: async () => {
+        called = true;
+      },
+    },
+  );
+
+  assert.equal(delivered, false);
+  assert.equal(called, false);
 });
 
 test('disabled notifications do not invoke delivery', async () => {

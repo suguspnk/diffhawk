@@ -233,11 +233,12 @@ poller as a `pnpm` script / bin.
    fallback only for a confirmed HTTP 422; on ambiguous transport errors,
    reconcile by listing reviews instead of issuing a second unsafe POST.
 
-7. **If the reviewer adapter fails or returns empty** (**decided**): log the
-   failure details (PR key, command, exit code/stderr) to a local log file
-   and skip posting anything: no comment, no review. Leave state.json
-   unchanged for that PR so it's retried on the next poll instead of being
-   silently marked as reviewed.
+7. **If the reviewer adapter fails or returns empty** (**decided**): write a
+   structured, account/PR-scoped failure record containing bounded, sanitized
+   error metadata (including exit status and subprocess diagnostics) to the
+   local log and skip posting anything: no comment, no review. Leave
+   state.json unchanged for that PR so it's retried on the next poll instead
+   of being silently marked as reviewed.
 
 8. **Update state.json** with the new `headRefOid` for that PR key, so the
    same commit doesn't get re-reviewed next poll.
@@ -431,7 +432,9 @@ what each option actually installs:
   the setup-time environment from that file before importing the one-shot
   `bin/poll.mjs` script.
 - `cron` entry (macOS/Linux) runs `bin/scheduled.mjs` at an exact hourly
-  cadence and redirects output to the scheduler's `poll.log`. Supported
+  cadence. The application logger writes structured records to the scheduler's
+  `poll.log`; the entry also redirects stdout/stderr as a fallback for wrapper
+  or early-startup output. Supported
   intervals are 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, and 30 minutes—the positive
   whole-minute intervals that divide an hour. Cron step expressions reset at
   each hour, so values such as 7 or 59 are rejected rather than producing a

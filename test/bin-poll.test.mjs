@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,5 +26,108 @@ test('fatal poll startup errors are persisted to poll.log', async (t) => {
   );
 
   const log = await readFile(path.join(userHome, 'poll.log'), 'utf8');
-  assert.match(log, /\[fatal\] openmergelens: unrecognized argument "--invalid"/);
+  const record = JSON.parse(log.trim());
+  assert.equal(record.level, 'fatal');
+  assert.equal(record.event, 'startup.failure');
+  assert.equal(record.scope, 'fatal');
+  assert.match(record.message, /openmergelens: unrecognized argument "--invalid"/);
+});
+
+test('public CLI parse errors are persisted as one structured startup failure', async (t) => {
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', '--invalid'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /openmergelens: unrecognized argument "--invalid"/);
+      return true;
+    },
+  );
+
+  const contents = await readFile(path.join(userHome, 'poll.log'), 'utf8');
+  const records = contents.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.equal(records[0].level, 'fatal');
+  assert.equal(records[0].event, 'startup.failure');
+  assert.equal(records[0].scope, 'fatal');
+  assert.match(records[0].message, /openmergelens: unrecognized argument "--invalid"/);
+});
+
+test('public CLI parse errors release the log coordination marker', async (t) => {
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-lock-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', '--bad'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      return true;
+    },
+  );
+
+  assert.deepEqual(await readdir(userHome), ['poll.log']);
+});
+
+test('public CLI parse errors redact token-shaped arguments on stderr', async (t) => {
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-secret-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+  const token = 'ghp_TOKEN_SHAPED_INVALID_VALUE_1234567890';
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', token], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /openmergelens: unrecognized argument "\[REDACTED\]"/);
+      assert.doesNotMatch(error.stderr, new RegExp(token));
+      return true;
+    },
+  );
+
+  const contents = await readFile(path.join(userHome, 'poll.log'), 'utf8');
+  const records = contents.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.equal(records[0].event, 'startup.failure');
+  assert.doesNotMatch(contents, new RegExp(token));
+});
+
+test('public CLI parse errors bound oversized arguments on stderr', async (t) => {
+  const invalidArgument = 'invalid-argument-'.repeat(1_000);
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-bound-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', invalidArgument], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /… \[truncated\]/);
+      assert.ok(error.stderr.length < invalidArgument.length);
+      return true;
+    },
+  );
 });
