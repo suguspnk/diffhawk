@@ -130,25 +130,63 @@ state records the reviewed head SHA. To post-test both backends, use a fresh
 head commit or separate disposable PR for each backend. Never point this mode
 at a production PR.
 
-## Init wizard coverage
+## Setup E2E coverage
 
-The live review harness does not run the interactive `openmergelens init`
-wizard. Init can change host scheduler entries and desktop-notification state,
-so the review test builds a validated config in its own temporary home instead.
-The init setup boundary and configuration builder are covered by the offline
-suite.
+The interactive setup tests are separate from the live GitHub review test.
+They cover the real `init` process through a PTY, scheduler artifact
+installation/removal, and the native notification setup contract without
+using a real GitHub account or modifying the host scheduler.
 
-For a separate manual init smoke test, use another temporary home, select the
-same test account and repository, disable notifications, and choose the manual
-scheduler:
+Run the interactive init matrix:
+
+```bash
+pnpm test:e2e:init
+```
+
+It runs once with a Claude fixture and once with a Codex fixture. The harness
+uses a temporary `OPENMERGELENS_HOME`, fake `gh` and reviewer executables, and
+a temporary scheduler home. It confirms the existing account/repository
+selection, backend detection, consent, review settings, scheduler cleanup,
+prompt/learnings file creation, setup completion, and operation-lock cleanup.
+It does not call GitHub, invoke a real reviewer, or touch the user's real
+launchd/cron entries. Run one backend while diagnosing with
+`OPENMERGELENS_E2E_INIT_BACKEND=claude` or `codex`.
+
+Run the scheduler installation test:
+
+```bash
+pnpm test:e2e:scheduler
+```
+
+The test exercises the current platform's installer against temporary files
+and a fake external scheduler command: launchd on macOS, cron on Linux, or
+Task Scheduler's artifact/command boundary on Windows. It verifies the
+generated schedule/environment/log artifacts and removes the test schedule
+before finishing. It never invokes the real host scheduler.
+
+Run the native desktop notification UI test only when a person is present at
+a graphical terminal:
+
+```bash
+OPENMERGELENS_E2E_NOTIFICATION_UI=1 pnpm test:e2e:notification:ui
+```
+
+The test sends the same setup notification used by `init`, then asks the
+operator to type `VISIBLE` or `NOT_VISIBLE`. This is intentionally not
+CI-safe: it requires OS notification permissions, an active desktop session,
+and human confirmation. Without the explicit opt-in variable it refuses to
+send a notification.
+
+The fully manual wizard remains available when testing a real desktop setup:
 
 ```bash
 init_home=$(mktemp -d)
 OPENMERGELENS_HOME="$init_home" pnpm run init
 ```
 
-This verifies the wizard safely but is intentionally separate from the live
-review run; the E2E harness creates a fresh isolated config for each review.
+Use the manual scheduler choice unless you have explicitly reviewed the
+selected host scheduler. The automated setup tests above are the safe,
+repeatable coverage for CI or local regression runs.
 
 ## Troubleshooting
 
@@ -158,3 +196,5 @@ review run; the E2E harness creates a fresh isolated config for each review.
 - **Existing marker:** use a new test commit or a new disposable PR; the harness refuses to post twice for the same account and head.
 - **Reviewer failure:** confirm that the selected CLI is installed and authenticated. For a single backend, retain the temporary home to inspect `poll.log`; for the matrix, run the failing backend alone with `pnpm test:e2e:review`.
 - **Ambiguous reviewer settings:** unset `OPENMERGELENS_E2E_REVIEWER_COMMAND` when selecting `REVIEWER_BACKEND`; custom commands and generated backends are mutually exclusive.
+- **Init E2E cannot start:** install the POSIX `expect` utility; the setup matrix requires a real PTY and skips only on Windows.
+- **Notification UI E2E:** run it from a graphical terminal with `OPENMERGELENS_E2E_NOTIFICATION_UI=1`; a headless shell or a missing notification permission is expected to fail the test.

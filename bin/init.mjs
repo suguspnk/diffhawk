@@ -159,6 +159,7 @@ export async function finalizeSetup({
   intervalMinutes,
   account,
   desktopNotifications,
+  schedulerOptions = {},
   applySchedule = applyScheduleSelection,
   verifyNotifications = verifyConfiguredNotifications,
   spinner = p.spinner(),
@@ -172,7 +173,7 @@ export async function finalizeSetup({
     : `Installing ${scheduleChoice} entry`;
   spinner.start(scheduleAction);
   try {
-    await applySchedule({ scheduleChoice, intervalMinutes });
+    await applySchedule({ scheduleChoice, intervalMinutes, schedulerOptions });
     spinner.stop(scheduleChoice === 'manual'
       ? 'Existing OpenMergeLens schedules removed'
       : `${scheduleChoice} entry installed`);
@@ -712,6 +713,11 @@ async function main() {
       intervalMinutes,
       account: githubAccounts[0],
       desktopNotifications,
+      // The setup E2E harness supplies a temporary scheduler home so its
+      // manual cleanup path cannot inspect or change the user's schedules.
+      schedulerOptions: process.env.OPENMERGELENS_E2E_SCHEDULER_HOME
+        ? { homeDirectory: process.env.OPENMERGELENS_E2E_SCHEDULER_HOME }
+        : undefined,
     });
   } finally {
     await releaseOperationLock();
