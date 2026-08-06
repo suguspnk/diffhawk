@@ -210,6 +210,7 @@ After running the command for the package manager you used, copy
 | `model` | Optional object controlling the selected generated Codex/Claude backend. `null` uses both CLI defaults. Otherwise use `{ "id": "…", "reasoningEffort": "…" }`; either property may be `null` independently. Model IDs are validated before being added to the command. Custom reviewer commands must leave this field `null`. |
 | `reviewBatchSize` | Configured upper bound for concurrent PR reviews across all accounts (defaults to `5`). A built-in memory admission cap of three reviews also applies. |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
+| `reviewTimeoutMs` | Maximum runtime for each reviewer process (defaults to `720000`, 12 minutes; accepts `60000` through `3600000`). Manual-only setting; `openmergelens init` does not prompt for it. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openmergelens/`). |
 
@@ -242,7 +243,9 @@ openmergelens --dry-run --account work-account@github.com
 You should see one block per matching requested-review PR with a summary and
 finding count.
 Each review runs four independent focused passes plus a final synthesis pass by
-default. Host-side operations use `gh` for PR search, authentication, and
+default. Each reviewer process has a 12-minute timeout by default; the manual
+`reviewTimeoutMs` setting can adjust that bound.
+Host-side operations use `gh` for PR search, authentication, and
 metadata/diff fetch; each reviewer pass inspects the linked PR through the
 constrained `openmergelens.inspect_github_pr` MCP tool. The multiple passes can
 make a dry run take longer than a single reviewer invocation.
