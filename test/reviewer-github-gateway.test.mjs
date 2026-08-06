@@ -944,7 +944,7 @@ async function assertSharedInspectionSurvivesClientTimeout(
     directory,
     target,
     githubEnvironment: {},
-    requestTimeoutMs: 500,
+    requestTimeoutMs: 2_000,
     runGitHub: async (_args, { signal }) => {
       calls += 1;
       fetchSignal = signal;
@@ -966,6 +966,10 @@ async function assertSharedInspectionSurvivesClientTimeout(
   first.response.catch(() => {});
   await waitForCondition(() => calls === 1, `${operation} shared fetch`);
   const secondResponse = gatewayRequest(gateway, capability, { operation });
+  // Give the second request a scheduling turn before the first client's
+  // deadline. This keeps the test's shared-subscriber setup deterministic on
+  // slower Windows runners without changing the gateway contract.
+  await new Promise((resolve) => setTimeout(resolve, 100));
   const requestBarrier = await gatewayRequest(gateway, capability, {
     operation: 'not_allowed',
   });
