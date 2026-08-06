@@ -45,7 +45,11 @@ test('public CLI parse errors are persisted as one structured startup failure', 
         OPENMERGELENS_HOME: userHome,
       },
     }),
-    (error) => error.code === 1,
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /openmergelens: unrecognized argument "--invalid"/);
+      return true;
+    },
   );
 
   const contents = await readFile(path.join(userHome, 'poll.log'), 'utf8');
@@ -55,4 +59,54 @@ test('public CLI parse errors are persisted as one structured startup failure', 
   assert.equal(records[0].event, 'startup.failure');
   assert.equal(records[0].scope, 'fatal');
   assert.match(records[0].message, /openmergelens: unrecognized argument "--invalid"/);
+});
+
+test('public CLI parse errors redact token-shaped arguments on stderr', async (t) => {
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-secret-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+  const token = 'ghp_TOKEN_SHAPED_INVALID_VALUE_1234567890';
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', token], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /openmergelens: unrecognized argument "\[REDACTED\]"/);
+      assert.doesNotMatch(error.stderr, new RegExp(token));
+      return true;
+    },
+  );
+
+  const contents = await readFile(path.join(userHome, 'poll.log'), 'utf8');
+  const records = contents.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.equal(records[0].event, 'startup.failure');
+  assert.doesNotMatch(contents, new RegExp(token));
+});
+
+test('public CLI parse errors bound oversized arguments on stderr', async (t) => {
+  const invalidArgument = 'invalid-argument-'.repeat(1_000);
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-bound-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', invalidArgument], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      assert.match(error.stderr, /… \[truncated\]/);
+      assert.ok(error.stderr.length < invalidArgument.length);
+      return true;
+    },
+  );
 });

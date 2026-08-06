@@ -53,6 +53,28 @@ test('sanitizeDiagnostic redacts token prefix diagnostics and escaped secret key
   );
 });
 
+test('sanitizeDiagnostic redacts quoted and control-separated prefix values', () => {
+  const sanitized = sanitizeDiagnostic([
+    'token "alpha SECRET_TAIL beta"',
+    "token 'alpha SINGLE_SECRET_TAIL beta'",
+    'token\t"alpha CONTROL_SECRET beta"',
+    'token\u000B"alpha VERTICAL_TAB_SECRET beta"',
+    "token\u000C'alpha FORM_FEED_SECRET beta'",
+  ].join('\n'));
+
+  assert.equal(sanitized, [
+    'token [REDACTED]',
+    'token [REDACTED]',
+    'token [REDACTED]',
+    'token [REDACTED]',
+    'token [REDACTED]',
+  ].join(' '));
+  assert.doesNotMatch(
+    sanitized,
+    /SECRET_TAIL|SINGLE_SECRET_TAIL|CONTROL_SECRET|VERTICAL_TAB_SECRET|FORM_FEED_SECRET/u,
+  );
+});
+
 test('sanitizeDiagnostic redacts escaped whitespace and line-delimited credential tails', () => {
   const sanitized = sanitizeDiagnostic([
     String.raw`token FIRST\ SECOND_SECRET`,
@@ -138,6 +160,38 @@ test('serialized errors redact token prefixes and escaped secret diagnostics', (
   assert.equal(serialized.diagnostic, '{"\\u0074oken":[REDACTED]}');
   assert.doesNotMatch(serialized.stack, /plain-serialized-secret/);
   assert.doesNotMatch(JSON.stringify(serialized), /ESCAPED_ERROR_SECRET/);
+});
+
+test('serialized errors and structured files redact quoted control-separated prefixes', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-quoted-prefix-secret-log-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const logPath = path.join(root, 'poll.log');
+  const logger = createLogger({ logPath, consoleMode: 'none' });
+  const error = Object.assign(
+    new Error('token "alpha ERROR_SECRET_TAIL beta"'),
+    { stderr: 'token\u000B"alpha ERROR_CONTROL_SECRET beta"' },
+  );
+
+  const serialized = serializeError(error);
+  assert.equal(serialized.message, 'token [REDACTED]');
+  assert.equal(serialized.diagnostic, 'token [REDACTED]');
+
+  assert.equal(
+    await logger.info("token\u000C'alpha FILE_SECRET_TAIL beta'"),
+    true,
+  );
+  assert.equal(await logger.error('operation failed', { error }), true);
+  await logger.flush();
+
+  const contents = await readFile(logPath, 'utf8');
+  assert.doesNotMatch(
+    contents,
+    /ERROR_SECRET_TAIL|ERROR_CONTROL_SECRET|FILE_SECRET_TAIL/u,
+  );
+  const records = contents.trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(records[0].message, 'token [REDACTED]');
+  assert.equal(records[1].error.message, 'token [REDACTED]');
+  assert.equal(records[1].error.diagnostic, 'token [REDACTED]');
 });
 
 test('serialized errors and structured files redact multiline credential diagnostics', async (t) => {
@@ -325,6 +379,31 @@ test('logger.output preserves readable newlines and redacts unsafe content', asy
   assert.deepEqual(lines, [
     'Review summary:\n\nAuthorization: Bearer [REDACTED]\nDone.',
   ]);
+});
+
+test('logger.output redacts quoted control-separated prefix values', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-console-quoted-prefix-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const lines = [];
+  const originalConsoleLog = console.log;
+  console.log = (line) => lines.push(line);
+  t.after(() => {
+    console.log = originalConsoleLog;
+  });
+
+  const logger = createLogger({
+    logPath: path.join(root, 'poll.log'),
+    consoleMode: 'human',
+  });
+  logger.output([
+    'token "alpha CONSOLE_SECRET_TAIL beta"',
+    'token\u000B\'alpha CONSOLE_CONTROL_SECRET beta\'',
+  ].join('\n'));
+
+  assert.deepEqual(lines, [
+    'token [REDACTED]\ntoken [REDACTED]',
+  ]);
+  assert.doesNotMatch(lines[0], /CONSOLE_SECRET_TAIL|CONSOLE_CONTROL_SECRET/u);
 });
 
 test('logger.output caps terminal output at the review-summary bound', async (t) => {
