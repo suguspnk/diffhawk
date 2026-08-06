@@ -23,8 +23,8 @@ commit with no existing OpenMergeLens marker review.
 
 ## Prerequisites
 
-Install dependencies and authenticate both GitHub and the reviewer CLI before
-running the test. The GitHub account name is supplied through
+Install dependencies and authenticate GitHub plus both reviewer CLIs before
+running the matrix. The GitHub account name is supplied through
 `OPENMERGELENS_E2E_USERNAME`; the token is resolved from the matching local
 `gh` credential with `gh auth token --hostname ... --user ...`. Do not put a
 GitHub token in the environment file.
@@ -36,10 +36,12 @@ gh auth status --hostname github.com
 gh auth token --hostname github.com --user e2e-reviewer >/dev/null
 ```
 
-The reviewer command must be one of the generated Codex/Claude commands, or a
-custom command containing both `{{mcp_config}}` and `{{mcp_tool}}` placeholders.
-Use the exact command written by `openmergelens init` or shown in
-`config.example.json`; do not replace it with an arbitrary shell pipeline.
+The normal test selects a backend with
+`OPENMERGELENS_E2E_REVIEWER_BACKEND=claude` or `codex` and uses the same
+canonical generated command as `openmergelens init`. A custom reviewer is
+supported only through `OPENMERGELENS_E2E_REVIEWER_COMMAND` with both
+`{{mcp_config}}` and `{{mcp_tool}}` placeholders; do not replace it with an
+arbitrary shell pipeline.
 
 ## Configure the test environment
 
@@ -67,7 +69,8 @@ The important values are:
 | `OPENMERGELENS_E2E_REPO` | Target repository in `OWNER/REPO` form. |
 | `OPENMERGELENS_E2E_PR` | Target pull request number. |
 | `OPENMERGELENS_E2E_USERNAME` | GitHub username whose stored `gh` credential is used and who must be requested for review. |
-| `OPENMERGELENS_E2E_REVIEWER_COMMAND` | Authenticated reviewer CLI command. |
+| `OPENMERGELENS_E2E_REVIEWER_BACKEND` | `claude` or `codex`; selects the canonical generated reviewer command. |
+| `OPENMERGELENS_E2E_REVIEWER_COMMAND` | Optional custom MCP-compatible command; do not set it with `REVIEWER_BACKEND`. |
 | `OPENMERGELENS_E2E_HOST` | GitHub host; defaults to `github.com`. |
 | `OPENMERGELENS_E2E_MODE` | `dry-run` by default; use `post` only for a disposable test PR. |
 
@@ -75,9 +78,10 @@ For multiple stored GitHub accounts, `OPENMERGELENS_E2E_USERNAME` together with
 `OPENMERGELENS_E2E_HOST` selects the exact account. The test does not rely on
 whichever account happens to be active in `gh`.
 
-## Run the non-posting live test
+## Run one backend
 
-Dry-run is the default and is the required first pass:
+Set `OPENMERGELENS_E2E_REVIEWER_BACKEND` to the backend under test, then run
+the dry-run. The default is safe and does not post:
 
 ```bash
 pnpm test:e2e:review
@@ -92,11 +96,28 @@ files.
 Use `OPENMERGELENS_E2E_REVIEW_FOCUS_COUNT=1` for a fast smoke pass. Set it to
 `4` when you want all review focus passes plus synthesis.
 
+## Run both Claude and Codex
+
+With the common repository, PR, account, and dry-run settings loaded from
+`e2e/test.env`, run:
+
+```bash
+pnpm test:e2e:review:matrix
+```
+
+The matrix runs the live test twice, once with the canonical Claude command and
+once with the canonical Codex command. It runs both even if the first backend
+fails, and returns a failing exit code if either backend fails. The matrix is
+dry-run-only so both backends can safely inspect the same test PR without
+creating duplicate reviews. Do not set `OPENMERGELENS_E2E_REVIEWER_COMMAND`
+when using the matrix.
+
 ## Run the posting-path test
 
-First push a fresh commit to the test PR and request the configured reviewer
-account again. Confirm that the current head has no OpenMergeLens marker review.
-Then run:
+Posting is a single-backend operation. First push a fresh commit to the test PR
+and request the configured reviewer account again. Confirm that the current
+head has no OpenMergeLens marker review. Set the backend in `e2e/test.env`, then
+run:
 
 ```bash
 OPENMERGELENS_E2E_MODE='post' \
@@ -105,7 +126,9 @@ pnpm test:e2e:review
 ```
 
 Post mode verifies the marker review exists on GitHub and that isolated local
-state records the reviewed head SHA. Never point this mode at a production PR.
+state records the reviewed head SHA. To post-test both backends, use a fresh
+head commit or separate disposable PR for each backend. Never point this mode
+at a production PR.
 
 ## Init wizard coverage
 
@@ -129,8 +152,9 @@ review run; the E2E harness creates a fresh isolated config for each review.
 
 ## Troubleshooting
 
-- **Missing environment:** copy `e2e/test.env.example`, edit it, and source `e2e/test.env` in the same shell that runs pnpm.
+- **Missing environment:** copy `e2e/test.env.example`, set `OPENMERGELENS_E2E_REVIEWER_BACKEND` to `claude` or `codex`, and source `e2e/test.env` in the same shell that runs pnpm.
 - **Credential mismatch:** verify that `OPENMERGELENS_E2E_USERNAME` exactly matches `gh auth status` and that `gh auth token --hostname "$OPENMERGELENS_E2E_HOST" --user "$OPENMERGELENS_E2E_USERNAME"` succeeds.
 - **PR not discovered:** add the account to the PR's Reviewers list and request it again after pushing the fresh head commit.
 - **Existing marker:** use a new test commit or a new disposable PR; the harness refuses to post twice for the same account and head.
-- **Reviewer failure:** use the exact generated reviewer command and confirm that the reviewer CLI is authenticated. Retain the temporary home to inspect `poll.log`.
+- **Reviewer failure:** confirm that the selected CLI is installed and authenticated. For a single backend, retain the temporary home to inspect `poll.log`; for the matrix, run the failing backend alone with `pnpm test:e2e:review`.
+- **Ambiguous reviewer settings:** unset `OPENMERGELENS_E2E_REVIEWER_COMMAND` when selecting `REVIEWER_BACKEND`; custom commands and generated backends are mutually exclusive.
