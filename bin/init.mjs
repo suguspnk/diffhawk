@@ -126,6 +126,34 @@ export async function applyScheduleSelection({
   });
 }
 
+export function buildSetupConfig({
+  githubAccounts,
+  aiProcessingConsent,
+  reviewerCommand,
+  model,
+  reviewFocusCount,
+  desktopNotifications,
+  existingConfig,
+} = {}) {
+  return validateConfig({
+    configVersion: CONFIG_VERSION,
+    githubAccounts,
+    aiProcessingConsent,
+    reviewerCommand,
+    model,
+    reviewerInputMode: 'stdin',
+    reviewBatchSize: isValidReviewBatchSize(existingConfig?.reviewBatchSize)
+      ? existingConfig.reviewBatchSize
+      : 5,
+    reviewFocusCount,
+    // The timeout is intentionally manual-only; preserve an existing
+    // override without adding another setup prompt.
+    reviewTimeoutMs: existingConfig?.reviewTimeoutMs,
+    desktopNotifications,
+    stateFile: existingConfig?.stateFile || './state.json',
+  });
+}
+
 export async function finalizeSetup({
   scheduleChoice,
   intervalMinutes,
@@ -601,22 +629,14 @@ async function main() {
       intervalMinutes = Number(interval);
     }
 
-    const config = validateConfig({
-      configVersion: CONFIG_VERSION,
+    const config = buildSetupConfig({
       githubAccounts,
       aiProcessingConsent,
       reviewerCommand,
       model,
-      reviewerInputMode: 'stdin',
-      reviewBatchSize: isValidReviewBatchSize(existingConfig?.reviewBatchSize)
-        ? existingConfig.reviewBatchSize
-        : 5,
       reviewFocusCount,
-      // The timeout is intentionally manual-only; preserve an existing
-      // override without adding another setup prompt.
-      reviewTimeoutMs: existingConfig?.reviewTimeoutMs,
       desktopNotifications,
-      stateFile: existingConfig?.stateFile || './state.json',
+      existingConfig,
     });
 
     const filePreview = githubAccounts.flatMap((account) =>

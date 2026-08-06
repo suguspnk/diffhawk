@@ -18,13 +18,13 @@ test('PRD config shape remains valid for the current validator', async () => {
 
   const example = JSON.parse(match[1]);
   const config = validateConfig(example);
-  assert.equal(config.configVersion, 4);
+  assert.equal(config.configVersion, 5);
   assert.equal(config.reviewerInputMode, 'stdin');
   assert.match(config.reviewerCommand, /\{\{mcp_config\}\}/u);
   assert.match(config.reviewerCommand, /\{\{mcp_tool\}\}/u);
   assert.doesNotMatch(prd, /\{prompt_file\}/u);
   assert.doesNotMatch(prd, /Config version 2 is a clean break/u);
-  assert.match(prd, /Version 2 repository-scoped consent and version 3 configs are migrated/u);
+  assert.match(prd, /Version 2 repository-scoped consent and version 3 and 4 configs are migrated/u);
   assert.match(prd, /Codex CLI.*codex login status/su);
   assert.doesNotMatch(prd, /codex exec --skip-git-repo-check\s+--ephemeral\s+--sandbox read-only "ok"/u);
   assert.match(prd, /matching `CODEOWNERS` rule/u);

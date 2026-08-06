@@ -30,7 +30,7 @@ const personal = {
 
 function config(accounts = [work, personal]) {
   return {
-    configVersion: 4,
+    configVersion: 5,
     githubAccounts: accounts,
     aiProcessingConsent: createAiProcessingConsent('reviewer', accounts),
     reviewerCommand: 'reviewer',
