@@ -203,7 +203,7 @@ After running the command for the package manager you used, copy
 
 | Field | Meaning |
 |---|---|
-| `configVersion` | Required schema version; currently `4`. Version 2 repository-scoped consent and version 3 configs are migrated conservatively; older/single-account shapes are rejected. |
+| `configVersion` | Required schema version; currently `5`. Version 2 repository-scoped consent and version 3 and 4 configs are migrated conservatively; older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each repository list contains explicit `OWNER/REPO` strings. |
 | `aiProcessingConsent` | A setup-generated scoped authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing, `null`, malformed, or scope-mismatched consent prevents every repository from reaching the reviewer. Changing the backend or selected set requires one fresh bulk confirmation. Leave this `null` in hand-written config, then run `openmergelens init` to record consent. |
 | `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   applyScheduleSelection,
+  buildSetupConfig,
   finalizeSetup,
   isInteractiveTerminal,
   recheckReviewerAgent,
@@ -14,6 +15,8 @@ import {
   selectableReviewerAgents,
   validateScheduleInterval,
 } from '../bin/init.mjs';
+import { createAiProcessingConsent } from '../lib/ai-processing-consent.mjs';
+import { CODEX_REVIEWER_COMMAND } from '../lib/reviewer-command-defaults.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -37,6 +40,42 @@ test('init interval validation follows each scheduler contract', () => {
   assert.match(validateScheduleInterval('9007199254740992', 'schtasks'), /positive whole number/);
   assert.match(validateScheduleInterval('Infinity', 'launchd'), /positive whole number/);
   assert.match(validateScheduleInterval('1440', 'schtasks'), /1 through 1439/);
+});
+
+test('init preserves a manually configured reviewer timeout when rebuilding config', () => {
+  const githubAccounts = [{
+    hostname: 'github.com',
+    username: 'work',
+    repositories: ['owner/repo'],
+  }];
+  const existingConfig = {
+    configVersion: 5,
+    githubAccounts,
+    aiProcessingConsent: createAiProcessingConsent(
+      CODEX_REVIEWER_COMMAND,
+      githubAccounts,
+    ),
+    reviewerCommand: CODEX_REVIEWER_COMMAND,
+    model: null,
+    reviewBatchSize: 2,
+    reviewFocusCount: 4,
+    reviewTimeoutMs: 15 * 60 * 1000,
+    desktopNotifications: true,
+    stateFile: './state.json',
+  };
+
+  const rebuilt = buildSetupConfig({
+    githubAccounts,
+    aiProcessingConsent: existingConfig.aiProcessingConsent,
+    reviewerCommand: existingConfig.reviewerCommand,
+    model: existingConfig.model,
+    reviewFocusCount: existingConfig.reviewFocusCount,
+    desktopNotifications: false,
+    existingConfig,
+  });
+
+  assert.equal(rebuilt.reviewTimeoutMs, existingConfig.reviewTimeoutMs);
+  assert.equal(rebuilt.desktopNotifications, false);
 });
 
 test('init rejects an unsupported cron interval before scheduler reconciliation', async () => {
