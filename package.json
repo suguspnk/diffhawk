@@ -48,7 +48,7 @@
     "poll": "node bin/poll.mjs",
     "init": "node bin/init.mjs",
     "report": "node bin/openmergelens.mjs report",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "test:e2e:init": "node e2e/init-matrix.mjs",
     "test:e2e:scheduler": "node --test e2e/scheduler.e2e.mjs",
     "test:e2e:notification:ui": "node e2e/notification-ui.e2e.mjs",
