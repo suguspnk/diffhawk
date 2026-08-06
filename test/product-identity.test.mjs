@@ -73,7 +73,7 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
   assert.ok(packageJson.files.includes('npm-shrinkwrap.json'));
 });
 
-test('published package includes the safe documented E2E harness', async (t) => {
+test('published package excludes the repository-only E2E harness', async (t) => {
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
   );
@@ -99,18 +99,15 @@ test('published package includes the safe documented E2E harness', async (t) => 
     .filter(([name]) => name.startsWith('test:e2e:'))
     .flatMap(([, command]) => command.match(/\be2e\/[^\s]+\.mjs\b/g) ?? []);
 
-  assert.ok(packageJson.files.includes('e2e'));
   assert.deepEqual(
-    e2eScriptPaths.filter((filePath) => !packagedFiles.has(filePath)),
+    e2eScriptPaths.filter((filePath) => packagedFiles.has(filePath)),
     [],
-    'every documented E2E script entrypoint must be included in the package',
+    'repository-only E2E script entrypoints must not be published',
   );
-  assert.ok(packagedFiles.has('e2e/README.md'));
-  assert.ok(packagedFiles.has('e2e/test.env.example'));
   assert.equal(
-    packagedFiles.has('e2e/test.env'),
+    [...packagedFiles].some((filePath) => filePath.startsWith('e2e/')),
     false,
-    'the local E2E environment file must never be published',
+    'the repository-only E2E harness must not be published',
   );
 });
 
