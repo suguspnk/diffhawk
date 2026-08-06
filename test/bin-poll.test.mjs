@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,6 +59,27 @@ test('public CLI parse errors are persisted as one structured startup failure', 
   assert.equal(records[0].event, 'startup.failure');
   assert.equal(records[0].scope, 'fatal');
   assert.match(records[0].message, /openmergelens: unrecognized argument "--invalid"/);
+});
+
+test('public CLI parse errors release the log coordination marker', async (t) => {
+  const userHome = await mkdtemp(path.join(tmpdir(), 'openmergelens-bin-entrypoint-lock-'));
+  t.after(() => rm(userHome, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ['bin/openmergelens.mjs', '--bad'], {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        OPENMERGELENS_HOME: userHome,
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 1);
+      return true;
+    },
+  );
+
+  assert.deepEqual(await readdir(userHome), ['poll.log']);
 });
 
 test('public CLI parse errors redact token-shaped arguments on stderr', async (t) => {

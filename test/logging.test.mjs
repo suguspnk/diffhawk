@@ -75,6 +75,24 @@ test('sanitizeDiagnostic redacts quoted and control-separated prefix values', ()
   );
 });
 
+test('sanitizeDiagnostic redacts unquoted control-separated prefix values', () => {
+  const sanitized = sanitizeDiagnostic([
+    'token\u000BCONTROL_TOKEN_SECRET',
+    'secret\u000BCONTROL_SECRET_VALUE',
+    'password\u000BCONTROL_PASSWORD_VALUE',
+  ].join('\n'));
+
+  assert.equal(sanitized, [
+    'token [REDACTED]',
+    'secret [REDACTED]',
+    'password [REDACTED]',
+  ].join(' '));
+  assert.doesNotMatch(
+    sanitized,
+    /CONTROL_TOKEN_SECRET|CONTROL_SECRET_VALUE|CONTROL_PASSWORD_VALUE/u,
+  );
+});
+
 test('sanitizeDiagnostic redacts escaped whitespace and line-delimited credential tails', () => {
   const sanitized = sanitizeDiagnostic([
     String.raw`token FIRST\ SECOND_SECRET`,
@@ -192,6 +210,31 @@ test('serialized errors and structured files redact quoted control-separated pre
   assert.equal(records[0].message, 'token [REDACTED]');
   assert.equal(records[1].error.message, 'token [REDACTED]');
   assert.equal(records[1].error.diagnostic, 'token [REDACTED]');
+});
+
+test('structured log records redact unquoted control-separated prefix values', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-unquoted-prefix-secret-log-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const logPath = path.join(root, 'poll.log');
+  const logger = createLogger({ logPath, consoleMode: 'none' });
+  const values = [
+    ['token', 'CONTROL_TOKEN_SECRET'],
+    ['secret', 'CONTROL_SECRET_VALUE'],
+    ['password', 'CONTROL_PASSWORD_VALUE'],
+  ];
+
+  for (const [prefix, tail] of values) {
+    assert.equal(await logger.info(`${prefix}\u000B${tail}`), true);
+  }
+  await logger.flush();
+
+  const contents = await readFile(logPath, 'utf8');
+  const records = contents.trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(
+    records.map((record) => record.message),
+    values.map(([prefix]) => `${prefix} [REDACTED]`),
+  );
+  for (const [, tail] of values) assert.equal(contents.includes(tail), false);
 });
 
 test('serialized errors and structured files redact multiline credential diagnostics', async (t) => {
@@ -870,21 +913,42 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
   const loggingModulePath = path.resolve('lib/logging.mjs');
   const childCode = [
     `import { appendFailure } from ${JSON.stringify(loggingModulePath)};`,
-    "await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
+    "const result = await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
+    "process.stdout.write(JSON.stringify({ result }));",
   ].join('\n');
-  await Promise.all(
-    Array.from({ length: 120 }, (_, index) => new Promise((resolve, reject) => {
+  const outcomes = await Promise.all(
+    Array.from({ length: 200 }, (_, index) => new Promise((resolve, reject) => {
       const child = spawn(
         process.execPath,
         ['--input-type=module', '-e', childCode, '--', logPath, `race-${index}`],
-        { stdio: 'ignore' },
+        { stdio: ['ignore', 'pipe', 'pipe'] },
       );
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => { stdout += chunk; });
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
       child.once('error', reject);
       child.once('exit', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`logging child exited with code ${code}`));
+        let result;
+        try {
+          result = JSON.parse(stdout.trim()).result;
+        } catch {
+          result = 'missing';
+        }
+        resolve({ index, code, result, stderr });
       });
     })),
+  );
+
+  assert.deepEqual(
+    outcomes.filter(({ code }) => code !== 0),
+    [],
+    `logging children exited unexpectedly: ${JSON.stringify(outcomes)}`,
+  );
+  assert.deepEqual(
+    outcomes.filter(({ result }) => result !== true),
+    [],
+    `logging children dropped records: ${JSON.stringify(outcomes)}`,
   );
 
   assert.ok(
@@ -906,7 +970,7 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
 
   const messages = new Set(records.map((record) => record.message));
   assert.deepEqual(
-    Array.from({ length: 120 }, (_, index) => `race-${index}`)
+    Array.from({ length: 200 }, (_, index) => `race-${index}`)
       .filter((message) => !messages.has(message)),
     [],
   );
