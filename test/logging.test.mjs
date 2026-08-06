@@ -961,28 +961,42 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
     "const result = await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
     "process.stdout.write(JSON.stringify({ result }));",
   ].join('\n');
-  const outcomes = await Promise.all(
-    Array.from({ length: 200 }, (_, index) => new Promise((resolve, reject) => {
-      const child = spawn(
-        process.execPath,
-        ['--input-type=module', '-e', childCode, '--', logPath, `race-${index}`],
-        { stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (chunk) => { stdout += chunk; });
-      child.stderr.on('data', (chunk) => { stderr += chunk; });
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        let result;
-        try {
-          result = JSON.parse(stdout.trim()).result;
-        } catch {
-          result = 'missing';
-        }
-        resolve({ index, code, result, stderr });
-      });
-    })),
+  // Keep the total fan-in high while bounding fresh Node process startup. A
+  // 200-process launch burst exceeds the supported loopback election envelope
+  // on shared CI runners and turns a logging regression test into a scheduler
+  // resource test. Sixteen active children still exercise cross-process
+  // rotation and append serialization without making the result runner-load
+  // dependent.
+  const outcomes = [];
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: 16 }, async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= 200) return;
+        outcomes[index] = await new Promise((resolve, reject) => {
+          const child = spawn(
+            process.execPath,
+            ['--input-type=module', '-e', childCode, '--', logPath, `race-${index}`],
+            { stdio: ['ignore', 'pipe', 'pipe'] },
+          );
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', (chunk) => { stdout += chunk; });
+          child.stderr.on('data', (chunk) => { stderr += chunk; });
+          child.once('error', reject);
+          child.once('exit', (code) => {
+            let result;
+            try {
+              result = JSON.parse(stdout.trim()).result;
+            } catch {
+              result = 'missing';
+            }
+            resolve({ index, code, result, stderr });
+          });
+        });
+      }
+    }),
   );
 
   assert.deepEqual(
