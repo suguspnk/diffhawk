@@ -724,6 +724,24 @@ test('Linux polls skip desktop notification outside a graphical session', async 
   assert.deepEqual(logged, []);
 });
 
+test('Linux polls skip desktop notification with only XDG_RUNTIME_DIR', async () => {
+  let called = false;
+  const delivered = await attemptDesktopNotification(
+    { title: 'Title', message: 'Message' },
+    {
+      config: { desktopNotifications: true },
+      environment: { XDG_RUNTIME_DIR: '/tmp/runtime' },
+      platform: 'linux',
+      deliver: async () => {
+        called = true;
+      },
+    },
+  );
+
+  assert.equal(delivered, false);
+  assert.equal(called, false);
+});
+
 test('disabled notifications do not invoke delivery', async () => {
   let called = false;
   const delivered = await attemptDesktopNotification(

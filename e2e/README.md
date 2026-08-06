@@ -143,14 +143,18 @@ Run the interactive init matrix:
 pnpm test:e2e:init
 ```
 
-It runs once with a Claude fixture and once with a Codex fixture. The harness
-uses a temporary `OPENMERGELENS_HOME`, fake `gh` and reviewer executables, and
-a temporary scheduler home. It confirms the existing account/repository
-selection, backend detection, consent, review settings, scheduler cleanup,
-prompt/learnings file creation, setup completion, and operation-lock cleanup.
-It does not call GitHub, invoke a real reviewer, or touch the user's real
-launchd/cron entries. Run one backend while diagnosing with
-`OPENMERGELENS_E2E_INIT_BACKEND=claude` or `codex`.
+It runs each backend fixture through both the manual path and the installed
+current-host scheduler path: launchd on macOS or cron on Linux. The harness
+uses a temporary `OPENMERGELENS_HOME`, fake `gh`, reviewer, and scheduler
+executables, and a temporary scheduler home. It confirms the existing
+account/repository selection, backend detection, consent, review settings,
+manual scheduler cleanup, installed scheduler artifacts/log, prompt/learnings
+file creation, setup completion, and operation-lock cleanup. It does not call
+GitHub, invoke a real reviewer, or touch the user's real launchd/cron entries.
+Windows keeps the existing POSIX PTY skip; its Task Scheduler installer remains
+covered by `pnpm test:e2e:scheduler`. Run one backend and scheduler mode while
+diagnosing with `OPENMERGELENS_E2E_INIT_BACKEND=claude` or `codex` and
+`OPENMERGELENS_E2E_INIT_SCHEDULER=manual` or `installed`.
 
 Run the scheduler installation test:
 

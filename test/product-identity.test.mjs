@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseHtml } from 'parse5';
@@ -70,6 +71,47 @@ test('package metadata exposes the OpenMergeLens identity and CLI', async () => 
     'the published npm lock must not contain pnpm store paths',
   );
   assert.ok(packageJson.files.includes('npm-shrinkwrap.json'));
+});
+
+test('published package includes the safe documented E2E harness', async (t) => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+  );
+  const npmCache = await mkdtemp(path.join(tmpdir(), 'openmergelens-npm-cache-'));
+  t.after(() => rm(npmCache, { recursive: true, force: true }));
+
+  const { stdout } = await execFileAsync(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['pack', '--dry-run', '--json', '--ignore-scripts'],
+    {
+      cwd: projectRoot,
+      env: {
+        ...process.env,
+        npm_config_cache: npmCache,
+      },
+    },
+  );
+  const packMetadata = JSON.parse(stdout.trim());
+  const packagedFiles = new Set(
+    packMetadata.flatMap((entry) => entry.files.map((file) => file.path)),
+  );
+  const e2eScriptPaths = Object.entries(packageJson.scripts)
+    .filter(([name]) => name.startsWith('test:e2e:'))
+    .flatMap(([, command]) => command.match(/\be2e\/[^\s]+\.mjs\b/g) ?? []);
+
+  assert.ok(packageJson.files.includes('e2e'));
+  assert.deepEqual(
+    e2eScriptPaths.filter((filePath) => !packagedFiles.has(filePath)),
+    [],
+    'every documented E2E script entrypoint must be included in the package',
+  );
+  assert.ok(packagedFiles.has('e2e/README.md'));
+  assert.ok(packagedFiles.has('e2e/test.env.example'));
+  assert.equal(
+    packagedFiles.has('e2e/test.env'),
+    false,
+    'the local E2E environment file must never be published',
+  );
 });
 
 test('the bundled manual config requires init to record bulk consent', async () => {

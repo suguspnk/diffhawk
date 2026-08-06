@@ -16,7 +16,10 @@ import {
 import { resolveGitHubAuth } from '../lib/github-auth.mjs';
 import { saveConfig } from '../lib/config.mjs';
 import { prKey } from '../lib/state.mjs';
-import { parseEnvironment } from './live-review-config.mjs';
+import {
+  calculateLiveReviewWatchdogMs,
+  parseEnvironment,
+} from './live-review-config.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -32,13 +35,13 @@ function parseJsonLines(contents, logPath) {
   });
 }
 
-function runPoll({ home, mode, timeoutMs }) {
+function runPoll({ home, mode, reviewFocusCount, reviewTimeoutMs }) {
   const args = ['bin/poll.mjs'];
   if (mode === 'dry-run') args.push('--dry-run');
-  const timeout = Math.min(
-    3_600_000,
-    Math.max(120_000, timeoutMs * 6 + 60_000),
-  );
+  const timeout = calculateLiveReviewWatchdogMs({
+    reviewFocusCount,
+    reviewTimeoutMs,
+  });
 
   return new Promise((resolve, reject) => {
     const child = execFile(process.execPath, args, {
@@ -160,7 +163,8 @@ if (environment.error) {
       const result = await runPoll({
         home,
         mode: environment.mode,
-        timeoutMs: environment.reviewTimeoutMs,
+        reviewFocusCount: environment.reviewFocusCount,
+        reviewTimeoutMs: environment.reviewTimeoutMs,
       });
       const logPath = path.join(home, 'poll.log');
       const records = parseJsonLines(await readFile(logPath, 'utf8'), logPath);

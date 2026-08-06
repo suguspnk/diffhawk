@@ -53,6 +53,50 @@ test('sanitizeDiagnostic redacts token prefix diagnostics and escaped secret key
   );
 });
 
+test('sanitizeDiagnostic redacts Cookie headers without changing ordinary text', () => {
+  assert.equal(
+    sanitizeDiagnostic([
+      'Cookie: sessionid=super-secret-cookie-value; theme=dark',
+      'Cookie policy: ordinary text remains readable',
+    ].join('\n')),
+    'Cookie: sessionid=[REDACTED]; theme=[REDACTED] Cookie policy: ordinary text remains readable',
+  );
+});
+
+test('sanitizeDiagnostic redacts Set-Cookie values while preserving attributes', () => {
+  assert.equal(
+    sanitizeDiagnostic('Set-Cookie: sessionid=super-secret-set-cookie; Path=/; HttpOnly; SameSite=Lax'),
+    'Set-Cookie: sessionid=[REDACTED]; Path=/; HttpOnly; SameSite=Lax',
+  );
+});
+
+test('sanitizeDiagnostic redacts Cookie and Set-Cookie key forms', () => {
+  const sanitized = sanitizeDiagnostic(
+    '{"Cookie":"sessionid=json-cookie-secret; theme=dark", "Set-Cookie":"sessionid=json-set-cookie-secret; Path=/"}',
+  );
+
+  assert.equal(
+    sanitized,
+    '{"Cookie":"sessionid=[REDACTED]; theme=[REDACTED]", "Set-Cookie":"sessionid=[REDACTED]; Path=/"}',
+  );
+  assert.doesNotMatch(sanitized, /json-cookie-secret|json-set-cookie-secret/u);
+});
+
+test('sanitizeDiagnostic redacts multiline Cookie values without leaking tails', () => {
+  const sanitized = sanitizeDiagnostic([
+    'Cookie: sessionid=multiline-cookie-secret',
+    'Set-Cookie: sessionid="multiline-set-cookie-secret',
+    'MULTILINE_COOKIE_TAIL"; Path=/',
+    'message=ordinary text',
+  ].join('\n'));
+
+  assert.equal(
+    sanitized,
+    'Cookie: sessionid=[REDACTED] Set-Cookie: sessionid=[REDACTED]; Path=/ message=ordinary text',
+  );
+  assert.doesNotMatch(sanitized, /multiline-cookie-secret|MULTILINE_COOKIE_TAIL/u);
+});
+
 test('sanitizeDiagnostic redacts quoted and control-separated prefix values', () => {
   const sanitized = sanitizeDiagnostic([
     'token "alpha SECRET_TAIL beta"',

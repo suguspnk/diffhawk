@@ -3,9 +3,11 @@ import {
   CODEX_REVIEWER_COMMAND,
   validateReviewerCommandContract,
 } from '../lib/reviewer-command-defaults.mjs';
+import { REVIEW_INSPECTION_RETRY_COUNT } from '../lib/reviewer-adapter.mjs';
 
 export const POST_CONFIRMATION = 'I_UNDERSTAND_POSTING_TO_TEST_PR';
 export const REVIEWER_BACKENDS = Object.freeze(['claude', 'codex']);
+export const LIVE_REVIEW_CLEANUP_MARGIN_MS = 60_000;
 
 const GENERATED_REVIEWER_COMMANDS = Object.freeze({
   claude: CLAUDE_REVIEWER_COMMAND,
@@ -30,6 +32,13 @@ function parseBoundedInteger(value, name, minimum, maximum, fallback) {
     throw new Error(`${name} must be between ${minimum} and ${maximum}`);
   }
   return parsed;
+}
+
+export function calculateLiveReviewWatchdogMs({ reviewFocusCount, reviewTimeoutMs }) {
+  const reviewCallCount = reviewFocusCount + 1;
+  const reviewAttemptCount = REVIEW_INSPECTION_RETRY_COUNT + 1;
+  return reviewCallCount * reviewAttemptCount * reviewTimeoutMs +
+    LIVE_REVIEW_CLEANUP_MARGIN_MS;
 }
 
 function reviewerConfiguration(environment) {

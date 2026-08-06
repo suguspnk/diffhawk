@@ -26,6 +26,22 @@ function selectedBackend() {
   return backend;
 }
 
+function selectedSchedulerMode() {
+  const mode = (process.env.OPENMERGELENS_E2E_INIT_SCHEDULER || 'manual')
+    .trim()
+    .toLowerCase();
+  if (!['manual', 'installed'].includes(mode)) {
+    throw new Error('OPENMERGELENS_E2E_INIT_SCHEDULER must be manual or installed');
+  }
+  return mode;
+}
+
+function currentHostScheduler() {
+  if (process.platform === 'darwin') return 'launchd';
+  if (process.platform === 'linux') return 'cron';
+  return undefined;
+}
+
 async function writeExecutable(filePath, contents) {
   await writeFile(filePath, `#!${process.execPath}\n${contents}`, 'utf8');
   await chmod(filePath, 0o755);
@@ -156,7 +172,7 @@ async function expectCommand() {
   }
 }
 
-function expectScript({ schedulerDownCount }) {
+function expectScript({ schedulerDownCount, installedScheduler }) {
   const initPath = path.join(projectRoot, 'bin', 'init.mjs');
   const nodePath = process.execPath.replaceAll('\\', '\\\\');
   const escapedInitPath = initPath.replaceAll('\\', '\\\\');
@@ -210,6 +226,10 @@ ${schedulerNavigation}
   }
   timeout { exit 27 }
 }
+${installedScheduler ? `expect {
+  -re {How often should it poll} { send "\\r" }
+  timeout { exit 30 }
+}` : ''}
 expect {
   -re {Apply this complete configuration} { send "\\r" }
   timeout { exit 28 }
@@ -224,8 +244,8 @@ exit [lindex $waitResult 3]
 `;
 }
 
-async function runInteractiveInit({ command, environment, schedulerDownCount }) {
-  const child = spawn(command, ['-c', expectScript({ schedulerDownCount })], {
+async function runInteractiveInit({ command, environment, schedulerDownCount, installedScheduler }) {
+  const child = spawn(command, ['-c', expectScript({ schedulerDownCount, installedScheduler })], {
     cwd: projectRoot,
     env: environment,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -253,15 +273,22 @@ async function runInteractiveInit({ command, environment, schedulerDownCount }) 
 }
 
 test(
-  'interactive init writes an isolated configuration through a real PTY',
+  `interactive init writes an isolated configuration through a real PTY (${selectedSchedulerMode()} scheduler)`,
   {
     skip: process.platform === 'win32'
       ? 'the portable setup smoke currently targets POSIX PTY hosts'
-      : false,
+      : selectedSchedulerMode() === 'installed' && !currentHostScheduler()
+        ? 'no installed scheduler fixture is defined for this host'
+        : false,
     timeout: 75_000,
   },
   async (t) => {
     const backend = selectedBackend();
+    const schedulerMode = selectedSchedulerMode();
+    const scheduler = currentHostScheduler();
+    if (schedulerMode === 'installed' && !scheduler) {
+      throw new Error(`no installed scheduler fixture is defined for ${process.platform}`);
+    }
     const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-init-e2e-'));
     const home = path.join(root, 'home');
     await mkdir(home, { recursive: true });
@@ -298,7 +325,12 @@ test(
         OPENMERGELENS_HOME: home,
         OPENMERGELENS_E2E_SCHEDULER_HOME: path.join(root, 'scheduler-home'),
       },
-      schedulerDownCount: process.platform === 'darwin' ? 2 : 1,
+      schedulerDownCount: schedulerMode === 'installed'
+        ? 0
+        : process.platform === 'darwin'
+          ? 2
+          : 1,
+      installedScheduler: schedulerMode === 'installed',
     });
     assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
     assert.equal(result.signal, null);
@@ -326,7 +358,36 @@ test(
       ),
       '',
     );
-    assert.match(await readFile(fake.schedulerLog, 'utf8'), /launchctl unload|crontab -l/u);
+    const schedulerLog = await readFile(fake.schedulerLog, 'utf8');
+    const schedulerEnvironmentPath = path.join(home, 'scheduler-environment.json');
+    const pollLogPath = path.join(home, 'poll.log');
+    if (schedulerMode === 'manual') {
+      assert.match(schedulerLog, /launchctl unload|crontab -l/u);
+      await assert.rejects(access(schedulerEnvironmentPath), { code: 'ENOENT' });
+      await assert.rejects(access(pollLogPath), { code: 'ENOENT' });
+    } else if (scheduler === 'launchd') {
+      assert.match(schedulerLog, /launchctl unload[\s\S]*launchctl load/u);
+      assert.match(
+        await readFile(
+          path.join(
+            root,
+            'scheduler-home',
+            'Library',
+            'LaunchAgents',
+            'io.github.suguspnk.openmergelens.poll.plist',
+          ),
+          'utf8',
+        ),
+        /<key>StartInterval<\/key>\s*<integer>900<\/integer>/u,
+      );
+      assert.equal(JSON.parse(await readFile(schedulerEnvironmentPath, 'utf8')).OPENMERGELENS_HOME, home);
+      await access(pollLogPath);
+    } else {
+      assert.match(schedulerLog, /crontab -l[\s\S]*crontab -/u);
+      assert.match(await readFile(fake.crontabState, 'utf8'), /# openmergelens:managed:cron:v1/u);
+      assert.equal(JSON.parse(await readFile(schedulerEnvironmentPath, 'utf8')).OPENMERGELENS_HOME, home);
+      await access(pollLogPath);
+    }
     await assert.rejects(access(path.join(home, 'operation.lock')), { code: 'ENOENT' });
   },
 );

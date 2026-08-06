@@ -38,6 +38,7 @@
     "bin/scheduled-win32.vbs",
     "lib",
     "vendor",
+    "e2e",
     "docs/review-prompt.default.md",
     "npm-shrinkwrap.json",
     "CHANGELOG.md",

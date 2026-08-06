@@ -412,6 +412,62 @@ test('removeScheduler schtasks targets only the fixed OpenMergeLens task', async
   assert.deepEqual(calls, [['schtasks', ['/delete', '/f', '/tn', 'openmergelens-poll']]]);
 });
 
+test('B-004 bounds injected launchd and schtasks commands', {
+  timeout: 2_000,
+}, async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-b004-command-timeout-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const neverSettles = () => new Promise(() => {});
+  const cases = [
+    [
+      'install launchd',
+      () => installLaunchd({
+        platform: 'darwin',
+        homeDirectory: path.join(directory, 'launchd-home'),
+        environment: { OPENMERGELENS_HOME: path.join(directory, 'launchd-state') },
+        pollScriptPath: '/tmp/poll.mjs',
+        intervalMinutes: 15,
+        executeCommand: neverSettles,
+        timeoutMs: 25,
+      }),
+    ],
+    [
+      'remove launchd',
+      () => removeScheduler('launchd', {
+        platform: 'darwin',
+        homeDirectory: path.join(directory, 'launchd-remove-home'),
+        executeCommand: neverSettles,
+        timeoutMs: 25,
+      }),
+    ],
+    [
+      'install schtasks',
+      () => installSchtasks({
+        platform: 'win32',
+        homeDirectory: path.join(directory, 'schtasks-home'),
+        pathImplementation: hostPath,
+        environment: { OPENMERGELENS_HOME: path.join(directory, 'schtasks-state') },
+        pollScriptPath: 'C:\\poll.mjs',
+        intervalMinutes: 15,
+        executeCommand: neverSettles,
+        timeoutMs: 25,
+      }),
+    ],
+    [
+      'remove schtasks',
+      () => removeScheduler('schtasks', {
+        platform: 'win32',
+        executeCommand: neverSettles,
+        timeoutMs: 25,
+      }),
+    ],
+  ];
+
+  for (const [label, action] of cases) {
+    await assert.rejects(action, /timed out after 25ms/, label);
+  }
+});
+
 test('reconcileScheduler retires the other host scheduler after install', async () => {
   const events = [];
   await reconcileScheduler({
@@ -728,6 +784,109 @@ test('FINDING-FRESH-004 restores schtasks artifacts after a create failure', asy
   await assert.rejects(() => stat(logPath), { code: 'ENOENT' });
   assert.equal(queryCount, 1);
   assert.equal(createCount, 2);
+});
+
+test('B-004 bounds launchd and schtasks restoration commands', async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'openmergelens-b004-restore-timeout-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+
+  const launchdHome = path.join(directory, 'launchd-home');
+  const launchdState = path.join(directory, 'launchd-state');
+  const launchdPlistPath = path.join(
+    launchdHome,
+    'Library',
+    'LaunchAgents',
+    'io.github.suguspnk.openmergelens.poll.plist',
+  );
+  await mkdir(path.dirname(launchdPlistPath), { recursive: true });
+  await writeFile(launchdPlistPath, '<plist>previous schedule</plist>\n', 'utf8');
+  let launchdLoadCount = 0;
+  let launchdError;
+  await assert.rejects(
+    installLaunchd({
+      platform: 'darwin',
+      homeDirectory: launchdHome,
+      environment: { OPENMERGELENS_HOME: launchdState },
+      pollScriptPath: '/tmp/poll.mjs',
+      intervalMinutes: 15,
+      timeoutMs: 25,
+      executeCommand: async (command, args, options) => {
+        assert.equal(command, 'launchctl');
+        assert.deepEqual(options, { timeout: 25 });
+        if (args[0] === 'load') {
+          launchdLoadCount += 1;
+          if (launchdLoadCount === 1) throw new Error('replacement load failed');
+          return new Promise(() => {});
+        }
+      },
+    }),
+    (err) => {
+      launchdError = err;
+      assert.equal(err.message, 'replacement load failed');
+      return true;
+    },
+  );
+  await assert.rejects(
+    launchdError.schedulerRestore,
+    /timed out after 25ms/,
+  );
+
+  const removalHome = path.join(directory, 'launchd-removal-home');
+  const removalPlistPath = path.join(
+    removalHome,
+    'Library',
+    'LaunchAgents',
+    'io.github.suguspnk.openmergelens.poll.plist',
+  );
+  await mkdir(path.dirname(removalPlistPath), { recursive: true });
+  await writeFile(removalPlistPath, '<plist>removal schedule</plist>\n', 'utf8');
+  const removal = await removeScheduler('launchd', {
+    platform: 'darwin',
+    homeDirectory: removalHome,
+    timeoutMs: 25,
+    executeCommand: async (command, args, options) => {
+      assert.equal(command, 'launchctl');
+      assert.deepEqual(options, { timeout: 25 });
+      if (args[0] === 'load') return new Promise(() => {});
+    },
+  });
+  await assert.rejects(removal.restore, /timed out after 25ms/);
+
+  const schtasksState = path.join(directory, 'schtasks-state');
+  const previousTaskXml = '<Task><Actions><Exec><Command>previous.exe</Command></Exec></Actions></Task>\n';
+  let schtasksCreateCount = 0;
+  let schtasksError;
+  await assert.rejects(
+    installSchtasks({
+      platform: 'win32',
+      pathImplementation: hostPath,
+      homeDirectory: path.join(directory, 'schtasks-home'),
+      environment: { OPENMERGELENS_HOME: schtasksState },
+      pollScriptPath: 'C:\\poll.mjs',
+      intervalMinutes: 15,
+      timeoutMs: 25,
+      executeCommand: async (command, args, options) => {
+        assert.equal(command, 'schtasks');
+        assert.deepEqual(options, { timeout: 25 });
+        if (args[0] === '/query') return { stdout: previousTaskXml };
+        if (args[0] === '/create') {
+          schtasksCreateCount += 1;
+          if (schtasksCreateCount === 1) throw new Error('replacement create failed');
+          return new Promise(() => {});
+        }
+        throw new Error(`unexpected schtasks operation: ${args.join(' ')}`);
+      },
+    }),
+    (err) => {
+      schtasksError = err;
+      assert.equal(err.message, 'replacement create failed');
+      return true;
+    },
+  );
+  await assert.rejects(
+    schtasksError.schedulerRestore,
+    /timed out after 25ms/,
+  );
 });
 
 test('FINDING-CLI-001 restores the prior launchd schedule after a partial replacement failure', async (t) => {

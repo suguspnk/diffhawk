@@ -4,7 +4,11 @@ import {
   CLAUDE_REVIEWER_COMMAND,
   CODEX_REVIEWER_COMMAND,
 } from '../lib/reviewer-command-defaults.mjs';
-import { parseEnvironment } from '../e2e/live-review-config.mjs';
+import {
+  calculateLiveReviewWatchdogMs,
+  LIVE_REVIEW_CLEANUP_MARGIN_MS,
+  parseEnvironment,
+} from '../e2e/live-review-config.mjs';
 
 function baseEnvironment(overrides = {}) {
   return {
@@ -77,4 +81,14 @@ test('live E2E config requires explicit confirmation for posting', () => {
   }));
 
   assert.match(config.error, /OPENMERGELENS_E2E_POST_CONFIRM/u);
+});
+
+test('live E2E watchdog covers every focused pass, synthesis, and retry', () => {
+  assert.equal(
+    calculateLiveReviewWatchdogMs({
+      reviewFocusCount: 4,
+      reviewTimeoutMs: 3_600_000,
+    }),
+    (4 + 1) * (1 + 1) * 3_600_000 + LIVE_REVIEW_CLEANUP_MARGIN_MS,
+  );
 });
