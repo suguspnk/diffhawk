@@ -1,0 +1,2 @@
+# Local live E2E credentials and target configuration must never ship.
+e2e/test.env

@@ -173,7 +173,10 @@ if (environment.error) {
       assert.equal(result.signal, null);
       assert.ok(completed, 'poll.log must contain poll.completed');
       assert.equal(completed.status, 'ok');
-      assert.equal(completed.count, 1);
+      assert.ok(
+        completed.count >= 1,
+        'poll.completed must include at least the configured target PR',
+      );
       assert.ok(
         records.some((record) =>
           record.message?.includes(`${environment.repository}#${environment.number}`) &&

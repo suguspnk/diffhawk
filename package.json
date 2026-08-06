@@ -39,6 +39,7 @@
     "lib",
     "vendor",
     "e2e",
+    "!e2e/test.env",
     "docs/review-prompt.default.md",
     "npm-shrinkwrap.json",
     "CHANGELOG.md",
