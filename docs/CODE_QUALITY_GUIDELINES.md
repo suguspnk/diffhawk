@@ -112,7 +112,8 @@ for the general pattern; these are the OpenMergeLens-specific rules.
   malicious subprocess must not block the poller indefinitely. Every `gh`
   invocation, every `github-auth.mjs` call, and every reviewer-CLI
   invocation must specify an explicit `timeout`, as defined by `GH_TIMEOUT_MS` /
-  `GH_AUTH_TIMEOUT_MS` and `reviewer-adapter.mjs`'s `timeoutMs` default.
+  `GH_AUTH_TIMEOUT_MS` and `reviewer-adapter.mjs`'s configured `timeoutMs`
+  default.
 - **Untrusted content goes through stdin or a file, never through argv when
   avoidable.** `postReview` sends its JSON payload via `--input -` +
   `child.stdin`; `invokeReviewer` writes the prompt to `child.stdin`. This

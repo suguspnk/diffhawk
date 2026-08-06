@@ -353,7 +353,7 @@ read-only restrictions. Keep custom commands swappable by retaining both
 
 ```json
 {
-  "configVersion": 4,
+  "configVersion": 5,
   "aiProcessingConsent": null,
   "githubAccounts": [
     {
@@ -372,12 +372,13 @@ read-only restrictions. Keep custom commands swappable by retaining both
   "reviewerInputMode": "stdin",
   "reviewBatchSize": 5,
   "reviewFocusCount": 4,
+  "reviewTimeoutMs": 720000,
   "desktopNotifications": true,
   "stateFile": "./state.json"
 }
 ```
 
-This shape passes the current v4 validator. `openmergelens init` fills in the
+This shape passes the current v5 validator. `openmergelens init` fills in the
 consent scope after the user confirms the selected reviewer and repositories;
 the `null` value above is the valid pre-consent state.
 
@@ -498,7 +499,7 @@ run `node bin/init.mjs` as usual. Steps, in order:
      exit immediately.
    - Store only hostnames, usernames, and explicit repositories in config,
      never tokens.
-   - Version 2 repository-scoped consent and version 3 configs are migrated
+   - Version 2 repository-scoped consent and version 3 and 4 configs are migrated
      conservatively. Older or unsupported shapes are rejected and require a
      fresh config from `openmergelens init`.
    - Resolve each account at poll time with
@@ -568,7 +569,8 @@ run `node bin/init.mjs` as usual. Steps, in order:
    - 3, 2, or 1: progressively fewer categories and fewer reviewer calls
    The selection sets `reviewFocusCount` and the final config preview explains
    the resulting reviewer-call count. On rerun, default to the existing value
-   when it is valid.
+   when it is valid. `reviewTimeoutMs` is a manual-only config override for the
+   per-reviewer-process timeout; init does not prompt for it.
 
 7. **Scheduling.** Select one:
    - `cron` (macOS/Linux)

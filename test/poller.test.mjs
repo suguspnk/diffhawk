@@ -30,7 +30,7 @@ const personal = {
 
 function config(accounts = [work, personal]) {
   return {
-    configVersion: 4,
+    configVersion: 5,
     githubAccounts: accounts,
     aiProcessingConsent: createAiProcessingConsent('reviewer', accounts),
     reviewerCommand: 'reviewer',
@@ -2111,6 +2111,29 @@ test('the poller forwards the selected model and reasoning level to the reviewer
     events.filter((event) => event.startsWith('{')),
     [JSON.stringify({ id: 'gpt-5.6', reasoningEffort: 'high' })],
   );
+});
+
+test('the poller forwards the configured reviewer timeout', async (t) => {
+  const files = await fixture(t);
+  const events = [];
+  const dependencies = successfulDependencies(events);
+  let reviewerTimeoutMs;
+  dependencies.invokeMultiPassReview = async ({ timeoutMs }) => {
+    reviewerTimeoutMs = timeoutMs;
+    return { summary: 'reviewed', findings: [] };
+  };
+
+  const result = await pollOnce({
+    config: {
+      ...config([work]),
+      reviewTimeoutMs: 15 * 60 * 1000,
+    },
+    ...files,
+    dependencies,
+  });
+
+  assert.equal(result.failed, false);
+  assert.equal(reviewerTimeoutMs, 15 * 60 * 1000);
 });
 
 test('the poller supplies reviewer retry diagnostics with PR context', async (t) => {

@@ -5,15 +5,20 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
+  DEFAULT_REVIEW_TIMEOUT_MS,
   buildPrompt,
   DEFAULT_REVIEW_FOCUS_COUNT,
   dedupeFindings,
   invokeReviewer,
   invokeMultiPassReview,
   isValidReviewFocusCount,
+  isValidReviewTimeoutMs,
+  MAX_REVIEW_TIMEOUT_MS,
+  MIN_REVIEW_TIMEOUT_MS,
   parseCommand,
   parseFindings,
   resolveReviewFocusCount,
+  resolveReviewTimeoutMs,
 } from '../lib/reviewer-adapter.mjs';
 import {
   INCOMPLETE_INSPECTION_ERROR,
@@ -868,6 +873,21 @@ test('review focus count defaults to all categories and validates bounds', () =>
   assert.equal(isValidReviewFocusCount(0), false);
   assert.equal(isValidReviewFocusCount(5), false);
   assert.throws(() => resolveReviewFocusCount(5), /from 1 to 4/);
+});
+
+test('review timeout defaults to twelve minutes and validates manual bounds', () => {
+  assert.equal(DEFAULT_REVIEW_TIMEOUT_MS, 12 * 60 * 1000);
+  assert.equal(resolveReviewTimeoutMs(undefined), DEFAULT_REVIEW_TIMEOUT_MS);
+  assert.equal(resolveReviewTimeoutMs(15 * 60 * 1000), 15 * 60 * 1000);
+  assert.equal(isValidReviewTimeoutMs(MIN_REVIEW_TIMEOUT_MS), true);
+  assert.equal(isValidReviewTimeoutMs(MAX_REVIEW_TIMEOUT_MS), true);
+  assert.equal(isValidReviewTimeoutMs(MIN_REVIEW_TIMEOUT_MS - 1), false);
+  assert.equal(isValidReviewTimeoutMs(MAX_REVIEW_TIMEOUT_MS + 1), false);
+  assert.equal(isValidReviewTimeoutMs(12.5 * 60 * 1000 + 0.5), false);
+  assert.throws(
+    () => resolveReviewTimeoutMs(MAX_REVIEW_TIMEOUT_MS + 1),
+    /whole number of milliseconds/,
+  );
 });
 
 test('dedupeFindings removes exact duplicates while preserving distinct findings', () => {

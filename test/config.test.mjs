@@ -21,7 +21,12 @@ import {
   reviewerCommandForGitHubGateway,
   reviewerCommandForGitHubHost,
 } from '../lib/reviewer-command-defaults.mjs';
-import { parseCommand } from '../lib/reviewer-adapter.mjs';
+import {
+  DEFAULT_REVIEW_TIMEOUT_MS,
+  MAX_REVIEW_TIMEOUT_MS,
+  MIN_REVIEW_TIMEOUT_MS,
+  parseCommand,
+} from '../lib/reviewer-adapter.mjs';
 import {
   createAiProcessingConsent,
   hasAiProcessingConsent,
@@ -42,7 +47,7 @@ const validAccounts = [
   },
 ];
 const validConfig = {
-  configVersion: 4,
+  configVersion: 5,
   githubAccounts: validAccounts,
   aiProcessingConsent: createAiProcessingConsent(
     CODEX_REVIEWER_COMMAND,
@@ -54,15 +59,42 @@ const validConfig = {
   stateFile: './state.json',
 };
 
-test('validates and normalizes a version 4 multi-account config', () => {
+test('validates and normalizes a version 5 multi-account config', () => {
   assert.deepEqual(validateConfig(validConfig), {
     ...validConfig,
+    reviewTimeoutMs: DEFAULT_REVIEW_TIMEOUT_MS,
     model: null,
     githubAccounts: validConfig.githubAccounts,
     reviewerCommand: CODEX_REVIEWER_COMMAND,
     reviewerInputMode: 'stdin',
     desktopNotifications: true,
   });
+});
+
+test('accepts a manual reviewer timeout and defaults omitted values', () => {
+  assert.equal(
+    validateConfig({ ...validConfig, reviewTimeoutMs: 15 * 60 * 1000 }).reviewTimeoutMs,
+    15 * 60 * 1000,
+  );
+  assert.equal(
+    validateConfig({ ...validConfig, reviewTimeoutMs: undefined }).reviewTimeoutMs,
+    DEFAULT_REVIEW_TIMEOUT_MS,
+  );
+});
+
+test('rejects reviewer timeouts outside the bounded manual range', () => {
+  for (const reviewTimeoutMs of [
+    MIN_REVIEW_TIMEOUT_MS - 1,
+    MAX_REVIEW_TIMEOUT_MS + 1,
+    12.5 * 60 * 1000 + 0.5,
+    null,
+    '720000',
+  ]) {
+    assert.throws(
+      () => validateConfig({ ...validConfig, reviewTimeoutMs }),
+      /reviewTimeoutMs must be a whole number of milliseconds/,
+    );
+  }
 });
 
 test('upgrades only the legacy Codex default command', () => {
@@ -258,8 +290,25 @@ test('version 3 configs migrate to the current schema with CLI defaults', () => 
     ...validConfig,
     configVersion: 3,
   });
-  assert.equal(migrated.configVersion, 4);
+  assert.equal(migrated.configVersion, 5);
   assert.equal(migrated.model, null);
+});
+
+test('version 4 configs migrate to the current schema with timeout defaults', () => {
+  const migrated = validateConfig({
+    ...validConfig,
+    configVersion: 4,
+  });
+  assert.equal(migrated.configVersion, 5);
+  assert.equal(migrated.reviewTimeoutMs, DEFAULT_REVIEW_TIMEOUT_MS);
+  assert.equal(
+    validateConfig({
+      ...validConfig,
+      configVersion: 4,
+      reviewTimeoutMs: 15 * 60 * 1000,
+    }).reviewTimeoutMs,
+    15 * 60 * 1000,
+  );
 });
 
 test('custom reviewer commands must explicitly consume the per-review MCP contract', () => {
@@ -326,7 +375,7 @@ test('rejects legacy, global, empty, and duplicate account shapes', () => {
   );
   assert.throws(
     () => validateConfig({ ...validConfig, configVersion: 1 }),
-    /configVersion 4/,
+    /configVersion 5/,
   );
   assert.throws(
     () => validateConfig({ ...validConfig, searchScope: 'global' }),
@@ -438,7 +487,7 @@ test('AI-processing consent is one explicit config-wide scoped record', () => {
   );
 });
 
-test('version 2 repository consent migrates fail closed to version 4', () => {
+test('version 2 repository consent migrates fail closed to version 5', () => {
   const legacyConfig = {
     ...validConfig,
     configVersion: 2,
@@ -449,7 +498,7 @@ test('version 2 repository consent migrates fail closed to version 4', () => {
     })),
   };
   const fullyConsented = validateConfig(legacyConfig);
-  assert.equal(fullyConsented.configVersion, 4);
+  assert.equal(fullyConsented.configVersion, 5);
   assert.equal(hasAiProcessingConsent(fullyConsented), true);
   assert.equal(
     Object.hasOwn(fullyConsented.githubAccounts[0], 'aiProcessingConsent'),

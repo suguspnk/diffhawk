@@ -203,13 +203,14 @@ After running the command for the package manager you used, copy
 
 | Field | Meaning |
 |---|---|
-| `configVersion` | Required schema version; currently `4`. Version 2 repository-scoped consent and version 3 configs are migrated conservatively; older/single-account shapes are rejected. |
+| `configVersion` | Required schema version; currently `5`. Version 2 repository-scoped consent and version 3 and 4 configs are migrated conservatively; older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each repository list contains explicit `OWNER/REPO` strings. |
 | `aiProcessingConsent` | A setup-generated scoped authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing, `null`, malformed, or scope-mismatched consent prevents every repository from reaching the reviewer. Changing the backend or selected set requires one fresh bulk confirmation. Leave this `null` in hand-written config, then run `openmergelens init` to record consent. |
 | `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |
 | `model` | Optional object controlling the selected generated Codex/Claude backend. `null` uses both CLI defaults. Otherwise use `{ "id": "…", "reasoningEffort": "…" }`; either property may be `null` independently. Model IDs are validated before being added to the command. Custom reviewer commands must leave this field `null`. |
 | `reviewBatchSize` | Configured upper bound for concurrent PR reviews across all accounts (defaults to `5`). A built-in memory admission cap of three reviews also applies. |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
+| `reviewTimeoutMs` | Maximum runtime for each reviewer process (defaults to `720000`, 12 minutes; accepts `60000` through `3600000`). Manual-only setting; `openmergelens init` does not prompt for it. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openmergelens/`). |
 
@@ -267,7 +268,9 @@ openmergelens --dry-run --account work-account@github.com
 You should see one block per matching requested-review PR with a summary and
 finding count.
 Each review runs four independent focused passes plus a final synthesis pass by
-default. Host-side operations use `gh` for PR search, authentication, and
+default. Each reviewer process has a 12-minute timeout by default; the manual
+`reviewTimeoutMs` setting can adjust that bound.
+Host-side operations use `gh` for PR search, authentication, and
 metadata/diff fetch; each reviewer pass inspects the linked PR through the
 constrained `openmergelens.inspect_github_pr` MCP tool. The multiple passes can
 make a dry run take longer than a single reviewer invocation.
