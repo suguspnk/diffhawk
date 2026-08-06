@@ -235,7 +235,10 @@ Manual runs show a readable progress view on the terminal. Scheduled runs
 write structured records to the file without echoing a second copy to stderr;
 the scheduler's stdout/stderr redirection remains a fallback for unexpected
 startup output. The active log is capped at 5 MiB and rotates through three
-private backups (`poll.log.1` through `poll.log.3`).
+private backups (`poll.log.1` through `poll.log.3`). At startup, an existing
+file containing legacy or unexpected non-JSON lines is moved through that same
+private rotation before new JSONL records are written, so old diagnostics are
+retained without breaking structured inspection of the active log.
 
 For example, to inspect recent failures with `jq`:
 

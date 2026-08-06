@@ -667,6 +667,42 @@ test('parseFindings recognizes schema keys encoded with JSON Unicode escapes', (
   });
 });
 
+test('parseFindings sanitizes unsafe controls from summaries while preserving Unicode and newlines', () => {
+  const controls = '\u0000\u0009\u000B\u001F\u007F\u0080\u009F\u061C\u200B\u200E\u200F\u2028\u2029\u202A\u202E\u2060\u2066\u206F\uFEFF';
+  const rawOutput = JSON.stringify({
+    summary: `café ☕\r\n${controls}summary @mention`,
+    findings: [],
+  });
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'café ☕\nsummary @\u200Bmention',
+    findings: [],
+  });
+});
+
+test('parseFindings sanitizes unsafe controls from finding comments before posting', () => {
+  const controls = '\u0001\u0008\u000C\u001E\u0081\u009E\u061C\u200C\u200D\u200F\u2028\u2029\u202B\u2061\u2067\u206E\uFEFF';
+  const rawOutput = JSON.stringify({
+    summary: 'reviewed',
+    findings: [{
+      path: 'src/example.js',
+      line: 7,
+      severity: 'major',
+      comment: `naïve 🚀\n${controls}comment @author`,
+    }],
+  });
+
+  assert.deepEqual(parseFindings(rawOutput), {
+    summary: 'reviewed',
+    findings: [{
+      path: 'src/example.js',
+      line: 7,
+      severity: 'major',
+      comment: 'naïve 🚀\ncomment @\u200Bauthor',
+    }],
+  });
+});
+
 test('parseFindings skips prose braces before a valid JSON response', () => {
   const rawOutput = [
     'I reviewed the change; the placeholder {not JSON} is only prose.',

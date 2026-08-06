@@ -9,6 +9,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs } from '../lib/dispatch.mjs';
+import { appendFailure } from '../lib/logging.mjs';
+import { userPath } from '../lib/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const usage = [
@@ -22,6 +24,11 @@ const usage = [
 const parsed = parseArgs(process.argv.slice(2));
 
 if (parsed.error) {
+  await appendFailure(userPath('poll.log'), 'fatal', `openmergelens: ${parsed.error}`, {
+    consoleMode: 'none',
+    event: 'startup.failure',
+    error: new Error(parsed.error),
+  });
   console.error(`openmergelens: ${parsed.error}`);
   console.error(usage);
   process.exit(1);

@@ -2,7 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -18,6 +27,28 @@ function lockKey(label) {
     tmpdir(),
     `openmergelens-lock-test-${label}-${process.pid}-${randomUUID()}.lock`,
   );
+}
+
+function ownerMarkerContents(key, rank = 0) {
+  const identity = createHash('sha256').update(String(key)).digest('hex');
+  const ports = lockCandidatePortsFor(key);
+  return JSON.stringify({
+    version: 1,
+    identity,
+    rank,
+    port: ports[rank],
+    pid: process.pid,
+    nonce: randomUUID(),
+  }) + '\n';
+}
+
+async function listenSilently(port) {
+  const server = createServer(() => {});
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
+  });
+  return server;
 }
 
 test('fresh acquire succeeds, blocks overlap, and release allows reacquire', async () => {
@@ -257,6 +288,183 @@ test('marker write failures release the reserved listener', async () => {
   assert.fail('could not find an unoccupied marker-failure namespace');
 });
 
+test('symlinked owner markers fail closed without overwriting their target', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`symlinked-marker-${attempt}`);
+    const markerPath = `${key}.owner.json`;
+    const victimPath = path.join(
+      path.dirname(key),
+      `openmergelens-lock-victim-${process.pid}-${randomUUID()}.json`,
+    );
+    const victimContents = 'UNTOUCHED-VICTIM\n';
+    await writeFile(victimPath, victimContents);
+    await symlink(victimPath, markerPath);
+
+    let error;
+    try {
+      await acquireLock(key);
+    } catch (err) {
+      error = err;
+    }
+    if (error?.code === 'ELOCKAMBIGUOUS') continue;
+    assert.ok(error, 'a symlinked owner marker must reject acquisition');
+    assert.ok(
+      error.code === 'EOWNERMARKERUNSAFE' ||
+        ['ELOOP', 'EPERM'].includes(error.code),
+      `unexpected symlinked-marker error: ${error.code}`,
+    );
+
+    assert.equal(await readFile(victimPath, 'utf8'), victimContents);
+    assert.equal((await lstat(markerPath)).isSymbolicLink(), true);
+    return;
+  }
+
+  assert.fail('could not find an unoccupied symlinked-marker namespace');
+});
+
+test('non-regular owner markers fail closed', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`non-regular-marker-${attempt}`);
+    const markerPath = `${key}.owner.json`;
+    await mkdir(markerPath);
+
+    let error;
+    try {
+      await acquireLock(key);
+    } catch (err) {
+      error = err;
+    }
+    if (error?.code === 'ELOCKAMBIGUOUS') continue;
+    assert.equal(error?.code, 'EOWNERMARKERUNSAFE');
+    assert.equal((await lstat(markerPath)).isDirectory(), true);
+    return;
+  }
+
+  assert.fail('could not find an unoccupied non-regular-marker namespace');
+});
+
+test('owner-marker reads fail closed for symlinks', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`symlinked-marker-read-${attempt}`);
+    const markerPath = `${key}.owner.json`;
+    const targetPath = `${key}.target.json`;
+    let server;
+    try {
+      server = await listenSilently(lockCandidatePortsFor(key)[0]);
+    } catch {
+      continue;
+    }
+
+    try {
+      const targetContents = ownerMarkerContents(key);
+      await writeFile(targetPath, targetContents);
+      await symlink(targetPath, markerPath);
+
+      await assert.rejects(
+        acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        { code: 'ELOCKAMBIGUOUS' },
+      );
+      assert.equal(await readFile(targetPath, 'utf8'), targetContents);
+      assert.equal((await lstat(markerPath)).isSymbolicLink(), true);
+      return;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      await rm(markerPath, { force: true });
+      await rm(targetPath, { force: true });
+    }
+  }
+
+  assert.fail('could not find an unoccupied symlinked-marker-read namespace');
+});
+
+test('owner-marker reads fail closed for non-regular paths', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`non-regular-marker-read-${attempt}`);
+    const markerPath = `${key}.owner.json`;
+    let server;
+    try {
+      server = await listenSilently(lockCandidatePortsFor(key)[0]);
+    } catch {
+      continue;
+    }
+
+    try {
+      await mkdir(markerPath);
+      await assert.rejects(
+        acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        { code: 'ELOCKAMBIGUOUS' },
+      );
+      assert.equal((await lstat(markerPath)).isDirectory(), true);
+      return;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      await rm(markerPath, { recursive: true, force: true });
+    }
+  }
+
+  assert.fail('could not find an unoccupied non-regular-marker-read namespace');
+});
+
+test('oversized owner markers are bounded before parsing', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`oversized-marker-read-${attempt}`);
+    const markerPath = `${key}.owner.json`;
+    let server;
+    try {
+      server = await listenSilently(lockCandidatePortsFor(key)[0]);
+    } catch {
+      continue;
+    }
+
+    try {
+      // JSON.parse accepts trailing whitespace, so an unbounded reader would
+      // treat this oversized payload as a live owner marker.
+      await writeFile(markerPath, ownerMarkerContents(key) + ' '.repeat(16 * 1024));
+
+      await assert.rejects(
+        acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        { code: 'ELOCKAMBIGUOUS' },
+      );
+      return;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      await rm(markerPath, { force: true });
+    }
+  }
+
+  assert.fail('could not find an unoccupied oversized-marker-read namespace');
+});
+
+test('owner-marker reads harden existing regular marker permissions', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`marker-permissions-${attempt}`);
+    const markerPath = `${key}.owner.json`;
+    let server;
+    try {
+      server = await listenSilently(lockCandidatePortsFor(key)[0]);
+    } catch {
+      continue;
+    }
+
+    try {
+      await writeFile(markerPath, ownerMarkerContents(key));
+      await chmod(markerPath, 0o644);
+
+      assert.equal(
+        await acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        null,
+      );
+      assert.equal((await lstat(markerPath)).mode & 0o777, 0o600);
+      return;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      await rm(markerPath, { force: true });
+    }
+  }
+
+  assert.fail('could not find an unoccupied marker-permissions namespace');
+});
+
 test('stale owner markers do not block acquisition', async () => {
   for (let attempt = 0; attempt < 100; attempt++) {
     const key = lockKey(`stale-marker-${attempt}`);
@@ -279,6 +487,7 @@ test('stale owner markers do not block acquisition', async () => {
       const release = await acquireLock(key);
       assert.ok(release);
       await release();
+      await assert.rejects(lstat(markerPath), { code: 'ENOENT' });
       return;
     } catch (err) {
       if (err.code !== 'ELOCKAMBIGUOUS') throw err;

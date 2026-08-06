@@ -8,6 +8,7 @@ import { acquireLock } from '../lib/lock.mjs';
 import { createLogger, ensureLogFile } from '../lib/logging.mjs';
 import { userPath, resolveUserPath } from '../lib/paths.mjs';
 import { pollOnce } from '../lib/poller.mjs';
+import { flushLoggerAndReleaseLock } from '../lib/poll-lifecycle.mjs';
 import {
   attemptDesktopNotification,
   buildPollNotification,
@@ -33,9 +34,10 @@ function notify(notification) {
   return attemptDesktopNotification(notification, {
     config: activeConfig,
     logPath,
-    logFailure: (_path, label, message) => logger.warn(message, {
+    logFailure: (_path, label, message, { error } = {}) => logger.warn(message, {
       event: 'notification.failure',
       fields: { scope: label },
+      error,
     }),
   });
 }
@@ -95,8 +97,7 @@ async function main() {
     await notifyPollResult(result);
     if (result.failed) process.exitCode = 1;
   } finally {
-    if (releaseLock) await releaseLock();
-    await logger.flush();
+    await flushLoggerAndReleaseLock({ logger, releaseLock });
   }
 }
 
