@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   applyScheduleSelection,
   buildSetupConfig,
+  canonicalRepositorySelections,
   finalizeSetup,
   isInteractiveTerminal,
   recheckReviewerAgent,
@@ -24,6 +25,19 @@ test('interactive terminal detection requires TTY stdin and stdout', () => {
   assert.equal(isInteractiveTerminal({ stdin: { isTTY: true }, stdout: { isTTY: true } }), true);
   assert.equal(isInteractiveTerminal({ stdin: { isTTY: false }, stdout: { isTTY: true } }), false);
   assert.equal(isInteractiveTerminal({ stdin: { isTTY: true }, stdout: { isTTY: false } }), false);
+});
+
+test('repository selection restores canonical GitHub casing', () => {
+  assert.deepEqual(
+    canonicalRepositorySelections(
+      ['owner/repo', 'missing/repo'],
+      [
+        { nameWithOwner: 'OWNER/REPO' },
+        { nameWithOwner: 'other/project' },
+      ],
+    ),
+    ['OWNER/REPO'],
+  );
 });
 
 test('init interval validation follows each scheduler contract', () => {

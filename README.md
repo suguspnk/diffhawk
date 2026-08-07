@@ -184,6 +184,24 @@ This will:
 Cancelling before the final confirmation leaves the config and review files
 unchanged.
 
+## Edit configuration
+
+After setup, use the interactive editor instead of rerunning the full wizard:
+
+```bash
+openmergelens config
+```
+
+The editor groups accounts and repositories, reviewer backend and model, review
+behavior, notifications, and scheduling. Each completed change is validated
+and saved immediately, then the menu remains open for another change. Account
+and repository edits reuse GitHub authentication and accessible-repository
+selection; newly watched repositories get missing prompt and learnings files
+without overwriting existing files. Removed watches stop being polled but keep
+their files. Schedule changes reconcile the installed cron, launchd, or Windows
+Task Scheduler entry immediately; the scheduler choice and interval remain
+operational state outside `config.json`.
+
 ### Setting up by hand instead
 
 If you'd rather skip the wizard, write `~/.openmergelens/config.json` yourself.
@@ -205,12 +223,12 @@ After running the command for the package manager you used, copy
 |---|---|
 | `configVersion` | Required schema version; currently `5`. Version 2 repository-scoped consent and version 3 and 4 configs are migrated conservatively; older/single-account shapes are rejected. |
 | `githubAccounts` | Non-empty array of `{ hostname, username, repositories }`. Each repository list contains explicit `OWNER/REPO` strings. |
-| `aiProcessingConsent` | A setup-generated scoped authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing, `null`, malformed, or scope-mismatched consent prevents every repository from reaching the reviewer. Changing the backend or selected set requires one fresh bulk confirmation. Leave this `null` in hand-written config, then run `openmergelens init` to record consent. |
+| `aiProcessingConsent` | A setup-generated scoped authorization covering all repositories selected across every configured account for the configured reviewer backend. Missing, `null`, malformed, or scope-mismatched consent prevents every repository from reaching the reviewer. Changing the backend or selected set requires one fresh bulk confirmation. Leave this `null` in hand-written config, then run `openmergelens init` or `openmergelens config` to record consent. |
 | `reviewerCommand` | Agent command that reads a prompt on stdin, uses the provided MCP inspection tool, and prints review JSON on stdout. Generated Codex/Claude commands are configured automatically. A custom command must include both `{{mcp_config}}` and `{{mcp_tool}}` in the appropriate MCP-config and allowed-tool arguments; OpenMergeLens fills them per review and rejects custom commands without this explicit contract. |
 | `model` | Optional object controlling the selected generated Codex/Claude backend. `null` uses both CLI defaults. Otherwise use `{ "id": "…", "reasoningEffort": "…" }`; either property may be `null` independently. Model IDs are validated before being added to the command. Custom reviewer commands must leave this field `null`. |
 | `reviewBatchSize` | Configured upper bound for concurrent PR reviews across all accounts (defaults to `5`). A built-in memory admission cap of three reviews also applies. |
 | `reviewFocusCount` | Number of independent review focus categories to run before the final synthesis pass (defaults to `4`, maximum `4`). The onboarding wizard asks for this; lower values skip later categories to trade coverage for runtime. |
-| `reviewTimeoutMs` | Maximum runtime for each reviewer process (defaults to `720000`, 12 minutes; accepts `60000` through `3600000`). Manual-only setting; `openmergelens init` does not prompt for it. |
+| `reviewTimeoutMs` | Maximum runtime for each reviewer process (defaults to `720000`, 12 minutes; accepts `60000` through `3600000`). `openmergelens config` can update it in the Review behavior menu; `init` preserves an existing value. |
 | `desktopNotifications` | Show one audible desktop notification after a poll produces review results or needs attention (defaults to `true`). Set to `false` to opt out. |
 | `stateFile` | Where last-reviewed commit SHAs are tracked (defaults to `./state.json`, resolved under `~/.openmergelens/`). |
 
@@ -393,8 +411,9 @@ headless execution, `OPENMERGELENS_DESKTOP_NOTIFICATIONS=0` also suppresses
 notifications, including fatal startup notifications that happen before the
 config can be loaded.
 
-When notifications are enabled, `openmergelens init` sends a test notification
-after saving the configuration and asks whether it appeared. If delivery fails
+When notifications are enabled during `openmergelens init`, or changed from
+disabled to enabled in `openmergelens config`, the command sends a test
+notification after saving the configuration and asks whether it appeared. If delivery fails
 or the operating system accepts the notification without displaying it, the
 wizard prints the relevant notification-settings steps. Operating-system
 permission still requires user confirmation and cannot be enabled silently.
@@ -410,10 +429,10 @@ openmergelens
 
 Use `openmergelens --dry-run` to exercise a poll without posting a review.
 
-For an OS-level schedule, rerun `init` and select cron, launchd, or Task
-Scheduler. The snippets below are the commands generated for an installed
-schedule; they require the `~/.openmergelens/scheduler-environment.json` file
-created by `init`/the installer. Do not use these scheduled-runner snippets as
+For an OS-level schedule, run `openmergelens config`, choose **Schedule**, and
+select cron, launchd, or Task Scheduler. The snippets below are the commands generated for an installed schedule; they require the `~/.openmergelens/scheduler-environment.json` file
+created by `init`/the installer. `config` creates the same file when a schedule
+is edited. Do not use these scheduled-runner snippets as
 the manual one-shot command:
 
 - **cron** (macOS/Linux, installed schedule):
@@ -475,7 +494,8 @@ accounts, and repositories; a missing, malformed, or mismatched authorization
 prevents searches and reviewer invocation for every repository. Version 2
 configurations migrate to consented only when every selected repository
 already had explicit consent; partial or missing legacy consent fails closed
-until `openmergelens init` records the bulk authorization.
+until `openmergelens init` or `openmergelens config` records the bulk
+authorization.
 
 The default four focused review passes plus synthesis make five reviewer
 invocations per PR. Lower `reviewFocusCount` to reduce usage. GitHub and
@@ -520,7 +540,7 @@ for the security model and private reporting process.
   not embedded in the reviewer prompt or inspected directly with `gh`.
   `{{pr_title}}` and `{{pr_body}}` are retained for compatibility but direct the
   agent to retrieve current metadata.
-  `init` seeds one copy per
+  `init` or `config` seeds one copy per
   watched repo from the bundled default the first time you add that repo;
   edit a repo's copy directly any time: reorder sections, change the
   criteria, and adjust the framing without a code change or wizard rerun. It
@@ -531,16 +551,17 @@ for the security model and private reporting process.
   break that regardless of what you change.
 - **`~/.openmergelens/docs/learnings/<host>/<username>/<owner>/<repo>.md`**:
   corrections isolated to one reviewer identity and repository (for example,
-  "don't flag X, it's intentional because Y"). `init` creates each selected
-  target's file and never overwrites its contents.
+  "don't flag X, it's intentional because Y"). `init` or `config` creates each
+  selected target's file and never overwrites its contents.
 
 ## Troubleshooting
 
 - **`gh` not authenticated**: `gh auth login`, then rerun.
 - **Configured GitHub account is unavailable**: authenticate it with
-  `gh auth login --hostname <hostname>`, or rerun init and select another
+  `gh auth login --hostname <hostname>`, or rerun `openmergelens init` or
+  `openmergelens config` and select another
   account. Polling does not depend on whichever account is globally active.
-- **Reviewer CLI "found but not authenticated"** during `init`: run the
+- **Reviewer CLI "found but not authenticated"** during `init` or `config`: run the
   login command it prints (e.g. `claude /login`), then continue.
 - **Codex reports "Not inside a trusted directory"**: current versions
   automatically upgrade known older generated Codex commands to the current
@@ -551,8 +572,9 @@ for the security model and private reporting process.
   again after new commits. Then check `~/.openmergelens/poll.log` for the
   specific failure (search failed, reviewer adapter failed, post rejected, etc.).
 - **Reviews work but notifications do not**: make sure the poll runs while
-  you are logged into a graphical desktop session. Rerun `openmergelens init`
-  to send a test notification and get platform-specific recovery steps. On
+  you are logged into a graphical desktop session. Run `openmergelens config`,
+  enable notifications, and confirm the test notification to get
+  platform-specific recovery steps. On
   Linux, install `notify-send`; then check `~/.openmergelens/poll.log` for a
   `[notification]` warning.
 - **A notification does not open its report**: run `openmergelens report` to

@@ -64,8 +64,11 @@ openmergelens/
 │   └── review-prompt.default.md (bundled seed for editable repository prompts)
 ├── bin/
 │   ├── poll.mjs             (one-shot poll entrypoint)
-│   └── init.mjs             (interactive onboarding wizard: @clack/prompts)
+│   ├── init.mjs              (interactive onboarding wizard: @clack/prompts)
+│   └── config.mjs            (interactive existing-config editor)
 ├── lib/
+│   ├── config-editor.mjs     (grouped immediate-save configuration editor)
+│   ├── setup-interactive.mjs (shared setup/config prompts and validation)
 │   ├── github.mjs           (gh CLI + REST API wrappers via child_process/fetch: search, pr view, pr diff, post review w/ inline comments)
 │   ├── state.mjs            (read/write state.json)
 │   ├── reviewer-adapter.mjs (abstraction over the actual review-generating command; parses structured JSON findings)
@@ -378,9 +381,10 @@ read-only restrictions. Keep custom commands swappable by retaining both
 }
 ```
 
-This shape passes the current v5 validator. `openmergelens init` fills in the
-consent scope after the user confirms the selected reviewer and repositories;
-the `null` value above is the valid pre-consent state.
+This shape passes the current v5 validator. `openmergelens init` or
+`openmergelens config` fills in the consent scope after the user confirms the
+selected reviewer and repositories; the `null` value above is the valid
+pre-consent state.
 
 **Decided: repo name is `suguspnk/openmergelens`** for this bot's own repo (not
 to be confused with `socialpostai-v2`, which is what it watches/reviews).
@@ -415,15 +419,16 @@ repository, and discovery source when one poll cannot inspect every candidate.
 ## Scheduling
 
 `node bin/poll.mjs` remains a one-shot script: no built-in daemon/loop
-mode. **Decided: the `openmergelens init` wizard installs the schedule**, not a
-manual next-session step; see **Onboarding** below for the exact flow
+mode. **Decided: the interactive setup flows install the schedule**, not a
+manual next-session step; `openmergelens init` and `openmergelens config` both
+reconcile the selected schedule immediately. See **Onboarding** below for the exact flow
 (cron / launchd / Task Scheduler, each with a confirm-before-write, or
 "I'll do it myself" which only prints instructions). This section covers
 what each option actually installs:
 - Before configuring an installed OS schedule for the published package,
   install OpenMergeLens persistently, for example with
   `npm install -g openmergelens` (or `pnpm add --global openmergelens`), then
-  run `openmergelens init`. Do not use temporary `npx` or `pnpm dlx` runners to
+  run `openmergelens init` or `openmergelens config`. Do not use temporary `npx` or `pnpm dlx` runners to
   configure an installed schedule: the scheduler stores the resolved package
   path, and a later temporary-cache cleanup can remove it. Use `npx` or
   `pnpm dlx` only for manual, one-shot commands.
@@ -569,8 +574,9 @@ run `node bin/init.mjs` as usual. Steps, in order:
    - 3, 2, or 1: progressively fewer categories and fewer reviewer calls
    The selection sets `reviewFocusCount` and the final config preview explains
    the resulting reviewer-call count. On rerun, default to the existing value
-   when it is valid. `reviewTimeoutMs` is a manual-only config override for the
-   per-reviewer-process timeout; init does not prompt for it.
+     when it is valid. `reviewTimeoutMs` is a config-editor setting for the
+     per-reviewer-process timeout; init preserves an existing value without
+     prompting for it.
 
 7. **Scheduling.** Select one:
    - `cron` (macOS/Linux)
@@ -611,6 +617,25 @@ Validation happens inline at each step (e.g. repo names checked live via
 the `gh repo list` fetch in step 3, not deferred to a final check), so a
 mistake is caught where it's made rather than surfacing as a cryptic
 failure three steps later.
+
+## Existing configuration editor (`openmergelens config`)
+
+After setup, the configuration editor loads and validates the existing
+`config.json`, requires a real interactive terminal, and holds the same
+operation lock as polling and `init`. It presents grouped menus for accounts
+and repositories, reviewer backend/model, review behavior, notifications, and
+scheduling, plus a read-only current-configuration view.
+
+Every completed config change is validated and written immediately through the
+same atomic config writer; the editor remains open for subsequent changes.
+Account and repository changes reuse GitHub authentication and repository
+selection, require fresh AI-processing consent when the reviewer command or
+selected scope changes, and create only missing prompt/learnings files. Removed
+watches leave those files untouched. Notification enablement runs the existing
+test-notification flow. Schedule changes reconcile the OS scheduler immediately
+and preserve the prior schedule when rollback is reliable; scheduler state is
+operational state outside `config.json`. Prompt and learnings content remains
+editable as files, not through this menu.
 
 ## Decisions (resolved)
 

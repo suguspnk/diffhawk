@@ -26,9 +26,6 @@ import { acquireLock } from '../lib/lock.mjs';
 import { isValidReviewBatchSize } from '../lib/poll-batching.mjs';
 import { userHome, userPath } from '../lib/paths.mjs';
 import {
-  verifyDesktopNotificationSetup,
-} from '../lib/notification-setup.mjs';
-import {
   ensureReviewPrompt,
   reviewPromptPathFor,
 } from '../lib/review-prompts.mjs';
@@ -36,26 +33,38 @@ import {
   validateReviewerCommandContract,
   reviewerBackendForCommand,
 } from '../lib/reviewer-command-defaults.mjs';
-import {
-  isValidReviewerModelId,
-  reasoningEffortsForModel,
-  reasoningLabelForBackend,
-  reviewerModelOptions,
-} from '../lib/reviewer-models.mjs';
 import { isValidReviewFocusCount } from '../lib/reviewer-adapter.mjs';
 import {
-  cronPreview, installCron,
-  launchdPreview, installLaunchd,
-  schtasksPreview, installSchtasks,
+  cronPreview,
+  launchdPreview,
+  schtasksPreview,
   schedulerChoices,
   manualInstructions,
-  reconcileScheduler,
-  assertSchedulerInterval,
-  isValidSchedulerInterval,
-  MIN_SCHEDULER_INTERVAL_MINUTES,
-  MAX_SCHEDULER_INTERVAL_MINUTES,
   SUPPORTED_CRON_INTERVALS,
 } from '../lib/scheduler.mjs';
+import {
+  applyScheduleSelection,
+  canonicalRepositorySelections,
+  isInteractiveTerminal,
+  recheckReviewerAgent,
+  reviewerBackendOptions,
+  selectableReviewerAgents,
+  selectReviewerModel,
+  validateScheduleInterval,
+  verifyConfiguredNotifications,
+} from '../lib/setup-interactive.mjs';
+
+export {
+  applyScheduleSelection,
+  canonicalRepositorySelections,
+  isInteractiveTerminal,
+  recheckReviewerAgent,
+  reviewerBackendOptions,
+  selectableReviewerAgents,
+  selectReviewerModel,
+  validateScheduleInterval,
+  verifyConfiguredNotifications,
+};
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(__dirname, '..');
@@ -66,65 +75,6 @@ const reviewPromptTemplatePath = path.join(
   'docs',
   'review-prompt.default.md',
 );
-const CLI_DEFAULT_MODEL_VALUE = '\u0000openmergelens-cli-default-model';
-const CLI_DEFAULT_REASONING_VALUE = '\u0000openmergelens-cli-default-reasoning';
-const CUSTOM_MODEL_VALUE = '\u0000openmergelens-custom-model';
-
-export function selectableReviewerAgents(agents) {
-  return agents.filter((agent) => agent.status !== 'not-found');
-}
-
-export function isInteractiveTerminal({ stdin = process.stdin, stdout = process.stdout } = {}) {
-  return stdin?.isTTY === true && stdout?.isTTY === true;
-}
-
-export function validateScheduleInterval(value, scheduler) {
-  const text = String(value).trim();
-  if (!/^\d+$/u.test(text)) {
-    return 'Enter a positive whole number';
-  }
-  const intervalMinutes = Number(text);
-  if (
-    !Number.isSafeInteger(intervalMinutes) ||
-    intervalMinutes < MIN_SCHEDULER_INTERVAL_MINUTES
-  ) {
-    return 'Enter a positive whole number';
-  }
-  if (!isValidSchedulerInterval(intervalMinutes, scheduler)) {
-    if (intervalMinutes > MAX_SCHEDULER_INTERVAL_MINUTES && scheduler !== 'cron') {
-      return `Enter a whole number from ${MIN_SCHEDULER_INTERVAL_MINUTES} through ` +
-        `${MAX_SCHEDULER_INTERVAL_MINUTES} minutes`;
-    }
-    return `Choose one of the supported cron intervals: ${SUPPORTED_CRON_INTERVALS.join(', ')} minutes`;
-  }
-  return undefined;
-}
-
-export async function applyScheduleSelection({
-  scheduleChoice,
-  intervalMinutes = 15,
-  selectedPollScriptPath = pollScriptPath,
-  platform = process.platform,
-  schedulerOptions = {},
-  installFns = { cron: installCron, launchd: installLaunchd, schtasks: installSchtasks },
-  reconcile = reconcileScheduler,
-} = {}) {
-  const install = scheduleChoice === 'manual' ? undefined : installFns[scheduleChoice];
-  if (scheduleChoice !== 'manual' && typeof install !== 'function') {
-    throw new Error(`unknown scheduler selection: ${scheduleChoice}`);
-  }
-  if (scheduleChoice !== 'manual') {
-    assertSchedulerInterval(scheduleChoice, intervalMinutes);
-  }
-  return reconcile({
-    ...schedulerOptions,
-    scheduler: scheduleChoice,
-    platform,
-    pollScriptPath: selectedPollScriptPath,
-    intervalMinutes,
-    ...(install ? { install } : {}),
-  });
-}
 
 export function buildSetupConfig({
   githubAccounts,
@@ -201,41 +151,6 @@ export async function finalizeSetup({
   return true;
 }
 
-export function reviewerBackendOptions(agents) {
-  const agentOptions = selectableReviewerAgents(agents).map((agent) => {
-    const badge = agent.status === 'ready' ? '✓ ready'
-      : agent.status === 'unauthenticated' ? '✗ found, not authenticated'
-      : agent.status === 'incompatible' ? '✗ update required'
-      : 'not found';
-    return {
-      value: agent.id,
-      label: `${agent.label} (${badge})`,
-      hint: agent.status === 'unauthenticated'
-        ? `run: ${agent.loginCommand}`
-        : agent.status === 'incompatible'
-          ? 'update the CLI to a release with required isolation flags'
-          : undefined,
-    };
-  });
-  agentOptions.push({ value: 'custom', label: 'Custom command...' });
-  return agentOptions;
-}
-
-export async function recheckReviewerAgent({ selectedAgent, detect = detectAgents } = {}) {
-  if (!selectedAgent?.id) return null;
-
-  let agents;
-  try {
-    agents = await detect();
-  } catch {
-    return null;
-  }
-
-  if (!Array.isArray(agents)) return null;
-  const refreshedAgent = agents.find((agent) => agent.id === selectedAgent.id);
-  return refreshedAgent?.status === 'ready' ? refreshedAgent : null;
-}
-
 function exitCancelled() {
   p.cancel('Setup cancelled. Configuration and review files were not changed.');
   throw Object.assign(new Error('setup cancelled'), { code: 'ECANCELLED' });
@@ -255,141 +170,6 @@ async function readExistingConfig() {
     p.log.warn(`Existing config will not be imported: ${err.message}`);
     return null;
   }
-}
-
-async function selectReviewerModel({ agent, existingConfig, backend }) {
-  const previousBackend = reviewerBackendForCommand(existingConfig?.reviewerCommand);
-  const previousModel = previousBackend === backend ? existingConfig?.model : null;
-  const catalog = reviewerModelOptions(backend);
-  const canSelectModel = agent.modelSelectionSupported !== false;
-  const modelOptions = canSelectModel ? [
-    {
-      value: CLI_DEFAULT_MODEL_VALUE,
-      label: 'CLI default',
-      hint: 'let the selected CLI choose its current default model',
-    },
-    ...catalog.map((model) => ({
-      value: model.id,
-      label: model.label,
-      hint: `${model.id}${model.hint ? ` · ${model.hint}` : ''}`,
-    })),
-  ] : [
-    {
-      value: CLI_DEFAULT_MODEL_VALUE,
-      label: 'CLI default',
-      hint: 'this installed CLI does not expose a model-selection flag',
-    },
-  ];
-
-  if (
-    canSelectModel &&
-    previousModel?.id &&
-    !catalog.some((model) => model.id === previousModel.id)
-  ) {
-    modelOptions.splice(1, 0, {
-      value: previousModel.id,
-      label: `Current: ${previousModel.id}`,
-      hint: 'saved custom model ID',
-    });
-  }
-  if (canSelectModel) {
-    modelOptions.push({
-      value: CUSTOM_MODEL_VALUE,
-      label: 'Enter model ID…',
-      hint: 'use a provider, preview, enterprise, or deployment-specific ID',
-    });
-  }
-
-  const selectedModelValue = await p.select({
-    message: `Which ${agent.label} model should review PRs?`,
-    options: modelOptions,
-    initialValue: canSelectModel
-      ? previousModel?.id || CLI_DEFAULT_MODEL_VALUE
-      : CLI_DEFAULT_MODEL_VALUE,
-  });
-  if (p.isCancel(selectedModelValue)) exitCancelled();
-
-  let modelId = selectedModelValue === CLI_DEFAULT_MODEL_VALUE
-    ? null
-    : selectedModelValue;
-  if (selectedModelValue === CUSTOM_MODEL_VALUE) {
-    const customModel = await p.text({
-      message: 'Model ID:',
-      initialValue: previousModel?.id || undefined,
-      placeholder: backend === 'claude' ? 'claude-opus-4-7' : 'gpt-5.6',
-      validate: (value) => isValidReviewerModelId(value?.trim())
-        ? undefined
-        : 'Use a non-empty model ID without whitespace, quotes, or shell separators',
-    });
-    if (p.isCancel(customModel)) exitCancelled();
-    modelId = customModel.trim();
-  } else if (!canSelectModel && previousModel?.id) {
-    p.log.warn(
-      `${agent.label} does not expose a model-selection flag in this installed version; using its default.`,
-    );
-  }
-
-  const preserveReasoning = previousModel && previousModel.id === modelId;
-  const previousReasoning = preserveReasoning
-    ? previousModel.reasoningEffort
-    : null;
-  const reasoningLabel = reasoningLabelForBackend(backend);
-  let reasoningEffort = null;
-  if (agent.reasoningSelectionSupported !== false) {
-    const reasoningOptions = [
-      {
-        value: CLI_DEFAULT_REASONING_VALUE,
-        label: 'CLI default',
-        hint: `use the selected ${agent.label} model's default ${reasoningLabel.toLowerCase()}`,
-      },
-      ...reasoningEffortsForModel(backend, modelId).map((effort) => ({
-        value: effort,
-        label: effort,
-      })),
-    ];
-    const initialReasoning = previousReasoning === null
-      ? CLI_DEFAULT_REASONING_VALUE
-      : reasoningOptions.some((option) => option.value === previousReasoning)
-        ? previousReasoning
-        : CLI_DEFAULT_REASONING_VALUE;
-    const selectedReasoning = await p.select({
-      message: `Which ${reasoningLabel.toLowerCase()} should it use?`,
-      options: reasoningOptions,
-      initialValue: initialReasoning,
-    });
-    if (p.isCancel(selectedReasoning)) exitCancelled();
-    reasoningEffort = selectedReasoning === CLI_DEFAULT_REASONING_VALUE
-      ? null
-      : selectedReasoning;
-  } else {
-    p.log.warn(
-      `${agent.label} does not expose a ${reasoningLabel.toLowerCase()} flag in this installed version; using its default.`,
-    );
-  }
-
-  if (modelId === null && reasoningEffort === null) return null;
-  return { id: modelId, reasoningEffort };
-}
-
-async function verifyConfiguredNotifications() {
-  const result = await verifyDesktopNotificationSetup({
-    confirmVisible: () => p.confirm({
-      message: 'Did the OpenMergeLens test notification appear?',
-      initialValue: true,
-    }),
-  });
-
-  if (result.status === 'verified') {
-    p.log.success('Desktop notifications verified');
-    return;
-  }
-
-  if (result.status === 'delivery-failed') {
-    p.log.warn(`Test notification failed: ${result.error.message}`);
-  } else {
-    p.log.warn('The operating system accepted the test, but no alert appeared.');
-  }
-  p.note(result.guidance, 'Enable desktop notifications');
 }
 
 async function main() {
@@ -463,13 +243,18 @@ async function main() {
 
       const spinner = p.spinner();
       spinner.start(`Fetching repositories for ${accountLabel(account)}`);
-      const repos = await listAccessibleRepos({ auth });
+      let repos;
+      try {
+        repos = await listAccessibleRepos({ auth });
+      } catch (err) {
+        spinner.stop('Repository fetch failed');
+        throw err;
+      }
       spinner.stop(`Found ${repos.length} repository(s) for ${accountLabel(account)}`);
       if (repos.length === 0) {
         throw new Error(`${accountLabel(account)} has no accessible repositories`);
       }
 
-      const accessible = new Set(repos.map((repo) => repo.nameWithOwner.toLowerCase()));
       const existingRepositories = existingByKey.get(selectedKey)?.repositories || [];
       const repositories = await p.autocompleteMultiselect({
         message: `Which repositories should ${accountLabel(account)} watch for review requests?`,
@@ -478,7 +263,7 @@ async function main() {
           label: repo.nameWithOwner,
           hint: repo.isPrivate ? 'private' : undefined,
         })),
-        initialValues: existingRepositories.filter((repo) => accessible.has(repo.toLowerCase())),
+        initialValues: canonicalRepositorySelections(existingRepositories, repos),
         required: true,
       });
       if (p.isCancel(repositories)) exitCancelled();
@@ -490,7 +275,13 @@ async function main() {
 
     const agentSpinner = p.spinner();
     agentSpinner.start('Checking known reviewer CLIs');
-    const agents = await detectAgents();
+    let agents;
+    try {
+      agents = await detectAgents();
+    } catch (err) {
+      agentSpinner.stop('Reviewer CLI check failed');
+      throw err;
+    }
     agentSpinner.stop('Done checking reviewer CLIs');
 
     const agentOptions = reviewerBackendOptions(agents);
@@ -554,6 +345,7 @@ async function main() {
         agent: selectedAgent,
         existingConfig,
         backend,
+        onCancel: exitCancelled,
       })
       : null;
 
