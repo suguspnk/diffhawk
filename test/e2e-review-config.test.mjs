@@ -6,18 +6,38 @@ import {
 } from '../lib/reviewer-command-defaults.mjs';
 import {
   calculateLiveReviewWatchdogMs,
+  DEFAULT_LIVE_REVIEW_MODE,
+  DEFAULT_LIVE_REVIEW_PROVISION,
   LIVE_REVIEW_CLEANUP_MARGIN_MS,
   parseEnvironment,
 } from '../e2e/live-review-config.mjs';
+import {
+  LIVE_REVIEW_FIXTURE_SOURCE,
+  inlineCommentExists,
+} from '../e2e/live-review-github.mjs';
 
 function baseEnvironment(overrides = {}) {
   return {
     OPENMERGELENS_E2E_REPO: 'owner/repo',
     OPENMERGELENS_E2E_PR: '123',
     OPENMERGELENS_E2E_USERNAME: 'e2e-reviewer',
+    OPENMERGELENS_E2E_AUTHOR_USERNAME: 'e2e-author',
     ...overrides,
   };
 }
+
+test('live review E2E defaults to provisioning and posting', () => {
+  const config = parseEnvironment(baseEnvironment({
+    OPENMERGELENS_E2E_PR: undefined,
+    OPENMERGELENS_E2E_REVIEWER_BACKEND: 'codex',
+  }));
+
+  assert.equal(config.error, undefined);
+  assert.equal(config.mode, DEFAULT_LIVE_REVIEW_MODE);
+  assert.equal(config.mode, 'post');
+  assert.equal(config.provision, DEFAULT_LIVE_REVIEW_PROVISION);
+  assert.equal(config.number, undefined);
+});
 
 test('live E2E config selects the generated Claude reviewer command', () => {
   const config = parseEnvironment(baseEnvironment({
@@ -74,13 +94,68 @@ test('live E2E config rejects unsupported reviewer backends', () => {
   assert.match(config.error, /must be claude or codex/u);
 });
 
-test('live E2E config requires explicit confirmation for posting', () => {
+test('live E2E config allows the default posting mode without a second confirmation', () => {
   const config = parseEnvironment(baseEnvironment({
     OPENMERGELENS_E2E_REVIEWER_BACKEND: 'codex',
     OPENMERGELENS_E2E_MODE: 'post',
   }));
 
-  assert.match(config.error, /OPENMERGELENS_E2E_POST_CONFIRM/u);
+  assert.equal(config.error, undefined);
+  assert.equal(config.mode, 'post');
+});
+
+test('existing-PR dry runs remain available without an author account', () => {
+  const config = parseEnvironment(baseEnvironment({
+    OPENMERGELENS_E2E_AUTHOR_USERNAME: undefined,
+    OPENMERGELENS_E2E_PROVISION: '0',
+    OPENMERGELENS_E2E_MODE: 'dry-run',
+    OPENMERGELENS_E2E_REVIEWER_BACKEND: 'codex',
+  }));
+
+  assert.equal(config.error, undefined);
+  assert.equal(config.provision, false);
+  assert.equal(config.number, 123);
+  assert.equal(config.mode, 'dry-run');
+});
+
+test('live E2E config rejects missing or same author and reviewer accounts', () => {
+  assert.match(
+    parseEnvironment(baseEnvironment({
+      OPENMERGELENS_E2E_AUTHOR_USERNAME: undefined,
+    })).error,
+    /AUTHOR_USERNAME is required/u,
+  );
+  assert.match(
+    parseEnvironment(baseEnvironment({
+      OPENMERGELENS_E2E_AUTHOR_USERNAME: 'E2E-REVIEWER',
+    })).error,
+    /must differ/u,
+  );
+});
+
+test('live E2E fixture and review correlation require an anchored comment', () => {
+  assert.match(LIVE_REVIEW_FIXTURE_SOURCE, /exec\(`git status/u);
+  assert.equal(
+    inlineCommentExists(
+      { id: 7 },
+      [{ pull_request_review_id: '7', path: 'fixture.mjs', line: 4 }],
+    ),
+    true,
+  );
+  assert.equal(
+    inlineCommentExists(
+      { id: 7 },
+      [{ pull_request_review_id: 7, path: '', line: 4 }],
+    ),
+    false,
+  );
+  assert.equal(
+    inlineCommentExists(
+      { id: 7 },
+      [{ pull_request_review_id: 8, path: 'fixture.mjs', line: 4 }],
+    ),
+    false,
+  );
 });
 
 test('live E2E watchdog covers every focused pass, synthesis, and retry', () => {
