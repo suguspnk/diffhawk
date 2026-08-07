@@ -961,19 +961,21 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
     "const result = await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
     "process.stdout.write(JSON.stringify({ result }));",
   ].join('\n');
+  const childCount = process.platform === 'win32' ? 64 : 200;
   // Keep the total fan-in high while bounding fresh Node process startup. A
   // 200-process launch burst exceeds the supported loopback election envelope
   // on shared CI runners and turns a logging regression test into a scheduler
-  // resource test. Sixteen active children still exercise cross-process
-  // rotation and append serialization without making the result runner-load
-  // dependent.
+  // resource test. Windows has substantially slower child startup on the
+  // supported Node matrix, so use a smaller but still contention-heavy fan-in
+  // there. Sixteen active children still exercise cross-process rotation and
+  // append serialization without making the result runner-load dependent.
   const outcomes = [];
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: 16 }, async () => {
       while (true) {
         const index = nextIndex++;
-        if (index >= 200) return;
+        if (index >= childCount) return;
         outcomes[index] = await new Promise((resolve, reject) => {
           const child = spawn(
             process.execPath,
@@ -1029,7 +1031,7 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
 
   const messages = new Set(records.map((record) => record.message));
   assert.deepEqual(
-    Array.from({ length: 200 }, (_, index) => `race-${index}`)
+    Array.from({ length: childCount }, (_, index) => `race-${index}`)
       .filter((message) => !messages.has(message)),
     [],
   );
