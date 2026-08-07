@@ -48,6 +48,7 @@ function gatewayRequest(gateway, capability, input) {
   const payload = JSON.stringify(input);
   return new Promise((resolve, reject) => {
     const request = http.request({
+      agent: false,
       socketPath: gateway.socketPath,
       path: '/',
       method: 'POST',
@@ -80,6 +81,7 @@ function openGatewayRequest(gateway, capability, input) {
     rejectResponse = reject;
   });
   const request = http.request({
+    agent: false,
     socketPath: gateway.socketPath,
     path: '/',
     method: 'POST',
@@ -108,6 +110,7 @@ function fragmentedGatewayRequest(gateway, capability, input, splitAt) {
   return new Promise((resolve, reject) => {
     let sendRemainingTimer;
     const request = http.request({
+      agent: false,
       socketPath: gateway.socketPath,
       path: '/',
       method: 'POST',
@@ -944,12 +947,10 @@ async function assertSharedInspectionSurvivesClientTimeout(
     directory,
     target,
     githubEnvironment: {},
-    // Leave enough scheduling headroom for this shared-subscriber assertion
-    // when the full test suite is running other CPU- and I/O-heavy files in
-    // parallel. Windows runners need a larger budget for the first request
-    // to time out after the second subscriber has been attached. The test
-    // still verifies that timeout happens before the shared fetch is resolved.
-    requestTimeoutMs: process.platform === 'win32' ? 10_000 : 5_000,
+    // Keep the timeout finite while each concurrent test request uses its own
+    // socket. This prevents the platform HTTP agent from queueing the second
+    // subscriber behind the intentionally unresolved first request.
+    requestTimeoutMs: 5_000,
     runGitHub: async (_args, { signal }) => {
       calls += 1;
       fetchSignal = signal;
