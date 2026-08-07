@@ -946,9 +946,10 @@ async function assertSharedInspectionSurvivesClientTimeout(
     githubEnvironment: {},
     // Leave enough scheduling headroom for this shared-subscriber assertion
     // when the full test suite is running other CPU- and I/O-heavy files in
-    // parallel. The test still verifies the first request timing out before
-    // the shared fetch is resolved.
-    requestTimeoutMs: 5_000,
+    // parallel. Windows runners need a larger budget for the first request
+    // to time out after the second subscriber has been attached. The test
+    // still verifies that timeout happens before the shared fetch is resolved.
+    requestTimeoutMs: process.platform === 'win32' ? 10_000 : 5_000,
     runGitHub: async (_args, { signal }) => {
       calls += 1;
       fetchSignal = signal;
