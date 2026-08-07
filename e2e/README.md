@@ -45,8 +45,8 @@ arbitrary shell pipeline.
 
 ## Configure the test environment
 
-Copy the tracked example to the ignored local file and edit the repository,
-PR number, account, and reviewer command:
+Copy the tracked example to the ignored local file in the primary project
+worktree and edit the repository, PR number, account, and reviewer command:
 
 ```bash
 cp e2e/test.env.example e2e/test.env
@@ -61,6 +61,17 @@ set -a
 source e2e/test.env
 set +a
 ```
+
+The tracked `.githooks/post-checkout` hook copies this private
+`e2e/test.env` from the primary project worktree into a newly created
+worktree. Enable the tracked hooks once per clone or repository checkout with:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook never overwrites an existing `e2e/test.env` and does nothing when the
+primary project worktree does not have one.
 
 The important values are:
 
@@ -194,7 +205,7 @@ repeatable coverage for CI or local regression runs.
 
 ## Troubleshooting
 
-- **Missing environment:** copy `e2e/test.env.example`, set `OPENMERGELENS_E2E_REVIEWER_BACKEND` to `claude` or `codex`, and source `e2e/test.env` in the same shell that runs pnpm.
+- **Missing environment:** copy `e2e/test.env.example` to `e2e/test.env`, set `OPENMERGELENS_E2E_REVIEWER_BACKEND` to `claude` or `codex`, and source `e2e/test.env` in the same shell that runs pnpm.
 - **Credential mismatch:** verify that `OPENMERGELENS_E2E_USERNAME` exactly matches `gh auth status` and that `gh auth token --hostname "$OPENMERGELENS_E2E_HOST" --user "$OPENMERGELENS_E2E_USERNAME"` succeeds.
 - **PR not discovered:** add the account to the PR's Reviewers list and request it again after pushing the fresh head commit.
 - **Existing marker:** use a new test commit or a new disposable PR; the harness refuses to post twice for the same account and head.

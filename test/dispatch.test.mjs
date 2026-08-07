@@ -14,6 +14,14 @@ test('init alone routes to init with no flags', () => {
   assert.deepEqual(parseArgs(['init']), { subcommand: 'init', flags: [] });
 });
 
+test('config alone routes to the interactive config editor', () => {
+  assert.deepEqual(parseArgs(['config']), { subcommand: 'config', flags: [] });
+  assert.deepEqual(parseArgs(['config', '--help']), { subcommand: 'help', flags: [] });
+  assert.deepEqual(parseArgs(['config', '--dry-run']), {
+    error: 'unrecognized argument "--dry-run"',
+  });
+});
+
 test('report routes to latest, picker, or an exact report ID', () => {
   const id = '11111111-1111-4111-8111-111111111111';
   assert.deepEqual(parseArgs(['report']), {

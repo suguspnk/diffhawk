@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Single published entrypoint: `openmergelens init` runs the setup wizard,
-// `openmergelens` (with no subcommand, or --dry-run) runs a poll. Kept as a thin
-// dispatcher over poll.mjs/init.mjs. The scripts are re-executed as child
-// processes rather than imported so poll's entrypoint behavior stays isolated;
-// stdio is inherited so init's interactive prompts still work.
+// `openmergelens config` edits an existing setup, and `openmergelens` (with no
+// subcommand, or --dry-run) runs a poll. Kept as a thin dispatcher over the
+// command scripts. The scripts are re-executed as child processes rather than
+// imported so each entrypoint's behavior stays isolated; stdio is inherited so
+// interactive prompts still work.
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -16,6 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const usage = [
   'Usage: openmergelens [--dry-run] [--account USERNAME@HOSTNAME]',
   '       openmergelens init',
+  '       openmergelens config',
   '       openmergelens report [--list | REPORT_ID]',
   '       openmergelens --help',
   '       openmergelens --version',

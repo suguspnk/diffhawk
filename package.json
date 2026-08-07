@@ -32,6 +32,7 @@
     "bin/init.mjs",
     "bin/linux-notification.mjs",
     "bin/openmergelens.mjs",
+    "bin/config.mjs",
     "bin/poll.mjs",
     "bin/report.mjs",
     "bin/scheduled.mjs",
@@ -47,6 +48,7 @@
   "scripts": {
     "poll": "node bin/poll.mjs",
     "init": "node bin/init.mjs",
+    "config": "node bin/config.mjs",
     "report": "node bin/openmergelens.mjs report",
     "test": "node --test --test-concurrency=1 --test-timeout=30000",
     "test:e2e:init": "node e2e/init-matrix.mjs",

@@ -1,0 +1,40 @@
+#!/bin/sh
+
+# Git invokes post-checkout with old HEAD, new HEAD, and a flag indicating
+# whether the checkout updated the branch (1) or individual paths (0).
+case "${3:-0}" in
+  1) ;;
+  *) exit 0 ;;
+esac
+
+current_worktree="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+common_git_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+primary_worktree="$(dirname "$common_git_dir")"
+
+[ -n "$primary_worktree" ] || exit 0
+
+source_env="$primary_worktree/e2e/test.env"
+destination_env="$current_worktree/e2e/test.env"
+
+# The hook only copies from the primary project worktree into another
+# worktree. Keep symlinks out of the flow so a private file cannot redirect the
+# copy.
+[ "$source_env" != "$destination_env" ] || exit 0
+[ -f "$source_env" ] || exit 0
+[ ! -L "$source_env" ] || exit 0
+[ ! -e "$destination_env" ] || exit 0
+[ ! -L "$destination_env" ] || exit 0
+
+umask 077
+if ! cp "$source_env" "$destination_env" 2>/dev/null; then
+  printf '%s\n' "OpenMergeLens: could not copy e2e/test.env into $current_worktree" >&2
+  exit 0
+fi
+
+if ! chmod 600 "$destination_env" 2>/dev/null; then
+  rm -f "$destination_env"
+  printf '%s\n' "OpenMergeLens: could not secure copied e2e/test.env in $current_worktree" >&2
+  exit 0
+fi
+
+printf '%s\n' "OpenMergeLens: copied e2e/test.env into $current_worktree"

@@ -22,7 +22,7 @@ them from scratch. Keep entries dense and actionable; update via the
 | Component | Version | Where used |
 |---|---|---|
 | Node.js | `^22.14.0 || ^24.0.0` (`package.json` engines), ESM (`"type": "module"`) | `bin/`, `lib/` (entire codebase) |
-| @clack/prompts | `^1.7.0` | `bin/init.mjs` (setup wizard) |
+| @clack/prompts | `^1.7.0` | `bin/init.mjs`, `lib/config-editor.mjs`, `lib/setup-interactive.mjs` (interactive setup/configuration) |
 | GitHub CLI (`gh`) | shelled out, no pinned version | `lib/github.mjs` |
 | pnpm | lockfileVersion `9.0` | repo-wide (`pnpm-lock.yaml`) |
 | Shell/command execution pattern | `node:child_process` `execFile` | `lib/github.mjs`, `lib/agent-detect.mjs`, `lib/scheduler.mjs` |
@@ -90,8 +90,10 @@ discipline is central to its security model.
 
 ### Overview
 
-`@clack/prompts` (`^1.7.0`) powers the interactive setup wizard in
-`bin/init.mjs`: repo multi-select, confirmations, text input, and spinners.
+`@clack/prompts` (`^1.7.0`) powers the interactive setup wizard and existing
+configuration editor: repo multi-select, confirmations, text input, and
+spinners in `bin/init.mjs`, `lib/config-editor.mjs`, and
+`lib/setup-interactive.mjs`.
 
 ### Best Practices
 
@@ -121,9 +123,8 @@ discipline is central to its security model.
   crash obscurely later.
 - Avoid assuming clack prompts behave identically on every runtime, because
   interactive terminal UI depends on a real TTY: non-TTY/CI/piped-stdin
-  contexts can hang or misrender. Guard `bin/init.mjs`'s interactive path
-  behind a TTY check (`process.stdin.isTTY`) with a non-interactive
-  fallback.
+  contexts can hang or misrender. Guard `bin/init.mjs` and `bin/config.mjs`
+  behind a TTY check (`process.stdin.isTTY`) with a non-interactive fallback.
 - Avoid layering a custom pre-filter on top of clack's built-in
   autocomplete/multiselect filter, because clack reapplies its own filter to
   whatever the options getter returns. This double-filters. If you
