@@ -15,11 +15,12 @@ primary_worktree="$(
 
 [ -n "$primary_worktree" ] || exit 0
 
-source_env="$primary_worktree/test.env"
-destination_env="$current_worktree/test.env"
+source_env="$primary_worktree/e2e/test.env"
+destination_env="$current_worktree/e2e/test.env"
 
-# The hook only copies from the primary worktree into another worktree. Keep
-# symlinks out of the flow so a private file cannot redirect the copy.
+# The hook only copies from the primary project worktree into another
+# worktree. Keep symlinks out of the flow so a private file cannot redirect the
+# copy.
 [ "$source_env" != "$destination_env" ] || exit 0
 [ -f "$source_env" ] || exit 0
 [ ! -L "$source_env" ] || exit 0
@@ -28,14 +29,14 @@ destination_env="$current_worktree/test.env"
 
 umask 077
 if ! cp "$source_env" "$destination_env" 2>/dev/null; then
-  printf '%s\n' "OpenMergeLens: could not copy test.env into $current_worktree" >&2
+  printf '%s\n' "OpenMergeLens: could not copy e2e/test.env into $current_worktree" >&2
   exit 0
 fi
 
 if ! chmod 600 "$destination_env" 2>/dev/null; then
   rm -f "$destination_env"
-  printf '%s\n' "OpenMergeLens: could not secure copied test.env in $current_worktree" >&2
+  printf '%s\n' "OpenMergeLens: could not secure copied e2e/test.env in $current_worktree" >&2
   exit 0
 fi
 
-printf '%s\n' "OpenMergeLens: copied test.env into $current_worktree"
+printf '%s\n' "OpenMergeLens: copied e2e/test.env into $current_worktree"
