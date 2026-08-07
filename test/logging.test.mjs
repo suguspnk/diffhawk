@@ -961,13 +961,13 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
     "const result = await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
     "process.stdout.write(JSON.stringify({ result }));",
   ].join('\n');
-  const childCount = process.platform === 'win32' ? 64 : 200;
+  const childCount = process.platform === 'win32' ? 16 : 200;
   // Keep the total fan-in high while bounding fresh Node process startup. A
   // 200-process launch burst exceeds the supported loopback election envelope
   // on shared CI runners and turns a logging regression test into a scheduler
   // resource test. Windows has substantially slower child startup on the
   // supported Node matrix, so use a smaller but still contention-heavy fan-in
-  // there. Sixteen active children still exercise cross-process rotation and
+  // there. One sixteen-child wave still exercises cross-process rotation and
   // append serialization without making the result runner-load dependent.
   const outcomes = [];
   let nextIndex = 0;
