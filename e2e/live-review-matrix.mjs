@@ -16,6 +16,7 @@ function runBackend(backend) {
         env: {
           ...process.env,
           OPENMERGELENS_E2E_REVIEWER_BACKEND: backend,
+          OPENMERGELENS_E2E_MODE: 'dry-run',
         },
         stdio: 'inherit',
       },

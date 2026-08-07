@@ -5,8 +5,9 @@ import {
 } from '../lib/reviewer-command-defaults.mjs';
 import { REVIEW_INSPECTION_RETRY_COUNT } from '../lib/reviewer-adapter.mjs';
 
-export const POST_CONFIRMATION = 'I_UNDERSTAND_POSTING_TO_TEST_PR';
 export const REVIEWER_BACKENDS = Object.freeze(['claude', 'codex']);
+export const DEFAULT_LIVE_REVIEW_MODE = 'post';
+export const DEFAULT_LIVE_REVIEW_PROVISION = true;
 export const LIVE_REVIEW_CLEANUP_MARGIN_MS = 60_000;
 
 const GENERATED_REVIEWER_COMMANDS = Object.freeze({
@@ -34,11 +35,26 @@ function parseBoundedInteger(value, name, minimum, maximum, fallback) {
   return parsed;
 }
 
-export function calculateLiveReviewWatchdogMs({ reviewFocusCount, reviewTimeoutMs }) {
-  const reviewCallCount = reviewFocusCount + 1;
-  const reviewAttemptCount = REVIEW_INSPECTION_RETRY_COUNT + 1;
-  return reviewCallCount * reviewAttemptCount * reviewTimeoutMs +
-    LIVE_REVIEW_CLEANUP_MARGIN_MS;
+function parseBooleanFlag(value, name, fallback) {
+  const normalized = value?.trim();
+  if (normalized === undefined || normalized === '') return fallback;
+  if (normalized === '1') return true;
+  if (normalized === '0') return false;
+  throw new Error(`${name} must be 1 or 0`);
+}
+
+function parseBranch(value) {
+  if (value === undefined || value === '') return undefined;
+  if (
+    value.length > 255 ||
+    !/^[A-Za-z0-9._/-]+$/u.test(value) ||
+    value.includes('..') ||
+    value.startsWith('/') ||
+    value.endsWith('/')
+  ) {
+    throw new Error('OPENMERGELENS_E2E_BASE_BRANCH is not a safe branch name');
+  }
+  return value;
 }
 
 function reviewerConfiguration(environment) {
@@ -78,10 +94,16 @@ function reviewerConfiguration(environment) {
   };
 }
 
+export function calculateLiveReviewWatchdogMs({ reviewFocusCount, reviewTimeoutMs }) {
+  const reviewCallCount = reviewFocusCount + 1;
+  const reviewAttemptCount = REVIEW_INSPECTION_RETRY_COUNT + 1;
+  return reviewCallCount * reviewAttemptCount * reviewTimeoutMs +
+    LIVE_REVIEW_CLEANUP_MARGIN_MS;
+}
+
 export function parseEnvironment(environment = process.env) {
   const missing = [
     'OPENMERGELENS_E2E_REPO',
-    'OPENMERGELENS_E2E_PR',
     'OPENMERGELENS_E2E_USERNAME',
   ].filter((key) => !environment[key]?.trim());
   if (missing.length > 0) {
@@ -89,62 +111,91 @@ export function parseEnvironment(environment = process.env) {
       error: [
         'Live review E2E is intentionally opt-in.',
         `Set: ${missing.join(', ')}.`,
-        'Set OPENMERGELENS_E2E_REVIEWER_BACKEND=claude or codex, or provide ' +
-          'OPENMERGELENS_E2E_REVIEWER_COMMAND.',
-        'See e2e/README.md for the required test-PR and reviewer setup.',
+        'See e2e/README.md for the author/reviewer credentials and test repository setup.',
       ].join(' '),
     };
   }
 
   try {
-    const mode = environment.OPENMERGELENS_E2E_MODE || 'dry-run';
+    const mode = (environment.OPENMERGELENS_E2E_MODE || DEFAULT_LIVE_REVIEW_MODE)
+      .trim();
     if (mode !== 'dry-run' && mode !== 'post') {
       throw new Error('OPENMERGELENS_E2E_MODE must be dry-run or post');
     }
-    if (
-      mode === 'post' &&
-      environment.OPENMERGELENS_E2E_POST_CONFIRM !== POST_CONFIRMATION
-    ) {
-      throw new Error(
-        `Posting requires OPENMERGELENS_E2E_POST_CONFIRM=${POST_CONFIRMATION}`,
-      );
-    }
 
-    const host = environment.OPENMERGELENS_E2E_HOST || 'github.com';
+    const provision = parseBooleanFlag(
+      environment.OPENMERGELENS_E2E_PROVISION,
+      'OPENMERGELENS_E2E_PROVISION',
+      DEFAULT_LIVE_REVIEW_PROVISION,
+    );
+    const host = (environment.OPENMERGELENS_E2E_HOST || 'github.com').trim() ||
+      'github.com';
     const repository = environment.OPENMERGELENS_E2E_REPO.trim();
     if (!/^[^/\s]+\/[^/\s]+$/u.test(repository)) {
       throw new Error('OPENMERGELENS_E2E_REPO must be OWNER/REPO');
     }
-    const number = parsePositiveInteger(
-      environment.OPENMERGELENS_E2E_PR,
-      'OPENMERGELENS_E2E_PR',
-    );
+
+    const numberText = environment.OPENMERGELENS_E2E_PR?.trim();
+    const number = numberText
+      ? parsePositiveInteger(numberText, 'OPENMERGELENS_E2E_PR')
+      : undefined;
     const username = environment.OPENMERGELENS_E2E_USERNAME.trim();
-    const reviewFocusCount = parseBoundedInteger(
-      environment.OPENMERGELENS_E2E_REVIEW_FOCUS_COUNT,
-      'OPENMERGELENS_E2E_REVIEW_FOCUS_COUNT',
-      1,
-      4,
-      1,
-    );
-    const reviewTimeoutMs = parseBoundedInteger(
-      environment.OPENMERGELENS_E2E_REVIEW_TIMEOUT_MS,
-      'OPENMERGELENS_E2E_REVIEW_TIMEOUT_MS',
-      60_000,
-      3_600_000,
-      720_000,
-    );
+    const authorUsername = environment.OPENMERGELENS_E2E_AUTHOR_USERNAME?.trim();
+    if (provision && !authorUsername) {
+      throw new Error(
+        'OPENMERGELENS_E2E_AUTHOR_USERNAME is required when ' +
+          'OPENMERGELENS_E2E_PROVISION is enabled',
+      );
+    }
+    if (
+      provision &&
+      authorUsername.toLowerCase() === username.toLowerCase()
+    ) {
+      throw new Error(
+        'OPENMERGELENS_E2E_AUTHOR_USERNAME must differ from ' +
+          'OPENMERGELENS_E2E_USERNAME so GitHub can request the reviewer',
+      );
+    }
+    if (!provision && number === undefined) {
+      throw new Error(
+        'OPENMERGELENS_E2E_PR is required when OPENMERGELENS_E2E_PROVISION=0',
+      );
+    }
 
     return {
       mode,
+      provision,
       host,
       repository,
       number,
       username,
+      authorUsername,
+      baseBranch: parseBranch(environment.OPENMERGELENS_E2E_BASE_BRANCH?.trim()),
       ...reviewerConfiguration(environment),
-      reviewFocusCount,
-      reviewTimeoutMs,
-      keepHome: environment.OPENMERGELENS_E2E_KEEP_HOME === '1',
+      reviewFocusCount: parseBoundedInteger(
+        environment.OPENMERGELENS_E2E_REVIEW_FOCUS_COUNT,
+        'OPENMERGELENS_E2E_REVIEW_FOCUS_COUNT',
+        1,
+        4,
+        1,
+      ),
+      reviewTimeoutMs: parseBoundedInteger(
+        environment.OPENMERGELENS_E2E_REVIEW_TIMEOUT_MS,
+        'OPENMERGELENS_E2E_REVIEW_TIMEOUT_MS',
+        60_000,
+        3_600_000,
+        720_000,
+      ),
+      keepHome: parseBooleanFlag(
+        environment.OPENMERGELENS_E2E_KEEP_HOME,
+        'OPENMERGELENS_E2E_KEEP_HOME',
+        false,
+      ),
+      keepPr: parseBooleanFlag(
+        environment.OPENMERGELENS_E2E_KEEP_PR,
+        'OPENMERGELENS_E2E_KEEP_PR',
+        false,
+      ),
     };
   } catch (error) {
     return { error: error.message };
