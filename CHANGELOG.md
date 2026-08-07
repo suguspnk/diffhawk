@@ -4,6 +4,18 @@ OpenMergeLens follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-07
+
+- Added `openmergelens config`, an interactive editor for accounts,
+  repositories, reviewer behavior, notifications, and scheduling that validates
+  and saves each completed change without rerunning the full setup wizard.
+- Added configurable reviewer process timeouts through `reviewTimeoutMs`, with
+  safe bounds and preservation of existing values during setup.
+- Added structured JSONL polling logs with sanitized, bounded diagnostics,
+  private rotation, and readable progress output for manual runs.
+- Expanded cross-platform setup, scheduling, and live-review end-to-end
+  coverage, including self-provisioning GitHub review fixtures.
+
 ## [1.4.0] - 2026-08-06
 
 - Deferred reviews when a pull request changes head during review: stale
