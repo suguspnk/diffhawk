@@ -1550,7 +1550,11 @@ test('generated MCP server bounds active calls during an input flood', async (t)
   });
   t.after(() => gateway.close());
   const { child, waitForResponse } = spawnMcpServer(t, gateway);
-  const floodCount = 2_000;
+  // Keep the request count well above the 16-call admission limit while
+  // keeping one Windows Node 22 pipe write below the gateway's 128 KiB
+  // pending-input cap. That runner can deliver one large stdin chunk where
+  // newer Node versions split the same write into smaller chunks.
+  const floodCount = process.platform === 'win32' ? 256 : 2_000;
   const request = (id) => JSON.stringify({
     jsonrpc: '2.0',
     id,
