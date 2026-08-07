@@ -8,10 +8,8 @@ case "${3:-0}" in
 esac
 
 current_worktree="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
-primary_worktree="$(
-  git worktree list --porcelain 2>/dev/null |
-    awk '$1 == "worktree" { print substr($0, 10); exit }'
-)"
+common_git_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0
+primary_worktree="$(dirname "$common_git_dir")"
 
 [ -n "$primary_worktree" ] || exit 0
 

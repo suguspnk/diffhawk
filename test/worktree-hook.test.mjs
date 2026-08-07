@@ -20,6 +20,7 @@ test('post-checkout copies e2e/test.env into a new worktree without overwriting 
   const sourceEnv = path.join(root, 'e2e', 'test.env');
   const destinationEnv = path.join(worktree, 'e2e', 'test.env');
   const contents = 'OPENMERGELENS_E2E_REPO=owner/repo\n';
+  let worktreeCreated = false;
 
   try {
     await git(root, ['init', '--initial-branch=main']);
@@ -35,6 +36,7 @@ test('post-checkout copies e2e/test.env into a new worktree without overwriting 
     await git(root, ['config', 'core.hooksPath', hookPath]);
 
     await git(root, ['worktree', 'add', '-b', 'feature', worktree, 'HEAD']);
+    worktreeCreated = true;
 
     assert.equal(await readFile(destinationEnv, 'utf8'), contents);
     if (process.platform !== 'win32') {
@@ -46,6 +48,9 @@ test('post-checkout copies e2e/test.env into a new worktree without overwriting 
     await git(worktree, ['checkout', '-b', 'another-feature']);
     assert.equal(await readFile(destinationEnv, 'utf8'), replacement);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    if (worktreeCreated) {
+      await git(root, ['worktree', 'remove', '--force', worktree]).catch(() => {});
+    }
+    await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 });
