@@ -770,11 +770,6 @@ test('account six starts before a slow two-repository account backoff expires', 
   const slowBackoff = new Promise((resolve) => {
     releaseSlowBackoff = resolve;
   });
-  const fallbackRelease = setTimeout(() => {
-    releaseSlowBackoffStarted();
-    releaseSlowBackoff();
-  }, 100);
-  t.after(() => clearTimeout(fallbackRelease));
 
   dependencies.createGitHubMutationQueue = () => {
     const queueAccount = githubAccounts[queueIndex++];
