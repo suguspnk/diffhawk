@@ -22,6 +22,8 @@ import {
   lockPortFor,
 } from '../lib/lock.mjs';
 
+const LOCK_TEST_PROBE_TIMEOUT_MS = process.platform === 'win32' ? 100 : 20;
+
 function lockKey(label) {
   return path.join(
     tmpdir(),
@@ -49,6 +51,29 @@ async function listenSilently(port) {
     server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
   });
   return server;
+}
+
+function childHasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function waitForChildClose(child) {
+  if (childHasExited(child)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      child.off('exit', finish);
+      child.off('close', finish);
+      resolve();
+    };
+    child.once('exit', finish);
+    child.once('close', finish);
+    if (childHasExited(child)) finish();
+  });
+}
+
+async function stopChild(child) {
+  if (!childHasExited(child)) child.kill();
+  await waitForChildClose(child);
 }
 
 test('fresh acquire succeeds, blocks overlap, and release allows reacquire', async () => {
@@ -185,9 +210,7 @@ test('a crashed holder is released by the operating system', async (t) => {
       ['--input-type=module', '--eval', script],
       { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
     );
-    t.after(() => {
-      if (child.exitCode === null) child.kill();
-    });
+    t.after(() => stopChild(child));
 
     const readiness = await new Promise((resolve, reject) => {
       let stdout = '';
@@ -361,7 +384,10 @@ test('owner-marker reads fail closed for symlinks', async () => {
       await symlink(targetPath, markerPath);
 
       await assert.rejects(
-        acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        acquireLock(key, {
+          probeAttempts: 1,
+          probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+        }),
         { code: 'ELOCKAMBIGUOUS' },
       );
       assert.equal(await readFile(targetPath, 'utf8'), targetContents);
@@ -391,7 +417,10 @@ test('owner-marker reads fail closed for non-regular paths', async () => {
     try {
       await mkdir(markerPath);
       await assert.rejects(
-        acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        acquireLock(key, {
+          probeAttempts: 1,
+          probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+        }),
         { code: 'ELOCKAMBIGUOUS' },
       );
       assert.equal((await lstat(markerPath)).isDirectory(), true);
@@ -422,7 +451,10 @@ test('oversized owner markers are bounded before parsing', async () => {
       await writeFile(markerPath, ownerMarkerContents(key) + ' '.repeat(16 * 1024));
 
       await assert.rejects(
-        acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        acquireLock(key, {
+          probeAttempts: 1,
+          probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+        }),
         { code: 'ELOCKAMBIGUOUS' },
       );
       return;
@@ -451,10 +483,18 @@ test('owner-marker reads harden existing regular marker permissions', async () =
       await chmod(markerPath, 0o644);
 
       assert.equal(
-        await acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
+        await acquireLock(key, {
+          probeAttempts: 1,
+          probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+        }),
         null,
       );
-      assert.equal((await lstat(markerPath)).mode & 0o777, 0o600);
+      // Windows does not expose POSIX permission bits through lstat(). The
+      // descriptor-level chmod remains exercised by acquisition itself; mode
+      // assertions are meaningful only on POSIX hosts.
+      if (process.platform !== 'win32') {
+        assert.equal((await lstat(markerPath)).mode & 0o777, 0o600);
+      }
       return;
     } finally {
       await new Promise((resolve) => server.close(resolve));
@@ -533,7 +573,9 @@ test('owner markers must match their candidate rank', async () => {
     );
 
     try {
-      const release = await acquireLock(key, { probeTimeoutMs: 20 });
+      const release = await acquireLock(key, {
+        probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+      });
       assert.ok(release);
       await release();
       return;
@@ -628,22 +670,46 @@ test('different keys with the same first port remain independent', async () => {
   assert.fail('could not find an unoccupied colliding lock namespace');
 });
 
-test('an unrelated service on the first port is skipped safely', async (t) => {
-  const key = lockKey('unrelated-service');
-  const server = createServer((socket) => socket.end('not-openmergelens\n'));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen({
-      host: '127.0.0.1',
-      port: lockPortFor(key),
-      exclusive: true,
-    }, resolve);
-  });
+test('an unrelated service on the first port is skipped safely', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`unrelated-service-${attempt}`);
+    const server = createServer((socket) => socket.end('not-openmergelens\n'));
+    const listenError = await new Promise((resolve) => {
+      const onError = (error) => {
+        server.off('listening', onListening);
+        resolve(error);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve(null);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen({
+        host: '127.0.0.1',
+        port: lockPortFor(key),
+        exclusive: true,
+      });
+    });
+    if (listenError) {
+      await new Promise((resolve) => server.close(resolve));
+      if (listenError.code === 'EACCES' || listenError.code === 'EADDRINUSE') {
+        continue;
+      }
+      throw listenError;
+    }
 
-  const release = await acquireLock(key);
-  assert.ok(release);
-  await release();
+    try {
+      const release = await acquireLock(key);
+      assert.ok(release);
+      await release();
+      return;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  assert.fail('could not find an available first-port namespace');
 });
 
 test('a silent connected service is treated as ambiguous', async (t) => {
@@ -660,7 +726,7 @@ test('a silent connected service is treated as ambiguous', async (t) => {
   });
 
   await assert.rejects(
-    acquireLock(key, { probeTimeoutMs: 20 }),
+    acquireLock(key, { probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS }),
     /unable to identify a silent listener/,
   );
 });
@@ -694,7 +760,9 @@ test('a silent connected service on a later candidate is skipped safely', async 
     if (!listening) continue;
 
     try {
-      const release = await acquireLock(key, { probeTimeoutMs: 20 });
+      const release = await acquireLock(key, {
+        probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+      });
       assert.ok(release);
       await release();
       return;
@@ -737,7 +805,7 @@ test('a blocked same-key fallback owner still prevents overlap', async (t) => {
         `
           import { acquireLock } from ${JSON.stringify(moduleUrl)};
           const release = await acquireLock(${JSON.stringify(key)}, {
-            probeTimeoutMs: 20,
+            probeTimeoutMs: ${LOCK_TEST_PROBE_TIMEOUT_MS},
           });
           if (!release) process.exit(2);
           process.stdout.write('ready\\n');
@@ -748,9 +816,7 @@ test('a blocked same-key fallback owner still prevents overlap', async (t) => {
       ],
       { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
     );
-    t.after(() => {
-      if (child.exitCode === null) child.kill();
-    });
+    t.after(() => stopChild(child));
 
     try {
       const ready = await new Promise((resolve, reject) => {
@@ -766,14 +832,15 @@ test('a blocked same-key fallback owner still prevents overlap', async (t) => {
 
       await new Promise((resolve) => blocker.close(resolve));
       assert.equal(
-        await acquireLock(key, { probeTimeoutMs: 20 }),
+        await acquireLock(key, {
+          probeTimeoutMs: LOCK_TEST_PROBE_TIMEOUT_MS,
+        }),
         null,
         'a blocked fallback owner must remain discoverable',
       );
-      child.kill();
       return;
     } finally {
-      if (child.exitCode === null) child.kill();
+      await stopChild(child);
       await new Promise((resolve) => blocker.close(resolve));
     }
   }

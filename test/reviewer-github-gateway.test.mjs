@@ -48,6 +48,7 @@ function gatewayRequest(gateway, capability, input) {
   const payload = JSON.stringify(input);
   return new Promise((resolve, reject) => {
     const request = http.request({
+      agent: false,
       socketPath: gateway.socketPath,
       path: '/',
       method: 'POST',
@@ -80,6 +81,7 @@ function openGatewayRequest(gateway, capability, input) {
     rejectResponse = reject;
   });
   const request = http.request({
+    agent: false,
     socketPath: gateway.socketPath,
     path: '/',
     method: 'POST',
@@ -108,6 +110,7 @@ function fragmentedGatewayRequest(gateway, capability, input, splitAt) {
   return new Promise((resolve, reject) => {
     let sendRemainingTimer;
     const request = http.request({
+      agent: false,
       socketPath: gateway.socketPath,
       path: '/',
       method: 'POST',
@@ -926,7 +929,7 @@ test('file-context subscribers keep a shared fetch alive when one client aborts'
   assert.equal(fetchSignal.aborted, false);
 });
 
-async function assertSharedInspectionSurvivesClientTimeout(
+async function assertSharedInspectionSurvivesClientAbort(
   t,
   operation,
   fetchOutput,
@@ -944,10 +947,9 @@ async function assertSharedInspectionSurvivesClientTimeout(
     directory,
     target,
     githubEnvironment: {},
-    // Leave enough scheduling headroom for this shared-subscriber assertion
-    // when the full test suite is running other CPU- and I/O-heavy files in
-    // parallel. The test still verifies the first request timing out before
-    // the shared fetch is resolved.
+    // Keep a finite request deadline as a safety net if the second request
+    // cannot be scheduled. The client abort below is the deterministic event
+    // under test; timeout-specific cleanup is covered separately above.
     requestTimeoutMs: 5_000,
     runGitHub: async (_args, { signal }) => {
       calls += 1;
@@ -970,18 +972,17 @@ async function assertSharedInspectionSurvivesClientTimeout(
   first.response.catch(() => {});
   await waitForCondition(() => calls === 1, `${operation} shared fetch`);
   const secondResponse = gatewayRequest(gateway, capability, { operation });
-  // Give the second request a scheduling turn before the first client's
-  // deadline. This keeps the test's shared-subscriber setup deterministic on
-  // slower Windows runners without changing the gateway contract.
+  // Let the second request reach the gateway before closing the first client.
+  // The barrier uses an independent socket so it cannot be queued behind the
+  // intentionally unresolved shared request.
   await new Promise((resolve) => setTimeout(resolve, 100));
   const requestBarrier = await gatewayRequest(gateway, capability, {
     operation: 'not_allowed',
   });
   assert.equal(requestBarrier.statusCode, 403);
 
-  const firstResult = await first.response;
-  assert.equal(firstResult.statusCode, 408);
-  assert.equal(fetchSignal.aborted, false);
+  first.request.destroy();
+  await first.response.catch(() => {});
 
   resolveFetch(fetchOutput);
   const second = await secondResponse;
@@ -995,8 +996,8 @@ async function assertSharedInspectionSurvivesClientTimeout(
   assert.equal(fetchSignal.aborted, false);
 }
 
-test('metadata subscribers keep a shared fetch alive when one client times out', async (t) => {
-  await assertSharedInspectionSurvivesClientTimeout(
+test('metadata subscribers keep a shared fetch alive when one client aborts', async (t) => {
+  await assertSharedInspectionSurvivesClientAbort(
     t,
     'metadata',
     metadataFixture(),
@@ -1004,8 +1005,8 @@ test('metadata subscribers keep a shared fetch alive when one client times out',
   );
 });
 
-test('cumulative-diff subscribers keep a shared fetch alive when one client times out', async (t) => {
-  await assertSharedInspectionSurvivesClientTimeout(
+test('cumulative-diff subscribers keep a shared fetch alive when one client aborts', async (t) => {
+  await assertSharedInspectionSurvivesClientAbort(
     t,
     'cumulative_diff',
     diffFixture,
@@ -1550,7 +1551,11 @@ test('generated MCP server bounds active calls during an input flood', async (t)
   });
   t.after(() => gateway.close());
   const { child, waitForResponse } = spawnMcpServer(t, gateway);
-  const floodCount = 2_000;
+  // Keep the request count well above the 16-call admission limit while
+  // keeping one Windows Node 22 pipe write below the gateway's 128 KiB
+  // pending-input cap. That runner can deliver one large stdin chunk where
+  // newer Node versions split the same write into smaller chunks.
+  const floodCount = process.platform === 'win32' ? 256 : 2_000;
   const request = (id) => JSON.stringify({
     jsonrpc: '2.0',
     id,

@@ -68,6 +68,13 @@ test('an unrecognized argument is rejected instead of silently falling through t
   assert.deepEqual(parseArgs(['foo']), { error: 'unrecognized argument "foo"' });
 });
 
+test('unrecognized argument diagnostics are bounded before they reach logging', () => {
+  const result = parseArgs(['invalid-argument-'.repeat(1_000)]);
+
+  assert.match(result.error, /… \[truncated\]"$/u);
+  assert.ok(result.error.length < 2_000);
+});
+
 test('an unknown flag is rejected the same way', () => {
   assert.deepEqual(parseArgs(['--unknown']), { error: 'unrecognized argument "--unknown"' });
 });

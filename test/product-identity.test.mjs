@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseHtml } from 'parse5';
+import { prepareCommand } from '../lib/process-launch.mjs';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(
@@ -80,15 +81,26 @@ test('published package excludes the repository-only E2E harness', async (t) => 
   const npmCache = await mkdtemp(path.join(tmpdir(), 'openmergelens-npm-cache-'));
   t.after(() => rm(npmCache, { recursive: true, force: true }));
 
-  const { stdout } = await execFileAsync(
-    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+  const environment = {
+    ...process.env,
+    npm_config_cache: npmCache,
+  };
+  const npmCommand = await prepareCommand(
+    'npm',
     ['pack', '--dry-run', '--json', '--ignore-scripts'],
     {
+      platform: process.platform,
+      environment,
+    },
+  );
+  const { stdout } = await execFileAsync(
+    npmCommand.command,
+    npmCommand.args,
+    {
+      ...npmCommand.options,
       cwd: projectRoot,
-      env: {
-        ...process.env,
-        npm_config_cache: npmCache,
-      },
+      env: environment,
+      timeout: 30_000,
     },
   );
   const packMetadata = JSON.parse(stdout.trim());

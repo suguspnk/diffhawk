@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   enforcePrivateMode,
+  enforcePrivateModeHandle,
   ensurePrivateDirectory,
   PRIVATE_DIRECTORY_MODE,
 } from '../lib/file-security.mjs';
@@ -36,6 +37,23 @@ test('Windows ignores only unsupported chmod failures', async () => {
         throw Object.assign(new Error('disk failure'), { code: 'EIO' });
       },
     }),
+    /disk failure/,
+  );
+});
+
+test('Windows ignores only unsupported handle chmod failures', async () => {
+  await enforcePrivateModeHandle({
+    chmod: async () => {
+      throw Object.assign(new Error('unsupported'), { code: 'EPERM' });
+    },
+  }, 0o600, { platform: 'win32' });
+
+  await assert.rejects(
+    enforcePrivateModeHandle({
+      chmod: async () => {
+        throw Object.assign(new Error('disk failure'), { code: 'EIO' });
+      },
+    }, 0o600, { platform: 'win32' }),
     /disk failure/,
   );
 });
