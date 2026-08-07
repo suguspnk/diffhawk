@@ -85,6 +85,9 @@ test('published package excludes the repository-only E2E harness', async (t) => 
     ['pack', '--dry-run', '--json', '--ignore-scripts'],
     {
       cwd: projectRoot,
+      // Windows npm is a .cmd shim and must be launched through a shell when
+      // using child_process.execFile. The arguments are fixed test inputs.
+      shell: process.platform === 'win32',
       env: {
         ...process.env,
         npm_config_cache: npmCache,

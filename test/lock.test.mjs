@@ -454,7 +454,12 @@ test('owner-marker reads harden existing regular marker permissions', async () =
         await acquireLock(key, { probeAttempts: 1, probeTimeoutMs: 20 }),
         null,
       );
-      assert.equal((await lstat(markerPath)).mode & 0o777, 0o600);
+      // Windows does not expose POSIX permission bits through lstat(). The
+      // descriptor-level chmod remains exercised by acquisition itself; mode
+      // assertions are meaningful only on POSIX hosts.
+      if (process.platform !== 'win32') {
+        assert.equal((await lstat(markerPath)).mode & 0o777, 0o600);
+      }
       return;
     } finally {
       await new Promise((resolve) => server.close(resolve));
