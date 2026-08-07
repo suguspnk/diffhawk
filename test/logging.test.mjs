@@ -961,13 +961,11 @@ test('keeps a near-cap active log bounded across concurrent processes', async (t
     "const result = await appendFailure(process.argv[1], 'fatal', process.argv[2], { consoleMode: 'none' });",
     "process.stdout.write(JSON.stringify({ result }));",
   ].join('\n');
-  const childCount = process.platform === 'win32' ? 16 : 32;
   // Keep the fan-in high enough to exercise cross-process rotation and append
-  // serialization while bounding fresh Node process startup. A 200-process
-  // launch burst exceeds the supported loopback election envelope on shared
-  // CI runners and turns this regression test into a scheduler resource test.
-  // Windows has substantially slower child startup on the supported Node
-  // matrix, so use a smaller wave there.
+  // serialization while bounding fresh Node process startup. A larger launch
+  // burst can exhaust the supported loopback election envelope on shared CI
+  // runners and turn this regression test into a scheduler resource test.
+  const childCount = 16;
   const outcomes = [];
   let nextIndex = 0;
   await Promise.all(
