@@ -468,8 +468,6 @@ test('oversized owner markers are bounded before parsing', async () => {
 });
 
 test('owner-marker reads harden existing regular marker permissions', async () => {
-  const previousDebugValue = process.env.OPENMERGELENS_DEBUG_LOCK;
-  process.env.OPENMERGELENS_DEBUG_LOCK = '1';
   for (let attempt = 0; attempt < 100; attempt++) {
     const key = lockKey(`marker-permissions-${attempt}`);
     const markerPath = `${key}.owner.json`;
@@ -503,9 +501,6 @@ test('owner-marker reads harden existing regular marker permissions', async () =
       await rm(markerPath, { force: true });
     }
   }
-
-  if (previousDebugValue === undefined) delete process.env.OPENMERGELENS_DEBUG_LOCK;
-  else process.env.OPENMERGELENS_DEBUG_LOCK = previousDebugValue;
 
   assert.fail('could not find an unoccupied marker-permissions namespace');
 });
