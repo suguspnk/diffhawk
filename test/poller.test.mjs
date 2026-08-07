@@ -758,6 +758,10 @@ test('account six starts before a slow two-repository account backoff expires', 
   let slowBackoffStarted = false;
   let slowBackoffResolved = false;
   let accountSixStartedBeforeBackoffResolved = false;
+  let releaseSlowBackoffStarted;
+  const slowBackoffStartedSignal = new Promise((resolve) => {
+    releaseSlowBackoffStarted = resolve;
+  });
   let releaseFastSearches;
   const fastSearches = new Promise((resolve) => {
     releaseFastSearches = resolve;
@@ -766,7 +770,10 @@ test('account six starts before a slow two-repository account backoff expires', 
   const slowBackoff = new Promise((resolve) => {
     releaseSlowBackoff = resolve;
   });
-  const fallbackRelease = setTimeout(() => releaseSlowBackoff(), 100);
+  const fallbackRelease = setTimeout(() => {
+    releaseSlowBackoffStarted();
+    releaseSlowBackoff();
+  }, 100);
   t.after(() => clearTimeout(fallbackRelease));
 
   dependencies.createGitHubMutationQueue = () => {
@@ -776,6 +783,7 @@ test('account six starts before a slow two-repository account backoff expires', 
       sleep: async (milliseconds) => {
         if (queueAccount.username !== 'account-1') return;
         slowBackoffStarted = true;
+        releaseSlowBackoffStarted();
         releaseFastSearches();
         await slowBackoff;
         slowBackoffResolved = true;
@@ -785,6 +793,9 @@ test('account six starts before a slow two-repository account backoff expires', 
   dependencies.currentUsername = async ({ auth }) => {
     events.push(`current:${auth.username}`);
     if (auth.username === 'account-6') {
+      // Wait until account 1 has actually entered its backoff. This preserves
+      // the fairness assertion without depending on platform timer ordering.
+      await slowBackoffStartedSignal;
       accountSixStartedBeforeBackoffResolved =
         slowBackoffStarted && !slowBackoffResolved;
       releaseSlowBackoff();
