@@ -929,7 +929,7 @@ test('file-context subscribers keep a shared fetch alive when one client aborts'
   assert.equal(fetchSignal.aborted, false);
 });
 
-async function assertSharedInspectionSurvivesClientTimeout(
+async function assertSharedInspectionSurvivesClientAbort(
   t,
   operation,
   fetchOutput,
@@ -947,9 +947,9 @@ async function assertSharedInspectionSurvivesClientTimeout(
     directory,
     target,
     githubEnvironment: {},
-    // Keep the timeout finite while each concurrent test request uses its own
-    // socket. This prevents the platform HTTP agent from queueing the second
-    // subscriber behind the intentionally unresolved first request.
+    // Keep a finite request deadline as a safety net if the second request
+    // cannot be scheduled. The client abort below is the deterministic event
+    // under test; timeout-specific cleanup is covered separately above.
     requestTimeoutMs: 5_000,
     runGitHub: async (_args, { signal }) => {
       calls += 1;
@@ -972,18 +972,17 @@ async function assertSharedInspectionSurvivesClientTimeout(
   first.response.catch(() => {});
   await waitForCondition(() => calls === 1, `${operation} shared fetch`);
   const secondResponse = gatewayRequest(gateway, capability, { operation });
-  // Give the second request a scheduling turn before the first client's
-  // deadline. This keeps the test's shared-subscriber setup deterministic on
-  // slower Windows runners without changing the gateway contract.
+  // Let the second request reach the gateway before closing the first client.
+  // The barrier uses an independent socket so it cannot be queued behind the
+  // intentionally unresolved shared request.
   await new Promise((resolve) => setTimeout(resolve, 100));
   const requestBarrier = await gatewayRequest(gateway, capability, {
     operation: 'not_allowed',
   });
   assert.equal(requestBarrier.statusCode, 403);
 
-  const firstResult = await first.response;
-  assert.equal(firstResult.statusCode, 408);
-  assert.equal(fetchSignal.aborted, false);
+  first.request.destroy();
+  await first.response.catch(() => {});
 
   resolveFetch(fetchOutput);
   const second = await secondResponse;
@@ -997,8 +996,8 @@ async function assertSharedInspectionSurvivesClientTimeout(
   assert.equal(fetchSignal.aborted, false);
 }
 
-test('metadata subscribers keep a shared fetch alive when one client times out', async (t) => {
-  await assertSharedInspectionSurvivesClientTimeout(
+test('metadata subscribers keep a shared fetch alive when one client aborts', async (t) => {
+  await assertSharedInspectionSurvivesClientAbort(
     t,
     'metadata',
     metadataFixture(),
@@ -1006,8 +1005,8 @@ test('metadata subscribers keep a shared fetch alive when one client times out',
   );
 });
 
-test('cumulative-diff subscribers keep a shared fetch alive when one client times out', async (t) => {
-  await assertSharedInspectionSurvivesClientTimeout(
+test('cumulative-diff subscribers keep a shared fetch alive when one client aborts', async (t) => {
+  await assertSharedInspectionSurvivesClientAbort(
     t,
     'cumulative_diff',
     diffFixture,

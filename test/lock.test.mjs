@@ -633,22 +633,46 @@ test('different keys with the same first port remain independent', async () => {
   assert.fail('could not find an unoccupied colliding lock namespace');
 });
 
-test('an unrelated service on the first port is skipped safely', async (t) => {
-  const key = lockKey('unrelated-service');
-  const server = createServer((socket) => socket.end('not-openmergelens\n'));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen({
-      host: '127.0.0.1',
-      port: lockPortFor(key),
-      exclusive: true,
-    }, resolve);
-  });
+test('an unrelated service on the first port is skipped safely', async () => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const key = lockKey(`unrelated-service-${attempt}`);
+    const server = createServer((socket) => socket.end('not-openmergelens\n'));
+    const listenError = await new Promise((resolve) => {
+      const onError = (error) => {
+        server.off('listening', onListening);
+        resolve(error);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve(null);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen({
+        host: '127.0.0.1',
+        port: lockPortFor(key),
+        exclusive: true,
+      });
+    });
+    if (listenError) {
+      await new Promise((resolve) => server.close(resolve));
+      if (listenError.code === 'EACCES' || listenError.code === 'EADDRINUSE') {
+        continue;
+      }
+      throw listenError;
+    }
 
-  const release = await acquireLock(key);
-  assert.ok(release);
-  await release();
+    try {
+      const release = await acquireLock(key);
+      assert.ok(release);
+      await release();
+      return;
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  assert.fail('could not find an available first-port namespace');
 });
 
 test('a silent connected service is treated as ambiguous', async (t) => {
