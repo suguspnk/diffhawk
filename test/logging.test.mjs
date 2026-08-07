@@ -890,14 +890,17 @@ test('ensureLogFile hardens an existing log and rotation keeps private backups',
   const root = await mkdtemp(path.join(tmpdir(), 'openmergelens-log-rotation-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const logPath = path.join(root, 'poll.log');
-  await writeFile(logPath, 'x'.repeat(LOG_MAX_BYTES), 'utf8');
+  // Keep this above the inspection chunk size so rotation still exercises a
+  // multi-chunk legacy file without making slower Windows runners scan 5 MiB.
+  const legacyContents = 'x'.repeat(128 * 1024);
+  await writeFile(logPath, legacyContents, 'utf8');
   if (process.platform !== 'win32') await chmod(logPath, 0o644);
   await ensureLogFile(logPath);
 
   const logger = createLogger({ logPath, consoleMode: 'none' });
   assert.equal(await logger.info('after rotation'), true);
   const backup = await readFile(`${logPath}.1`, 'utf8');
-  assert.equal(backup, 'x'.repeat(LOG_MAX_BYTES));
+  assert.equal(backup, legacyContents);
   assert.match(await readFile(logPath, 'utf8'), /after rotation/);
   if (process.platform !== 'win32') {
     assert.equal((await stat(logPath)).mode & 0o777, 0o600);
